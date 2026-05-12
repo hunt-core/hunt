@@ -103,15 +103,11 @@ def _not_in(value: Any, params: list, _data: dict) -> str | None:
     return None
 
 
-def _confirmed(value: Any, _params: list, data: dict) -> str | None:
-    field_key = None
-    for k, v in data.items():
-        if v == value:
-            field_key = k
-            break
-    if field_key is None:
+def _confirmed(value: Any, params: list, data: dict) -> str | None:
+    # params[0] is the field name, injected by the validator
+    if not params:
         return None
-    confirmation = data.get(f"{field_key}_confirmation")
+    confirmation = data.get(f"{params[0]}_confirmation")
     if value != confirmation:
         return "The field confirmation does not match."
     return None

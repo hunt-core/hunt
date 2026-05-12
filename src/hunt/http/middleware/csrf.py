@@ -24,8 +24,9 @@ class VerifyCsrfToken(Middleware):
         return await next(request)
 
     def _is_exempt(self, request: Request) -> bool:
+        path = request.path
         for prefix in self.except_urls:
-            if request.path.startswith(prefix):
+            if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
                 return True
         return False
 

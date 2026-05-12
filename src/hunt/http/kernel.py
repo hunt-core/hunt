@@ -100,12 +100,16 @@ class HttpKernel:
             pipeline = make_layer(instance, current_next)
         return pipeline
 
-    @staticmethod
-    async def _read_body(receive: Any) -> bytes:
+    _MAX_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+
+    @classmethod
+    async def _read_body(cls, receive: Any) -> bytes:
         body = b""
         while True:
             message = await receive()
             body += message.get("body", b"")
+            if len(body) > cls._MAX_BODY_BYTES:
+                raise HttpException(413, "Request body too large.")
             if not message.get("more_body", False):
                 break
         return body
@@ -130,8 +134,8 @@ class HttpKernel:
     def _render_exception(self, request: Request, exc: Exception) -> Response:
         if self._exception_handler:
             return self._exception_handler.render(request, exc)
-        import traceback, os
+        import html, traceback, os
         if os.environ.get("APP_DEBUG", "false").lower() == "true":
-            tb = traceback.format_exc()
+            tb = html.escape(traceback.format_exc())
             return Response(f"<pre>{tb}</pre>", 500)
         return Response("<h1>500 Internal Server Error</h1>", 500)

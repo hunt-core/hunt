@@ -150,8 +150,13 @@ class QueryBuilder:
 
     def select(self, *columns: str) -> "QueryBuilder":
         qb = self._clone()
-        # Allow raw SQL expressions (containing spaces/parens) for aggregates like COUNT(*) as _count
-        qb._selects = [c if re.search(r'[\s(]', c) else _ident(c) for c in columns]
+        qb._selects = [_ident(c) for c in columns]
+        return qb
+
+    def select_raw(self, *expressions: str) -> "QueryBuilder":
+        """Accept raw SQL expressions (e.g. COUNT(*) AS total). Caller is responsible for safety."""
+        qb = self._clone()
+        qb._selects = list(expressions)
         return qb
 
     def with_trashed(self) -> "QueryBuilder":
@@ -177,7 +182,7 @@ class QueryBuilder:
 
     def count(self) -> int:
         old = self._selects
-        qb = self.select("COUNT(*) as _count")
+        qb = self.select_raw("COUNT(*) as _count")
         sql, bindings = qb._build_select()
         rows = self._execute(sql, bindings)
         if rows:

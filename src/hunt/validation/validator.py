@@ -90,6 +90,10 @@ class Validator:
                     rule_name = raw_rule
                     params = []
 
+                # Inject field name for the confirmed rule so it can find {field}_confirmation
+                if rule_name == "confirmed" and not params:
+                    params = [field]
+
                 if value is None and rule_name != "required":
                     if not is_required:
                         continue
