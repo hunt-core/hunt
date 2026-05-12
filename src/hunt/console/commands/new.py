@@ -23,6 +23,7 @@ def new_command(name: str, force: bool) -> None:
     dirs = [
         "app/admin",
         "app/controllers",
+        "app/controllers/auth",
         "app/models",
         "app/middleware",
         "app/providers",
@@ -34,6 +35,7 @@ def new_command(name: str, force: bool) -> None:
         "database/migrations",
         "database/factories",
         "database/seeders",
+        "resources/views/auth",
         "resources/views/errors",
         "routes",
         "storage/logs",
@@ -57,10 +59,16 @@ def new_command(name: str, force: bool) -> None:
     _write(target / "routes" / "web.py", _ROUTES_WEB)
     _write(target / "routes" / "api.py", _ROUTES_API)
     _write(target / "routes" / "admin.py", _ROUTES_ADMIN)
+    _write(target / "routes" / "auth.py", _ROUTES_AUTH)
     _write(target / "bootstrap" / "__init__.py", "")
     _write(target / "bootstrap" / "app.py", _BOOTSTRAP_APP)
     _write(target / "app" / "providers" / "app_service_provider.py", _APP_PROVIDER)
     _write(target / "app" / "controllers" / "welcome_controller.py", _WELCOME_CONTROLLER)
+    _write(target / "app" / "controllers" / "auth" / "__init__.py", "")
+    _write(target / "app" / "controllers" / "auth" / "login_controller.py", _AUTH_LOGIN_CONTROLLER)
+    _write(target / "app" / "controllers" / "auth" / "register_controller.py", _AUTH_REGISTER_CONTROLLER)
+    _write(target / "app" / "controllers" / "auth" / "password_controller.py", _AUTH_PASSWORD_CONTROLLER)
+    _write(target / "app" / "middleware" / "guest.py", _GUEST_MIDDLEWARE)
     _write(target / "app" / "models" / "user.py", _MODEL_USER)
     _write(target / "app" / "admin" / "__init__.py", "")
     _write(target / "app" / "admin" / "user_resource.py", _ADMIN_USER_RESOURCE)
@@ -68,6 +76,11 @@ def new_command(name: str, force: bool) -> None:
     _write(target / "database" / "migrations" / "0002_create_password_reset_tokens_table.py", _MIGRATION_PASSWORD_RESETS)
     _write(target / "resources" / "views" / "welcome.html", _WELCOME_VIEW)
     _write(target / "resources" / "views" / "layout.html", _LAYOUT_VIEW)
+    _write(target / "resources" / "views" / "auth" / "layout.html", _VIEW_AUTH_LAYOUT)
+    _write(target / "resources" / "views" / "auth" / "login.html", _VIEW_AUTH_LOGIN)
+    _write(target / "resources" / "views" / "auth" / "register.html", _VIEW_AUTH_REGISTER)
+    _write(target / "resources" / "views" / "auth" / "forgot_password.html", _VIEW_AUTH_FORGOT_PASSWORD)
+    _write(target / "resources" / "views" / "auth" / "reset_password.html", _VIEW_AUTH_RESET_PASSWORD)
     _write(target / "public" / "index.py", _PUBLIC_INDEX)
     _write(target / "tests" / "__init__.py", "")
 
@@ -248,12 +261,19 @@ Cache.configure(
 router = Router()
 application.instance("router", router)
 
+# -- Auth model
+from app.models.user import User as _User
+from hunt.auth.manager import Auth as _Auth
+_Auth.set_model(_User)
+
 # -- Load routes
 from routes.web import register as web_routes
 from routes.api import register as api_routes
+from routes.auth import register as auth_routes
 from routes.admin import register as admin_routes
 web_routes(router)
 api_routes(router)
+auth_routes(router)
 admin_routes(router)
 
 # -- Register named routes
@@ -430,6 +450,413 @@ class UserResource(AdminResource):
             Boolean("Admin", attribute="is_admin"),
             DateTime("Created At", attribute="created_at").sortable(),
         ]
+"""
+
+_GUEST_MIDDLEWARE = """\
+from hunt.http.middleware import Middleware, Next
+from hunt.http.request import Request
+from hunt.http.response import Response, RedirectResponse
+
+
+class RedirectIfAuthenticated(Middleware):
+    \"\"\"Redirect already-authenticated users away from guest-only pages.\"\"\"
+
+    redirect_to: str = "/"
+
+    async def handle(self, request: Request, next: Next) -> Response:
+        from hunt.auth.manager import Auth
+
+        if Auth.check():
+            return RedirectResponse(self.redirect_to)
+        return await next(request)
+"""
+
+_AUTH_LOGIN_CONTROLLER = """\
+from hunt.http.controller import Controller
+from hunt.http.request import Request
+from hunt.http.response import Response, RedirectResponse
+from hunt.auth.manager import Auth
+from hunt.validation.validator import Validator
+
+
+class LoginController(Controller):
+    def show(self, request: Request) -> Response:
+        status = "Your password has been reset." if request.query("reset") else None
+        return self.view("auth.login", {"errors": {}, "old": {}, "status": status})
+
+    def store(self, request: Request) -> Response:
+        data = {
+            "email": request.input("email", ""),
+            "password": request.input("password", ""),
+        }
+        validator = Validator.make(data, {"email": "required|email", "password": "required"})
+        if validator.fails():
+            return self.view("auth.login", {
+                "errors": validator.errors()._errors,
+                "old": data,
+                "status": None,
+            })
+
+        if not Auth.attempt({"email": data["email"], "password": data["password"]}):
+            return self.view("auth.login", {
+                "errors": {"email": ["These credentials do not match our records."]},
+                "old": data,
+                "status": None,
+            })
+
+        return RedirectResponse("/")
+
+    def destroy(self, request: Request) -> Response:
+        Auth.logout()
+        return RedirectResponse("/login")
+"""
+
+_AUTH_REGISTER_CONTROLLER = """\
+from hunt.http.controller import Controller
+from hunt.http.request import Request
+from hunt.http.response import Response, RedirectResponse
+from hunt.auth.manager import Auth, hash_password
+from hunt.validation.validator import Validator
+from app.models.user import User
+
+
+class RegisterController(Controller):
+    def show(self, request: Request) -> Response:
+        return self.view("auth.register", {"errors": {}, "old": {}})
+
+    def store(self, request: Request) -> Response:
+        data = {
+            "name": request.input("name", ""),
+            "email": request.input("email", ""),
+            "password": request.input("password", ""),
+            "password_confirmation": request.input("password_confirmation", ""),
+        }
+        validator = Validator.make(data, {
+            "name": "required|string|max:255",
+            "email": "required|email|unique:users,email",
+            "password": "required|min:8|confirmed",
+        })
+        if validator.fails():
+            return self.view("auth.register", {
+                "errors": validator.errors()._errors,
+                "old": {k: v for k, v in data.items() if k != "password"},
+            })
+
+        user = User.create({
+            "name": data["name"],
+            "email": data["email"],
+            "password": hash_password(data["password"]),
+        })
+        Auth.login(user)
+        return RedirectResponse("/")
+"""
+
+_AUTH_PASSWORD_CONTROLLER = """\
+import secrets
+import time
+
+from sqlalchemy import text
+
+from hunt.database.connection import connection
+from hunt.http.controller import Controller
+from hunt.http.request import Request
+from hunt.http.response import Response, RedirectResponse
+from hunt.auth.manager import hash_password
+from hunt.validation.validator import Validator
+from app.models.user import User
+
+_TOKEN_TTL = 3600  # 60 minutes
+
+
+class ForgotPasswordController(Controller):
+    def show(self, request: Request) -> Response:
+        return self.view("auth.forgot_password", {"errors": {}, "status": None})
+
+    def store(self, request: Request) -> Response:
+        data = {"email": request.input("email", "")}
+        validator = Validator.make(data, {"email": "required|email"})
+        if validator.fails():
+            return self.view("auth.forgot_password", {
+                "errors": validator.errors()._errors,
+                "status": None,
+            })
+
+        user = User.where("email", data["email"]).first()
+        if user:
+            token = secrets.token_urlsafe(32)
+            engine = connection()
+            with engine.connect() as conn:
+                conn.execute(
+                    text("DELETE FROM password_reset_tokens WHERE email = :e"),
+                    {"e": data["email"]},
+                )
+                conn.execute(
+                    text("INSERT INTO password_reset_tokens (email, token, created_at) VALUES (:e, :t, :c)"),
+                    {"e": data["email"], "t": token, "c": int(time.time())},
+                )
+                conn.commit()
+            # TODO: email the reset link — /reset-password/{token}?email={email}
+
+        return self.view("auth.forgot_password", {
+            "errors": {},
+            "status": "If that email address is registered you will receive a reset link shortly.",
+        })
+
+
+class ResetPasswordController(Controller):
+    def show(self, request: Request, token: str) -> Response:
+        return self.view("auth.reset_password", {
+            "token": token,
+            "email": request.query("email", ""),
+            "errors": {},
+        })
+
+    def store(self, request: Request) -> Response:
+        data = {
+            "email": request.input("email", ""),
+            "token": request.input("token", ""),
+            "password": request.input("password", ""),
+            "password_confirmation": request.input("password_confirmation", ""),
+        }
+        validator = Validator.make(data, {
+            "email": "required|email",
+            "token": "required",
+            "password": "required|min:8|confirmed",
+        })
+        if validator.fails():
+            return self.view("auth.reset_password", {
+                "token": data["token"],
+                "email": data["email"],
+                "errors": validator.errors()._errors,
+            })
+
+        engine = connection()
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT email, token, created_at FROM password_reset_tokens WHERE email = :e AND token = :t"),
+                {"e": data["email"], "t": data["token"]},
+            ).fetchone()
+
+        invalid_ctx = {"token": data["token"], "email": data["email"],
+                       "errors": {"email": ["This password reset link is invalid or has expired."]}}
+
+        if not row:
+            return self.view("auth.reset_password", invalid_ctx)
+        if (int(time.time()) - (row[2] or 0)) > _TOKEN_TTL:
+            return self.view("auth.reset_password", invalid_ctx)
+
+        user = User.where("email", data["email"]).first()
+        if user is None:
+            return self.view("auth.reset_password", invalid_ctx)
+
+        user._attributes["password"] = hash_password(data["password"])
+        user.save()
+
+        with engine.connect() as conn:
+            conn.execute(
+                text("DELETE FROM password_reset_tokens WHERE email = :e"),
+                {"e": data["email"]},
+            )
+            conn.commit()
+
+        return RedirectResponse("/login?reset=1")
+"""
+
+_ROUTES_AUTH = """\
+from hunt.http.router import Router
+from app.controllers.auth.login_controller import LoginController
+from app.controllers.auth.register_controller import RegisterController
+from app.controllers.auth.password_controller import ForgotPasswordController, ResetPasswordController
+from app.middleware.guest import RedirectIfAuthenticated
+
+
+def register(router: Router) -> None:
+    login = LoginController()
+    reg = RegisterController()
+    forgot = ForgotPasswordController()
+    reset = ResetPasswordController()
+
+    with router.group(middleware=[RedirectIfAuthenticated]):
+        router.get("/login", login.show).named("login")
+        router.post("/login", login.store)
+        router.get("/register", reg.show).named("register")
+        router.post("/register", reg.store)
+        router.get("/forgot-password", forgot.show).named("password.request")
+        router.post("/forgot-password", forgot.store).named("password.email")
+
+    router.post("/logout", login.destroy).named("logout")
+    router.get("/reset-password/{token}", reset.show).named("password.reset")
+    router.post("/reset-password", reset.store).named("password.update")
+"""
+
+_VIEW_AUTH_LAYOUT = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Auth{% endblock %}</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f0f0f; color: #e5e5e5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .auth-wrap { width: 100%; max-width: 420px; padding: 1.5rem; }
+        .auth-brand { text-align: center; margin-bottom: 2rem; font-size: 1.4rem; font-weight: 700; color: #6366f1; letter-spacing: -.5px; text-decoration: none; display: block; }
+        .auth-card { background: #161622; border: 1px solid #2a2a3e; border-radius: 12px; padding: 2rem; }
+        .auth-card h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 1.5rem; }
+        .field { margin-bottom: 1rem; }
+        .field label { display: block; font-size: .8rem; font-weight: 500; color: #aaa; margin-bottom: .4rem; letter-spacing: .02em; text-transform: uppercase; }
+        .field input { width: 100%; padding: .6rem .85rem; background: #0f0f0f; border: 1px solid #2e2e2e; border-radius: 6px; color: #e5e5e5; font-size: .95rem; transition: border-color .15s; }
+        .field input:focus { outline: none; border-color: #6366f1; }
+        .field-error { display: block; font-size: .8rem; color: #f87171; margin-top: .3rem; }
+        .alert-error { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); border-radius: 6px; padding: .75rem 1rem; font-size: .875rem; color: #f87171; margin-bottom: 1.25rem; }
+        .alert-success { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); border-radius: 6px; padding: .75rem 1rem; font-size: .875rem; color: #4ade80; margin-bottom: 1.25rem; }
+        .field-row { display: flex; justify-content: flex-end; margin-bottom: .75rem; }
+        .field-row a { font-size: .8rem; color: #6366f1; text-decoration: none; }
+        .field-row a:hover { text-decoration: underline; }
+        .btn-submit { width: 100%; padding: .65rem; background: #6366f1; color: #fff; border: none; border-radius: 6px; font-size: .95rem; font-weight: 500; cursor: pointer; margin-top: .25rem; transition: background .15s; }
+        .btn-submit:hover { background: #4f46e5; }
+        .auth-footer { text-align: center; margin-top: 1.25rem; font-size: .875rem; color: #666; }
+        .auth-footer a { color: #6366f1; text-decoration: none; }
+        .auth-footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+<div class="auth-wrap">
+    <a href="/" class="auth-brand">hunt</a>
+    <div class="auth-card">
+        {% block content %}{% endblock %}
+    </div>
+</div>
+</body>
+</html>
+"""
+
+_VIEW_AUTH_LOGIN = """\
+@extends('auth.layout')
+
+@section('content')
+<h1>Sign in</h1>
+
+{% if status %}
+<div class="alert-success">{{ status }}</div>
+{% endif %}
+
+{% if errors.get('email') %}
+<div class="alert-error">{{ errors['email'][0] }}</div>
+{% endif %}
+
+<form method="post" action="/login">
+    <input type="hidden" name="_token" value="{{ csrf_token }}">
+    <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" value="{{ old.get('email', '') }}" required autofocus autocomplete="email">
+        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
+    </div>
+    <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+        {% if errors.get('password') %}<span class="field-error">{{ errors['password'][0] }}</span>{% endif %}
+    </div>
+    <div class="field-row">
+        <a href="/forgot-password">Forgot your password?</a>
+    </div>
+    <button type="submit" class="btn-submit">Sign in</button>
+</form>
+
+<p class="auth-footer">No account? <a href="/register">Create one</a></p>
+@endsection
+"""
+
+_VIEW_AUTH_REGISTER = """\
+@extends('auth.layout')
+
+@section('content')
+<h1>Create account</h1>
+
+<form method="post" action="/register">
+    <input type="hidden" name="_token" value="{{ csrf_token }}">
+    <div class="field">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" value="{{ old.get('name', '') }}" required autofocus autocomplete="name">
+        {% if errors.get('name') %}<span class="field-error">{{ errors['name'][0] }}</span>{% endif %}
+    </div>
+    <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" value="{{ old.get('email', '') }}" required autocomplete="email">
+        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
+    </div>
+    <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="new-password">
+        {% if errors.get('password') %}<span class="field-error">{{ errors['password'][0] }}</span>{% endif %}
+    </div>
+    <div class="field">
+        <label for="password_confirmation">Confirm password</label>
+        <input type="password" id="password_confirmation" name="password_confirmation" required autocomplete="new-password">
+    </div>
+    <button type="submit" class="btn-submit">Create account</button>
+</form>
+
+<p class="auth-footer">Already have an account? <a href="/login">Sign in</a></p>
+@endsection
+"""
+
+_VIEW_AUTH_FORGOT_PASSWORD = """\
+@extends('auth.layout')
+
+@section('content')
+<h1>Forgot password</h1>
+
+{% if status %}
+<div class="alert-success">{{ status }}</div>
+{% else %}
+
+<form method="post" action="/forgot-password">
+    <input type="hidden" name="_token" value="{{ csrf_token }}">
+    <div class="field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" value="{{ old.get('email', '') }}" required autofocus autocomplete="email">
+        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
+    </div>
+    <button type="submit" class="btn-submit">Send reset link</button>
+</form>
+
+{% endif %}
+
+<p class="auth-footer"><a href="/login">Back to sign in</a></p>
+@endsection
+"""
+
+_VIEW_AUTH_RESET_PASSWORD = """\
+@extends('auth.layout')
+
+@section('content')
+<h1>Reset password</h1>
+
+{% if errors.get('email') %}
+<div class="alert-error">{{ errors['email'][0] }}</div>
+{% endif %}
+
+<form method="post" action="/reset-password">
+    <input type="hidden" name="_token" value="{{ csrf_token }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <div class="field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" value="{{ email }}" required autocomplete="email">
+        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
+    </div>
+    <div class="field">
+        <label for="password">New password</label>
+        <input type="password" id="password" name="password" required autofocus autocomplete="new-password">
+        {% if errors.get('password') %}<span class="field-error">{{ errors['password'][0] }}</span>{% endif %}
+    </div>
+    <div class="field">
+        <label for="password_confirmation">Confirm new password</label>
+        <input type="password" id="password_confirmation" name="password_confirmation" required autocomplete="new-password">
+    </div>
+    <button type="submit" class="btn-submit">Reset password</button>
+</form>
+@endsection
 """
 
 _ROUTES_ADMIN = """\
