@@ -43,7 +43,7 @@ class _Admin:
         self._dashboard_cards: list = []
         self._tools: list[dict] = []
         self._gate: Callable | None = None
-        self.prefix: str = "/nova"
+        self.prefix: str = "/hunt-admin"
         self.brand_name: str = "Hunt Admin"
 
     # ------------------------------------------------------------------

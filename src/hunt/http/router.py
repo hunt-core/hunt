@@ -84,6 +84,9 @@ class Router:
     # ------------------------------------------------------------------
 
     def dispatch(self, method: str, path: str) -> tuple[Route, dict[str, str]]:
+        # Normalize trailing slash — /foo/ and /foo are the same route.
+        if path != "/" and path.endswith("/"):
+            path = path.rstrip("/")
         for route in self._routes:
             matched, params = route.matches(method, path)
             if matched:
