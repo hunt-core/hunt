@@ -1,195 +1,333 @@
 {% extends "admin/layout.html" %}
 
 {% block content %}
-<div class="breadcrumb">
-    <a href="{{ prefix }}/">Dashboard</a>
-    <span>›</span>
-    <span>{{ resource.get_label_plural() }}</span>
+{# Breadcrumb #}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li>
+            <a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300">
+                <svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/>
+                </svg>
+                <span class="sr-only">Dashboard</span>
+            </a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-400">{{ resource.get_label_plural() }}</span>
+        </li>
+    </ol>
+</nav>
+
+{# Page heading #}
+<div class="sm:flex sm:items-center mb-6">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">{{ resource.get_label_plural() }}</h1>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+        <a href="{{ prefix }}/resources/{{ resource_key }}/create"
+           class="block rounded-md bg-indigo-500 px-3 py-2 text-center text-sm font-semibold text-white shadow-xs hover:bg-indigo-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+            Create {{ resource.get_label() }}
+        </a>
+    </div>
 </div>
 
-<div class="page-header">
-    <h1 class="page-title">{{ resource.get_label_plural() }}</h1>
-    <a href="{{ prefix }}/resources/{{ resource_key }}/create" class="btn btn-primary">
-        <svg style="width:14px;height:14px" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
-        Create {{ resource.get_label() }}
-    </a>
-</div>
-
+{# Metrics / stats cards #}
 {% if metrics %}
-<div class="metrics-row">
-{% for metric in metrics %}
-    <div class="metric-card">
-        <div class="metric-name">{{ metric.name }}</div>
-        <div class="metric-value">{{ metric.get('formatted', metric.get('value', '')) }}</div>
+<dl class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+    {% for metric in metrics %}
+    <div class="overflow-hidden rounded-lg bg-gray-800/75 px-4 py-5 inset-ring inset-ring-white/10 sm:p-6">
+        <dt class="truncate text-sm font-medium text-gray-400">{{ metric.name }}</dt>
+        <dd class="mt-1 text-3xl font-semibold tracking-tight text-white">
+            {{ metric.get('formatted', metric.get('value', '')) }}
+        </dd>
         {% if metric.get('change') is not none %}
-        <div class="metric-change {{ metric.get('change_type', '') }}">
-            {% if metric.get('change', 0) >= 0 %}▲{% else %}▼{% endif %}
+        <dd class="mt-2 flex items-center text-sm {% if metric.get('change', 0) >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+            {% if metric.get('change', 0) >= 0 %}
+            <svg class="size-4 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clip-rule="evenodd"/></svg>
+            {% else %}
+            <svg class="size-4 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clip-rule="evenodd"/></svg>
+            {% endif %}
             {{ metric.get('change', 0) | abs }}%
-        </div>
+        </dd>
         {% endif %}
     </div>
-{% endfor %}
-</div>
+    {% endfor %}
+</dl>
 {% endif %}
 
-<div class="card">
-    <!-- Toolbar -->
-    <div class="card-header">
-        <form method="get" action="{{ prefix }}/resources/{{ resource_key }}" class="toolbar" style="margin:0;width:100%">
-            <div class="toolbar-search">
-                <input type="text" name="search" value="{{ search }}" placeholder="Search {{ resource.get_label_plural() | lower }}…">
-                <button type="submit" class="btn btn-secondary btn-sm">Search</button>
-                {% if search %}
-                <a href="{{ prefix }}/resources/{{ resource_key }}" class="btn btn-secondary btn-sm">Clear</a>
-                {% endif %}
-            </div>
-            {% for f in filters %}
-            <select name="filter_{{ f.slug() }}" class="filter-select" onchange="this.form.submit()">
+{# Toolbar: search + filters + actions #}
+<div class="sm:flex sm:items-center gap-3 mb-4">
+    <form method="get" action="{{ prefix }}/resources/{{ resource_key }}" class="flex flex-1 flex-wrap items-center gap-3">
+        <div class="flex flex-1 min-w-48 items-center rounded-md bg-white/5 inset-ring inset-ring-white/10 px-3 gap-x-2 focus-within:inset-ring-white/20">
+            <svg class="size-4 shrink-0 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>
+            </svg>
+            <input type="text" name="search" value="{{ search }}"
+                   placeholder="Search {{ resource.get_label_plural() | lower }}…"
+                   class="block w-full bg-transparent py-1.5 text-sm text-white placeholder:text-gray-500 focus:outline-none">
+        </div>
+        {% for f in filters %}
+        <div class="grid grid-cols-1">
+            <select name="filter_{{ f.slug() }}" onchange="this.form.submit()"
+                    class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white/5 py-1.5 pr-8 pl-3 text-sm text-white inset-ring inset-ring-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 dark:*:bg-gray-800">
                 <option value="">{{ f.name }}</option>
                 {% for opt in f.options() %}
                 <option value="{{ opt.value }}" {% if request.query('filter_' + f.slug(), '') == opt.value %}selected{% endif %}>{{ opt.label }}</option>
                 {% endfor %}
             </select>
-            {% endfor %}
-            {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
-            {% if dir  %}<input type="hidden" name="dir"  value="{{ dir  }}">{% endif %}
-        </form>
-
-        {% if actions %}
-        <button type="button" class="btn btn-secondary btn-sm" onclick="openActionsModal()">
-            Actions <svg style="width:12px;height:12px" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-        </button>
-        {% endif %}
-    </div>
-
-    <!-- Table -->
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    {% if actions %}
-                    <th style="width:36px"><input type="checkbox" id="select-all" title="Select all"></th>
-                    {% endif %}
-                    {% for field in fields %}
-                    <th>
-                        {% if field._sortable %}
-                        {% set next_dir = 'asc' if (sort == field.attribute and dir == 'desc') else 'desc' %}
-                        <a href="{{ prefix }}/resources/{{ resource_key }}?sort={{ field.attribute }}&dir={{ next_dir }}{% if search %}&search={{ search }}{% endif %}"
-                           class="sort-link {% if sort == field.attribute %}active{% endif %}">
-                            {{ field.label }}
-                            {% if sort == field.attribute %}
-                                {% if dir == 'asc' %}↑{% else %}↓{% endif %}
-                            {% endif %}
-                        </a>
-                        {% else %}
-                        {{ field.label }}
-                        {% endif %}
-                    </th>
-                    {% endfor %}
-                    <th class="col-actions">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items %}
-                <tr>
-                    {% if actions %}
-                    <td><input type="checkbox" class="row-select" value="{{ item._attributes.get('id') }}"></td>
-                    {% endif %}
-                    {% for field in fields %}
-                    <td>
-                        {% if field.field_type == 'boolean' %}
-                            {% if field.value_for(item) %}
-                            <span class="badge badge-green">Yes</span>
-                            {% else %}
-                            <span class="badge badge-gray">No</span>
-                            {% endif %}
-                        {% elif field.field_type == 'badge' %}
-                            {% set val = field.value_for(item) %}
-                            {% set colour = field.get_colour(val) %}
-                            <span class="badge badge-{{ colour }}">{{ val }}</span>
-                        {% elif field.field_type == 'currency' %}
-                            {{ field.display_value(item) }}
-                        {% else %}
-                            {{ field.display_value(item) }}
-                        {% endif %}
-                    </td>
-                    {% endfor %}
-                    <td class="col-actions">
-                        <a href="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}"
-                           class="btn btn-secondary btn-sm btn-icon" title="View">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
-                        </a>
-                        <a href="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/edit"
-                           class="btn btn-secondary btn-sm btn-icon" title="Edit">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
-                        </a>
-                        <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/delete"
-                              style="display:inline" onsubmit="return confirm('Delete this record?')">
-                            <input type="hidden" name="_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Delete">
-                                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="{{ fields | length + (2 if actions else 1) }}">
-                        <div class="empty-state">
-                            <p>No {{ resource.get_label_plural() | lower }} found.</p>
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Pagination -->
-    {% if pagination.last_page > 1 %}
-    <div class="pagination">
-        {% set p = pagination %}
-        <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page - 1, 1] | max }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
-           class="{% if p.current_page <= 1 %}disabled{% endif %}">‹</a>
-
-        {% for page_num in range(1, p.last_page + 1) %}
-            {% if page_num == 1 or page_num == p.last_page or (page_num >= p.current_page - 2 and page_num <= p.current_page + 2) %}
-            <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ page_num }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
-               class="{% if page_num == p.current_page %}active{% endif %}">{{ page_num }}</a>
-            {% elif page_num == p.current_page - 3 or page_num == p.current_page + 3 %}
-            <span>…</span>
-            {% endif %}
+            <svg class="pointer-events-none col-start-1 row-start-1 mr-2 size-4 self-center justify-self-end text-gray-400" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>
+            </svg>
+        </div>
         {% endfor %}
-
-        <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page + 1, p.last_page] | min }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
-           class="{% if p.current_page >= p.last_page %}disabled{% endif %}">›</a>
-        <span class="pagination-info">{{ p.total }} total</span>
-    </div>
+        {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+        {% if dir  %}<input type="hidden" name="dir"  value="{{ dir  }}">{% endif %}
+        <button type="submit" class="rounded-md bg-white/10 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/20">Search</button>
+        {% if search %}
+        <a href="{{ prefix }}/resources/{{ resource_key }}" class="rounded-md bg-white/5 px-3 py-1.5 text-sm font-semibold text-gray-300 inset-ring inset-ring-white/10 hover:bg-white/10">Clear</a>
+        {% endif %}
+    </form>
+    {% if actions %}
+    <button type="button" onclick="openActionsModal()"
+            class="inline-flex items-center gap-x-1.5 rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">
+        Actions
+        <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/>
+        </svg>
+    </button>
     {% endif %}
 </div>
 
-<!-- Actions Modal -->
-{% if actions %}
-<div class="modal-overlay" id="actions-modal">
-    <div class="modal">
-        <div class="modal-title">Run Action</div>
-        {% for action in actions %}
-        <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/actions/{{ action.slug() }}"
-              id="action-form-{{ loop.index }}"
-              {% if action.destructive %}onsubmit="return confirm('{{ action.confirmation_text or 'Are you sure?' }}')"{% endif %}>
-            <input type="hidden" name="_token" value="{{ csrf_token }}">
-            <input type="hidden" name="ids" id="action-ids-{{ loop.index }}">
-            <div style="margin-bottom:.5rem;display:flex;align-items:center;justify-content:space-between;">
-                <span style="font-size:.875rem">{{ action.name }}</span>
-                <button type="submit" class="btn {% if action.destructive %}btn-danger{% else %}btn-primary{% endif %} btn-sm"
-                        onclick="document.getElementById('action-ids-{{ loop.index }}').value = getSelectedIds()">
-                    Run
-                </button>
+{# Table #}
+<div class="flow-root">
+    <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+            <div class="group/table relative">
+                {% if actions %}
+                <div class="absolute top-0 left-14 z-10 hidden h-12 items-center space-x-3 bg-gray-900 group-has-checked/table:flex sm:left-12">
+                    {% for action in actions %}
+                    <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/actions/{{ action.slug() }}"
+                          id="action-form-{{ loop.index }}"
+                          {% if action.destructive %}onsubmit="return confirm('{{ action.confirmation_text or 'Are you sure?' }}')"{% endif %}>
+                        <input type="hidden" name="_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="ids" id="bulk-ids-{{ loop.index }}">
+                        <button type="submit"
+                                onclick="document.getElementById('bulk-ids-{{ loop.index }}').value = getSelectedIds()"
+                                class="inline-flex items-center rounded-sm px-2 py-1 text-sm font-semibold shadow-xs inset-ring {% if action.destructive %}bg-red-900/30 text-red-400 inset-ring-red-500/30 hover:bg-red-900/50{% else %}bg-white/10 text-white inset-ring-white/10 hover:bg-white/15{% endif %}">
+                            {{ action.name }}
+                        </button>
+                    </form>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <table class="relative min-w-full table-fixed divide-y divide-white/15">
+                    <thead>
+                        <tr>
+                            {% if actions %}
+                            <th scope="col" class="relative px-7 sm:w-12 sm:px-6">
+                                <div class="group absolute top-1/2 left-4 -mt-2 grid size-4 grid-cols-1">
+                                    <input type="checkbox" id="select-all"
+                                           class="col-start-1 row-start-1 appearance-none rounded-sm border border-white/20 bg-gray-800/50 checked:border-indigo-500 checked:bg-indigo-500 indeterminate:border-indigo-500 indeterminate:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 forced-colors:appearance-auto">
+                                    <svg class="pointer-events-none col-start-1 row-start-1 size-3.5 self-center justify-self-center stroke-white" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                                        <path class="opacity-0 group-has-checked:opacity-100" d="M3 8L6 11L11 3.5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <path class="opacity-0 group-has-indeterminate:opacity-100" d="M3 7H11" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </div>
+                            </th>
+                            {% endif %}
+                            {% for field in fields %}
+                            <th scope="col" class="{% if loop.first and not actions %}py-3.5 pl-4 pr-3 sm:pl-0{% else %}px-3 py-3.5{% endif %} text-left text-sm font-semibold text-white">
+                                {% if field._sortable %}
+                                {% set next_dir = 'asc' if (sort == field.attribute and dir == 'desc') else 'desc' %}
+                                <a href="{{ prefix }}/resources/{{ resource_key }}?sort={{ field.attribute }}&dir={{ next_dir }}{% if search %}&search={{ search }}{% endif %}"
+                                   class="group inline-flex items-center gap-x-1 {% if sort == field.attribute %}text-indigo-400{% else %}text-white hover:text-gray-300{% endif %}">
+                                    {{ field.label }}
+                                    {% if sort == field.attribute %}
+                                    <span class="ml-1 text-gray-400">{% if dir == 'asc' %}↑{% else %}↓{% endif %}</span>
+                                    {% endif %}
+                                </a>
+                                {% else %}
+                                {{ field.label }}
+                                {% endif %}
+                            </th>
+                            {% endfor %}
+                            <th scope="col" class="py-3.5 pr-4 pl-3 sm:pr-0">
+                                <span class="sr-only">Actions</span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/10 bg-gray-900">
+                        {% for item in items %}
+                        <tr class="group has-checked:bg-gray-800/50">
+                            {% if actions %}
+                            <td class="relative px-7 sm:w-12 sm:px-6">
+                                <div class="absolute inset-y-0 left-0 hidden w-0.5 bg-indigo-500 group-has-checked:block"></div>
+                                <div class="absolute top-1/2 left-4 -mt-2 grid size-4 grid-cols-1">
+                                    <input type="checkbox" class="row-select col-start-1 row-start-1 appearance-none rounded-sm border border-white/20 bg-gray-800/50 checked:border-indigo-500 checked:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 forced-colors:appearance-auto"
+                                           value="{{ item._attributes.get('id') }}">
+                                    <svg class="pointer-events-none col-start-1 row-start-1 size-3.5 self-center justify-self-center stroke-white" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                                        <path class="opacity-0 group-has-checked:opacity-100" d="M3 8L6 11L11 3.5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <path class="opacity-0 group-has-indeterminate:opacity-100" d="M3 7H11" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </div>
+                            </td>
+                            {% endif %}
+                            {% for field in fields %}
+                            <td class="{% if loop.first and not actions %}py-4 pl-4 pr-3 sm:pl-0 font-medium text-white group-has-checked:text-indigo-400{% else %}px-3 py-4 text-sm text-gray-400{% endif %} whitespace-nowrap text-sm">
+                                {% if field.field_type == 'boolean' %}
+                                    {% if field.value_for(item) %}
+                                    <span class="inline-flex items-center rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400 ring-1 ring-inset ring-green-500/20">Yes</span>
+                                    {% else %}
+                                    <span class="inline-flex items-center rounded-md bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">No</span>
+                                    {% endif %}
+                                {% elif field.field_type == 'badge' %}
+                                    {% set val = field.value_for(item) %}
+                                    {% set colour = field.get_colour(val) %}
+                                    {% if colour == 'green' %}
+                                    <span class="inline-flex items-center rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400 ring-1 ring-inset ring-green-500/20">{{ val }}</span>
+                                    {% elif colour == 'red' %}
+                                    <span class="inline-flex items-center rounded-md bg-red-400/10 px-2 py-1 text-xs font-medium text-red-400 ring-1 ring-inset ring-red-400/20">{{ val }}</span>
+                                    {% elif colour == 'yellow' %}
+                                    <span class="inline-flex items-center rounded-md bg-yellow-400/10 px-2 py-1 text-xs font-medium text-yellow-400 ring-1 ring-inset ring-yellow-400/20">{{ val }}</span>
+                                    {% elif colour == 'blue' %}
+                                    <span class="inline-flex items-center rounded-md bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-400/20">{{ val }}</span>
+                                    {% else %}
+                                    <span class="inline-flex items-center rounded-md bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">{{ val }}</span>
+                                    {% endif %}
+                                {% else %}
+                                    {{ field.display_value(item) }}
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                            <td class="py-4 pr-4 pl-3 text-right text-sm font-medium whitespace-nowrap sm:pr-0">
+                                <div class="flex items-center justify-end gap-x-2">
+                                    <a href="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}"
+                                       class="text-gray-400 hover:text-white" title="View">
+                                        <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+                                        <span class="sr-only">View</span>
+                                    </a>
+                                    <a href="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/edit"
+                                       class="text-gray-400 hover:text-white" title="Edit">
+                                        <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+                                        <span class="sr-only">Edit</span>
+                                    </a>
+                                    <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/delete"
+                                          style="display:inline" onsubmit="return confirm('Delete this record?')">
+                                        <input type="hidden" name="_token" value="{{ csrf_token }}">
+                                        <button type="submit" class="text-gray-400 hover:text-red-400" title="Delete">
+                                            <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                                            <span class="sr-only">Delete</span>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="{{ fields | length + (2 if actions else 1) }}" class="py-16 text-center">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+                                     class="mx-auto size-12 text-gray-500">
+                                    <path d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+                                          stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                <h3 class="mt-2 text-sm font-semibold text-white">No {{ resource.get_label_plural() | lower }}</h3>
+                                <p class="mt-1 text-sm text-gray-400">Get started by creating a new {{ resource.get_label() | lower }}.</p>
+                                <div class="mt-6">
+                                    <a href="{{ prefix }}/resources/{{ resource_key }}/create"
+                                       class="inline-flex items-center rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+                                        <svg class="mr-1.5 -ml-0.5 size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                                        Create {{ resource.get_label() }}
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-        </form>
-        {% endfor %}
-        <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" onclick="closeActionsModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+{# Pagination #}
+{% if pagination.last_page > 1 %}
+{% set p = pagination %}
+<div class="flex items-center justify-between border-t border-white/10 py-3 mt-4">
+    <div class="hidden sm:block">
+        <p class="text-sm text-gray-400">
+            Showing
+            <span class="font-medium text-white">{{ (p.current_page - 1) * p.per_page + 1 }}</span>
+            to
+            <span class="font-medium text-white">{{ [p.current_page * p.per_page, p.total] | min }}</span>
+            of
+            <span class="font-medium text-white">{{ p.total }}</span>
+            results
+        </p>
+    </div>
+    <div class="flex flex-1 justify-between sm:justify-end">
+        <nav aria-label="Pagination" class="isolate inline-flex -space-x-px rounded-md shadow-xs dark:shadow-none">
+            <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page - 1, 1] | max }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
+               class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 inset-ring inset-ring-gray-700 hover:bg-white/5 focus:z-20 focus:outline-offset-0 {% if p.current_page <= 1 %}pointer-events-none opacity-40{% endif %}">
+                <span class="sr-only">Previous</span>
+                <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd"/></svg>
+            </a>
+            {% for page_num in range(1, p.last_page + 1) %}
+                {% if page_num == 1 or page_num == p.last_page or (page_num >= p.current_page - 2 and page_num <= p.current_page + 2) %}
+                <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ page_num }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
+                   class="relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 {% if page_num == p.current_page %}z-10 bg-indigo-500 text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500{% else %}text-gray-200 inset-ring inset-ring-gray-700 hover:bg-white/5 focus:outline-offset-0{% endif %}">
+                    {{ page_num }}
+                </a>
+                {% elif page_num == p.current_page - 3 or page_num == p.current_page + 3 %}
+                <span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-400 inset-ring inset-ring-gray-700">…</span>
+                {% endif %}
+            {% endfor %}
+            <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page + 1, p.last_page] | min }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
+               class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 inset-ring inset-ring-gray-700 hover:bg-white/5 focus:z-20 focus:outline-offset-0 {% if p.current_page >= p.last_page %}pointer-events-none opacity-40{% endif %}">
+                <span class="sr-only">Next</span>
+                <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+            </a>
+        </nav>
+    </div>
+</div>
+{% endif %}
+
+{# Actions modal #}
+{% if actions %}
+<div class="relative z-50 hidden" id="actions-modal" role="dialog" aria-modal="true">
+    <div class="fixed inset-0 bg-gray-900/75 transition-opacity" id="actions-backdrop" onclick="closeActionsModal()"></div>
+    <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div class="relative transform overflow-hidden rounded-lg bg-gray-800 px-4 pt-5 pb-4 text-left shadow-xl transition-all outline outline-1 -outline-offset-1 outline-white/10 sm:my-8 sm:w-full sm:max-w-sm sm:p-6">
+                <h3 class="text-base font-semibold text-white mb-4">Run Action</h3>
+                <div class="space-y-3">
+                    {% for action in actions %}
+                    <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/actions/{{ action.slug() }}"
+                          id="modal-form-{{ loop.index }}"
+                          {% if action.destructive %}onsubmit="return confirm('{{ action.confirmation_text or 'Are you sure?' }}')"{% endif %}>
+                        <input type="hidden" name="_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="ids" id="modal-ids-{{ loop.index }}">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-300">{{ action.name }}</span>
+                            <button type="submit"
+                                    onclick="document.getElementById('modal-ids-{{ loop.index }}').value = getSelectedIds()"
+                                    class="rounded-md px-3 py-1.5 text-sm font-semibold shadow-xs {% if action.destructive %}bg-red-600 text-white hover:bg-red-500{% else %}bg-indigo-500 text-white hover:bg-indigo-400{% endif %}">
+                                Run
+                            </button>
+                        </div>
+                    </form>
+                    {% endfor %}
+                </div>
+                <div class="mt-5 sm:mt-6">
+                    <button type="button" onclick="closeActionsModal()"
+                            class="inline-flex w-full justify-center rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">
+                        Cancel
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -204,10 +342,10 @@ function getSelectedIds() {
 function openActionsModal() {
     var ids = getSelectedIds();
     if (!ids) { alert('Please select at least one record.'); return; }
-    document.getElementById('actions-modal').classList.add('open');
+    document.getElementById('actions-modal').classList.remove('hidden');
 }
 function closeActionsModal() {
-    document.getElementById('actions-modal').classList.remove('open');
+    document.getElementById('actions-modal').classList.add('hidden');
 }
 var selectAll = document.getElementById('select-all');
 if (selectAll) {

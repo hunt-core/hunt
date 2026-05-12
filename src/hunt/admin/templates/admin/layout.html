@@ -1,267 +1,252 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="h-full dark" lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block page_title %}{{ title | default('Admin') }}{% endblock %} — {{ brand_name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' }</script>
     <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --bg:        #0f172a;
-            --surface:   #1e293b;
-            --surface2:  #293548;
-            --border:    #334155;
-            --accent:    #6366f1;
-            --accent-h:  #4f52d9;
-            --danger:    #ef4444;
-            --success:   #22c55e;
-            --warning:   #f59e0b;
-            --info:      #38bdf8;
-            --text:      #e2e8f0;
-            --muted:     #94a3b8;
-            --sidebar-w: 240px;
+        /* Mobile sidebar slide transition */
+        #mobile-sidebar { display: none; }
+        #mobile-sidebar.open { display: block; }
+        #mobile-sidebar-backdrop { opacity: 0; transition: opacity .3s ease; }
+        #mobile-sidebar.open #mobile-sidebar-backdrop { opacity: 1; }
+        #mobile-sidebar-panel { transform: translateX(-100%); transition: transform .3s ease-in-out; }
+        #mobile-sidebar.open #mobile-sidebar-panel { transform: translateX(0); }
+        /* Profile dropdown */
+        #profile-menu { display: none; }
+        #profile-menu.open { display: block; }
+        /* Global search results */
+        #search-results {
+            position: absolute; top: calc(100% + 8px); left: 0; right: 0;
+            background: #1f2937; border: 1px solid rgba(255,255,255,.1);
+            border-radius: 8px; z-index: 200; max-height: 320px; overflow-y: auto; display: none;
         }
-
-        html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
-
-        /* ── Layout ─────────────────────────────────── */
-        .admin-shell  { display: flex; min-height: 100vh; }
-        .admin-sidebar { width: var(--sidebar-w); background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
-        .admin-main   { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-        .admin-topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; height: 56px; display: flex; align-items: center; gap: 1rem; }
-        .admin-content { padding: 1.5rem; flex: 1; }
-
-        /* ── Sidebar ─────────────────────────────────── */
-        .sidebar-brand { padding: 1rem 1.25rem; font-weight: 700; font-size: 1rem; color: var(--accent); border-bottom: 1px solid var(--border); letter-spacing: -.5px; }
-        .sidebar-nav   { padding: .5rem 0; flex: 1; overflow-y: auto; }
-        .sidebar-section { padding: .375rem 1rem .25rem; font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-top: .5rem; }
-        .sidebar-link  { display: flex; align-items: center; gap: .5rem; padding: .5rem 1.25rem; color: var(--muted); text-decoration: none; transition: background .15s, color .15s; border-radius: 0; }
-        .sidebar-link:hover, .sidebar-link.active { background: var(--surface2); color: var(--text); }
-        .sidebar-link svg { width: 16px; height: 16px; flex-shrink: 0; }
-
-        /* ── Topbar ──────────────────────────────────── */
-        .topbar-search { flex: 1; position: relative; max-width: 380px; }
-        .topbar-search input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: .375rem .75rem .375rem 2rem; color: var(--text); font-size: .875rem; outline: none; }
-        .topbar-search input:focus { border-color: var(--accent); }
-        .topbar-search .search-icon { position: absolute; left: .55rem; top: 50%; transform: translateY(-50%); color: var(--muted); width: 14px; height: 14px; pointer-events: none; }
-        .topbar-search .search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; z-index: 200; max-height: 320px; overflow-y: auto; display: none; }
-        .search-result-item { display: flex; flex-direction: column; padding: .6rem 1rem; border-bottom: 1px solid var(--border); text-decoration: none; color: var(--text); }
+        .search-result-item { display: flex; flex-direction: column; padding: .6rem 1rem; border-bottom: 1px solid rgba(255,255,255,.06); text-decoration: none; color: #f9fafb; }
         .search-result-item:last-child { border-bottom: none; }
-        .search-result-item:hover { background: var(--surface2); }
-        .search-result-item .sr-resource { font-size: .7rem; color: var(--muted); }
-        .topbar-spacer { flex: 1; }
-        .topbar-user { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .875rem; }
-
-        /* ── Flash messages ──────────────────────────── */
-        .flash-bar { padding: .75rem 1.5rem; font-size: .875rem; font-weight: 500; }
-        .flash-success { background: rgba(34,197,94,.15); color: var(--success); border-bottom: 1px solid rgba(34,197,94,.2); }
-        .flash-error   { background: rgba(239,68,68,.15);  color: var(--danger);  border-bottom: 1px solid rgba(239,68,68,.2); }
-
-        /* ── Page header ─────────────────────────────── */
-        .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; gap: 1rem; flex-wrap: wrap; }
-        .page-title  { font-size: 1.25rem; font-weight: 700; }
-        .breadcrumb  { font-size: .8rem; color: var(--muted); display: flex; align-items: center; gap: .4rem; margin-bottom: .375rem; }
-        .breadcrumb a { color: var(--muted); text-decoration: none; } .breadcrumb a:hover { color: var(--text); }
-
-        /* ── Buttons ─────────────────────────────────── */
-        .btn { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem 1rem; border-radius: 6px; font-size: .875rem; font-weight: 500; cursor: pointer; border: none; text-decoration: none; transition: opacity .15s, background .15s; }
-        .btn:disabled { opacity: .5; cursor: not-allowed; }
-        .btn-primary   { background: var(--accent);  color: #fff; } .btn-primary:hover   { background: var(--accent-h); }
-        .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); } .btn-secondary:hover { background: var(--border); }
-        .btn-danger    { background: var(--danger);  color: #fff; } .btn-danger:hover    { opacity: .85; }
-        .btn-sm { padding: .3rem .7rem; font-size: .8rem; }
-        .btn-icon { padding: .3rem; width: 28px; height: 28px; justify-content: center; }
-        .btn-icon svg { width: 14px; height: 14px; flex-shrink: 0; }
-
-        /* ── Cards / Panels ──────────────────────────── */
-        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
-        .card-header { padding: .875rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-        .card-title  { font-weight: 600; font-size: .9375rem; }
-        .card-body   { padding: 1.25rem; }
-
-        /* ── Metrics row ─────────────────────────────── */
-        .metrics-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
-        .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
-        .metric-name  { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .5rem; }
-        .metric-value { font-size: 2rem; font-weight: 700; line-height: 1; }
-        .metric-change { font-size: .75rem; margin-top: .375rem; }
-        .metric-change.increase { color: var(--success); }
-        .metric-change.decrease { color: var(--danger); }
-
-        /* ── Table ───────────────────────────────────── */
-        .table-wrap { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: .875rem; }
-        thead th { padding: .6rem 1rem; text-align: left; font-weight: 600; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); white-space: nowrap; }
-        tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
-        tbody tr:last-child { border-bottom: none; }
-        tbody tr:hover { background: var(--surface2); }
-        td { padding: .7rem 1rem; vertical-align: middle; }
-        .col-actions { text-align: right; white-space: nowrap; }
-
-        /* ── Sort links ──────────────────────────────── */
-        .sort-link { color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; gap: .25rem; }
-        .sort-link:hover { color: var(--text); }
-        .sort-link.active { color: var(--text); }
-
-        /* ── Search / filter bar ─────────────────────── */
-        .toolbar { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
-        .toolbar-search { display: flex; align-items: center; gap: .5rem; }
-        .toolbar-search input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: .375rem .75rem; color: var(--text); font-size: .875rem; outline: none; min-width: 200px; }
-        .toolbar-search input:focus { border-color: var(--accent); }
-        .filter-select { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: .375rem .6rem; color: var(--text); font-size: .875rem; outline: none; cursor: pointer; }
-        .filter-select:focus { border-color: var(--accent); }
-
-        /* ── Pagination ──────────────────────────────── */
-        .pagination { display: flex; align-items: center; gap: .4rem; padding: .875rem 1.25rem; border-top: 1px solid var(--border); }
-        .pagination a, .pagination span { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 .5rem; border-radius: 6px; text-decoration: none; font-size: .875rem; color: var(--muted); border: 1px solid transparent; transition: all .15s; }
-        .pagination a:hover { background: var(--surface2); color: var(--text); }
-        .pagination .active { background: var(--accent); color: #fff; border-color: var(--accent); }
-        .pagination .disabled { opacity: .4; pointer-events: none; }
-        .pagination-info { color: var(--muted); font-size: .8rem; margin-left: auto; }
-
-        /* ── Forms ───────────────────────────────────── */
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-        @media (max-width: 680px) { .form-grid { grid-template-columns: 1fr; } }
-        .form-full  { grid-column: 1 / -1; }
-        .field-group { display: flex; flex-direction: column; gap: .375rem; }
-        .field-label { font-size: .8125rem; font-weight: 600; color: var(--muted); }
-        .field-label .required { color: var(--danger); margin-left: .2rem; }
-        .field-input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: .45rem .75rem; color: var(--text); font-size: .9rem; outline: none; width: 100%; transition: border-color .15s; }
-        .field-input:focus { border-color: var(--accent); }
-        .field-input.error { border-color: var(--danger); }
-        .field-input[readonly] { opacity: .6; cursor: default; }
-        textarea.field-input { resize: vertical; }
-        select.field-input { cursor: pointer; }
-        .field-error { font-size: .75rem; color: var(--danger); }
-        .field-help  { font-size: .75rem; color: var(--muted); }
-        .checkbox-row { display: flex; align-items: center; gap: .5rem; }
-        .checkbox-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
-
-        /* ── Badge / pill ────────────────────────────── */
-        .badge { display: inline-block; padding: .2rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 600; letter-spacing: .04em; }
-        .badge-green  { background: rgba(34,197,94,.15);  color: var(--success); }
-        .badge-red    { background: rgba(239,68,68,.15);  color: var(--danger); }
-        .badge-yellow { background: rgba(245,158,11,.15); color: var(--warning); }
-        .badge-blue   { background: rgba(56,189,248,.15); color: var(--info); }
-        .badge-gray   { background: rgba(148,163,184,.15);color: var(--muted); }
-        .badge-purple { background: rgba(99,102,241,.15); color: var(--accent); }
-
-        /* ── Detail view ─────────────────────────────── */
-        .detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0; }
-        .detail-row  { padding: .875rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: .25rem; }
-        .detail-row:last-child { border-bottom: none; }
-        .detail-label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-        .detail-value { color: var(--text); word-break: break-word; }
-
-        /* ── Actions modal ───────────────────────────── */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 500; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s; }
-        .modal-overlay.open { opacity: 1; pointer-events: auto; }
-        .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 100%; max-width: 440px; padding: 1.5rem; }
-        .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 1rem; }
-        .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.25rem; }
-
-        /* ── Empty state ─────────────────────────────── */
-        .empty-state { padding: 3rem 1.5rem; text-align: center; color: var(--muted); }
-        .empty-state p { margin-top: .5rem; font-size: .875rem; }
+        .search-result-item:hover { background: #374151; }
+        .search-result-item .sr-resource { font-size: .7rem; color: #9ca3af; }
     </style>
 </head>
-<body>
-<div class="admin-shell">
-    <!-- Sidebar -->
-    <aside class="admin-sidebar">
-        <div class="sidebar-brand">{{ brand_name }}</div>
-        <nav class="sidebar-nav">
-            <a href="{{ prefix }}/" class="sidebar-link {% if request.path == prefix + '/' or request.path == prefix %}active{% endif %}">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
-                Dashboard
-            </a>
-            {% if resources %}
-            <div class="sidebar-section">Resources</div>
-            {% for res_cls in resources %}
-            <a href="{{ prefix }}/resources/{{ res_cls.slug() }}"
-               class="sidebar-link {% if prefix + '/resources/' + res_cls.slug() in request.path %}active{% endif %}">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
-                {{ res_cls.get_label_plural() }}
-            </a>
-            {% endfor %}
-            {% endif %}
-            {% if tools %}
-            <div class="sidebar-section">Tools</div>
-            {% for tool in tools %}
-            <a href="{{ prefix }}/tools/{{ tool.label | lower | replace(' ', '-') }}" class="sidebar-link">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
-                {{ tool.label }}
-            </a>
-            {% endfor %}
-            {% endif %}
-        </nav>
-        {% if auth_user %}
-        <div style="padding:.75rem 1.25rem; border-top:1px solid var(--border); font-size:.8rem; color:var(--muted);">
-            {{ auth_user._attributes.get('name') or auth_user._attributes.get('email') or 'Admin' }}
+<body class="h-full bg-gray-900">
+
+<!-- Mobile sidebar -->
+<div id="mobile-sidebar" class="relative z-50 lg:hidden">
+    <div id="mobile-sidebar-backdrop" class="fixed inset-0 bg-gray-900/80" onclick="closeMobileSidebar()"></div>
+    <div class="fixed inset-0 flex">
+        <div id="mobile-sidebar-panel" class="relative mr-16 flex w-full max-w-xs flex-1">
+            <div class="absolute top-0 left-full flex w-16 justify-center pt-5">
+                <button type="button" onclick="closeMobileSidebar()" class="-m-2.5 p-2.5">
+                    <span class="sr-only">Close sidebar</span>
+                    <svg class="size-6 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-900 px-6 pb-4 ring-1 ring-white/10">
+                <div class="flex h-16 shrink-0 items-center">
+                    <span class="text-indigo-400 font-bold text-lg tracking-tight">{{ brand_name }}</span>
+                </div>
+                <nav class="flex flex-1 flex-col">
+                    <ul role="list" class="flex flex-1 flex-col gap-y-7">
+                        <li>
+                            <ul role="list" class="-mx-2 space-y-1">
+                                <li>
+                                    <a href="{{ prefix }}/" class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {% if request.path == prefix + '/' or request.path == prefix %}bg-white/5 text-white{% else %}text-gray-400 hover:bg-white/5 hover:text-white{% endif %}">
+                                        <svg class="size-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
+                                        Dashboard
+                                    </a>
+                                </li>
+                            </ul>
+                        </li>
+                        {% if resources %}
+                        <li>
+                            <div class="text-xs/6 font-semibold text-gray-400">Resources</div>
+                            <ul role="list" class="-mx-2 mt-2 space-y-1">
+                                {% for res_cls in resources %}
+                                <li>
+                                    <a href="{{ prefix }}/resources/{{ res_cls.slug() }}" class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {% if prefix + '/resources/' + res_cls.slug() in request.path %}bg-white/5 text-white{% else %}text-gray-400 hover:bg-white/5 hover:text-white{% endif %}">
+                                        <svg class="size-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125h-1.5m3.375-13.5A1.125 1.125 0 0 0 20.625 4.5h-1.5m3.375 1.125v12m-15 0h7.5m-7.5 0a1.125 1.125 0 0 1-1.125-1.125M4.5 18.375V5.625m0 12.75h1.5m12 0h1.5m-1.5 0a1.125 1.125 0 0 1-1.125-1.125M18 5.625v12.75M6 5.625h12"/></svg>
+                                        {{ res_cls.get_label_plural() }}
+                                    </a>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
         </div>
-        {% endif %}
-    </aside>
-
-    <!-- Main -->
-    <div class="admin-main">
-        <header class="admin-topbar">
-            <div class="topbar-search">
-                <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-                <input type="text" id="global-search" placeholder="Search resources…" autocomplete="off">
-                <div class="search-results" id="search-results"></div>
-            </div>
-            <span class="topbar-spacer"></span>
-            <div class="topbar-user">
-                <svg style="width:16px;height:16px" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
-                {{ auth_user._attributes.get('email') if auth_user else '' }}
-            </div>
-        </header>
-
-        {% if flash.get('admin_success') %}
-        <div class="flash-bar flash-success">{{ flash.get('admin_success') }}</div>
-        {% endif %}
-        {% if flash.get('admin_error') %}
-        <div class="flash-bar flash-error">{{ flash.get('admin_error') }}</div>
-        {% endif %}
-
-        <main class="admin-content">
-            {% block content %}{% endblock %}
-        </main>
     </div>
 </div>
 
+<!-- Desktop sidebar -->
+<div class="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col">
+    <div class="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-900 px-6 pb-4 ring-1 ring-white/10">
+        <div class="flex h-16 shrink-0 items-center">
+            <span class="text-indigo-400 font-bold text-lg tracking-tight">{{ brand_name }}</span>
+        </div>
+        <nav class="flex flex-1 flex-col">
+            <ul role="list" class="flex flex-1 flex-col gap-y-7">
+                <li>
+                    <ul role="list" class="-mx-2 space-y-1">
+                        <li>
+                            <a href="{{ prefix }}/" class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {% if request.path == prefix + '/' or request.path == prefix %}bg-white/5 text-white{% else %}text-gray-400 hover:bg-white/5 hover:text-white{% endif %}">
+                                <svg class="size-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>
+                                Dashboard
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% if resources %}
+                <li>
+                    <div class="text-xs/6 font-semibold text-gray-400">Resources</div>
+                    <ul role="list" class="-mx-2 mt-2 space-y-1">
+                        {% for res_cls in resources %}
+                        <li>
+                            <a href="{{ prefix }}/resources/{{ res_cls.slug() }}" class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {% if prefix + '/resources/' + res_cls.slug() in request.path %}bg-white/5 text-white{% else %}text-gray-400 hover:bg-white/5 hover:text-white{% endif %}">
+                                <svg class="size-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125h-1.5m3.375-13.5A1.125 1.125 0 0 0 20.625 4.5h-1.5m3.375 1.125v12m-15 0h7.5m-7.5 0a1.125 1.125 0 0 1-1.125-1.125M4.5 18.375V5.625m0 12.75h1.5m12 0h1.5m-1.5 0a1.125 1.125 0 0 1-1.125-1.125M18 5.625v12.75M6 5.625h12"/></svg>
+                                {{ res_cls.get_label_plural() }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                {% endif %}
+                {% if tools %}
+                <li>
+                    <div class="text-xs/6 font-semibold text-gray-400">Tools</div>
+                    <ul role="list" class="-mx-2 mt-2 space-y-1">
+                        {% for tool in tools %}
+                        <li>
+                            <a href="{{ prefix }}/tools/{{ tool.label | lower | replace(' ', '-') }}" class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold text-gray-400 hover:bg-white/5 hover:text-white">
+                                <svg class="size-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l5.654-4.654m5.5-2.998 3.033-2.496c.14-.469-.382-.89-.766-1.208L15.17 11.42m0 0-5 5"/></svg>
+                                {{ tool.label }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                {% endif %}
+                <li class="mt-auto">
+                    {% if auth_user %}
+                    <div class="flex items-center gap-x-3 rounded-md p-2">
+                        <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 text-xs font-semibold uppercase">
+                            {{ (auth_user._attributes.get('name') or auth_user._attributes.get('email') or 'A')[0] }}
+                        </span>
+                        <span class="text-xs text-gray-300 truncate">
+                            {{ auth_user._attributes.get('name') or auth_user._attributes.get('email') or 'Admin' }}
+                        </span>
+                    </div>
+                    {% endif %}
+                </li>
+            </ul>
+        </nav>
+    </div>
+</div>
+
+<!-- Main -->
+<div class="lg:pl-72">
+    <!-- Topbar -->
+    <div class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-white/10 bg-gray-900 px-4 sm:gap-x-6 sm:px-6 lg:px-8">
+        <button type="button" onclick="openMobileSidebar()" class="-m-2.5 p-2.5 text-gray-400 hover:text-white lg:hidden">
+            <span class="sr-only">Open sidebar</span>
+            <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+        </button>
+        <div aria-hidden="true" class="h-6 w-px bg-white/10 lg:hidden"></div>
+        <div class="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
+            <div class="relative grid flex-1 grid-cols-1 self-center">
+                <input id="global-search" type="search" placeholder="Search resources…" autocomplete="off"
+                       class="col-start-1 row-start-1 block size-full bg-transparent pl-8 text-sm text-white outline-none placeholder:text-gray-500">
+                <svg class="pointer-events-none col-start-1 row-start-1 size-5 self-center text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd"/></svg>
+                <div id="search-results"></div>
+            </div>
+            <div class="flex items-center gap-x-4 lg:gap-x-6">
+                <button type="button" class="-m-2.5 p-2.5 text-gray-400 hover:text-gray-300">
+                    <span class="sr-only">View notifications</span>
+                    <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"/></svg>
+                </button>
+                <div aria-hidden="true" class="hidden lg:block lg:h-6 lg:w-px lg:bg-white/10"></div>
+                {% if auth_user %}
+                <div class="relative">
+                    <button type="button" id="profile-btn" onclick="toggleProfileMenu()"
+                            class="flex items-center gap-x-2 rounded-md p-1.5 text-sm text-gray-400 hover:text-white focus:outline-none">
+                        <span class="sr-only">Open user menu</span>
+                        <span class="flex size-8 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 text-xs font-semibold uppercase">
+                            {{ (auth_user._attributes.get('name') or auth_user._attributes.get('email') or 'A')[0] }}
+                        </span>
+                        <span class="hidden lg:flex lg:items-center gap-x-1">
+                            <span class="text-sm/6 font-semibold text-white">
+                                {{ auth_user._attributes.get('name') or auth_user._attributes.get('email') or 'Admin' }}
+                            </span>
+                            <svg class="size-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
+                        </span>
+                    </button>
+                    <div id="profile-menu" class="absolute right-0 z-10 mt-2.5 w-36 origin-top-right rounded-md bg-gray-800 py-2 shadow-lg ring-1 ring-white/10">
+                        <form method="post" action="/logout">
+                            <input type="hidden" name="_token" value="{{ csrf_token }}">
+                            <button type="submit" class="block w-full text-left px-3 py-1 text-sm/6 text-gray-300 hover:bg-white/5 hover:text-white">
+                                Sign out
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Flash messages -->
+    {% if flash.get('admin_success') %}
+    <div class="flex items-center gap-x-3 bg-green-500/10 px-6 py-3 outline outline-green-500/20">
+        <svg class="size-5 shrink-0 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd"/></svg>
+        <p class="text-sm font-medium text-green-300">{{ flash.get('admin_success') }}</p>
+    </div>
+    {% endif %}
+    {% if flash.get('admin_error') %}
+    <div class="flex items-center gap-x-3 bg-red-500/10 px-6 py-3 outline outline-red-500/20">
+        <svg class="size-5 shrink-0 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd"/></svg>
+        <p class="text-sm font-medium text-red-300">{{ flash.get('admin_error') }}</p>
+    </div>
+    {% endif %}
+
+    <main class="py-10">
+        <div class="px-4 sm:px-6 lg:px-8">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+</div>
+
 <script>
+function openMobileSidebar() { document.getElementById('mobile-sidebar').classList.add('open'); document.body.style.overflow = 'hidden'; }
+function closeMobileSidebar() { document.getElementById('mobile-sidebar').classList.remove('open'); document.body.style.overflow = ''; }
+function toggleProfileMenu() { document.getElementById('profile-menu').classList.toggle('open'); }
+document.addEventListener('click', function(e) {
+    var btn = document.getElementById('profile-btn'), menu = document.getElementById('profile-menu');
+    if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) menu.classList.remove('open');
+});
 (function() {
-    var inp = document.getElementById('global-search');
-    var box = document.getElementById('search-results');
-    var timer;
+    var inp = document.getElementById('global-search'), box = document.getElementById('search-results'), timer;
     if (!inp) return;
     inp.addEventListener('input', function() {
         clearTimeout(timer);
         var q = inp.value.trim();
         if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
         timer = setTimeout(function() {
-            fetch('{{ prefix }}/search?q=' + encodeURIComponent(q), {headers: {'Accept': 'application/json'}})
+            fetch('{{ prefix }}/search?q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     var results = data.results || [];
                     if (!results.length) { box.style.display = 'none'; return; }
                     box.innerHTML = results.map(function(r) {
-                        return '<a class="search-result-item" href="' + r.url + '">'
-                             + '<span class="sr-resource">' + r.resource + '</span>'
-                             + '<span>' + r.title + '</span>'
-                             + '</a>';
+                        return '<a class="search-result-item" href="' + r.url + '"><span class="sr-resource">' + r.resource + '</span><span>' + r.title + '</span></a>';
                     }).join('');
                     box.style.display = 'block';
-                })
-                .catch(function() { box.style.display = 'none'; });
+                }).catch(function() { box.style.display = 'none'; });
         }, 250);
     });
     document.addEventListener('click', function(e) {
-        if (!inp.contains(e.target) && !box.contains(e.target)) {
-            box.style.display = 'none';
-        }
+        if (!inp.contains(e.target) && !box.contains(e.target)) box.style.display = 'none';
     });
 })();
 </script>
