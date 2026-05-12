@@ -13,16 +13,29 @@ A Python web framework. Routing, ORM, hunt templates, migrations, validation, an
 
 ## Installation
 
-Install the framework globally so the `hunt` CLI is available system-wide:
+Install directly from GitHub (recommended while hunt is in early development):
 
 ```bash
-uv pip install hunt
+uv pip install git+ssh://git@github.com/hunt-core/hunt.git
 ```
 
 Or with pip:
 
 ```bash
-pip install hunt
+pip install git+ssh://git@github.com/hunt-core/hunt.git
+```
+
+To pin to a specific tag or commit:
+
+```bash
+uv pip install git+ssh://git@github.com/hunt-core/hunt.git@v0.1.0
+uv pip install git+ssh://git@github.com/hunt-core/hunt.git@abc1234
+```
+
+To install the `hunt` CLI as a global tool:
+
+```bash
+uv tool install git+ssh://git@github.com/hunt-core/hunt.git
 ```
 
 ---
