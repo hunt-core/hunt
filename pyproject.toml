@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hunt"
+version = "0.1.0"
+description = "A Python web framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[project.urls]
+Homepage = "https://hunt-framework.com"
+Documentation = "https://hunt-framework.com/docs/installation"
+Repository = "https://github.com/hunt-core/hunt"
+"Bug Tracker" = "https://github.com/hunt-core/hunt/issues"
+dependencies = [
+    "uvicorn[standard]>=0.30,<1.0",
+    "sqlalchemy>=2.0,<3.0",
+    "jinja2>=3.1,<4.0",
+    "click>=8.1,<9.0",
+    "python-dotenv>=1.0,<2.0",
+    "pydantic>=2.0,<3.0",
+    "aiosqlite>=0.20,<1.0",
+    "aiomysql>=0.2,<1.0",
+    "asyncpg>=0.29,<1.0",
+    "ipython>=8.0,<10.0",
+    "bcrypt>=4.0,<5.0",
+    "pymysql>=1.1,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+hunt = "hunt.console.kernel:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hunt"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

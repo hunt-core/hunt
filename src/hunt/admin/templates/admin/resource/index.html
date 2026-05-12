@@ -1,0 +1,211 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ prefix }}/">Dashboard</a>
+    <span>›</span>
+    <span>{{ resource.get_label_plural() }}</span>
+</div>
+
+<div class="page-header">
+    <h1 class="page-title">{{ resource.get_label_plural() }}</h1>
+    <a href="{{ prefix }}/resources/{{ resource_key }}/create" class="btn btn-primary">
+        <svg style="width:14px;height:14px" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+        Create {{ resource.get_label() }}
+    </a>
+</div>
+
+{% if metrics %}
+<div class="metrics-row">
+{% for metric in metrics %}
+    <div class="metric-card">
+        <div class="metric-name">{{ metric.name }}</div>
+        <div class="metric-value">{{ metric.get('formatted', metric.get('value', '')) }}</div>
+        {% if metric.get('change') is not none %}
+        <div class="metric-change {{ metric.get('change_type', '') }}">
+            {% if metric.get('change', 0) >= 0 %}▲{% else %}▼{% endif %}
+            {{ metric.get('change', 0) | abs }}%
+        </div>
+        {% endif %}
+    </div>
+{% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+    <!-- Toolbar -->
+    <div class="card-header">
+        <form method="get" action="{{ prefix }}/resources/{{ resource_key }}" class="toolbar" style="margin:0;width:100%">
+            <div class="toolbar-search">
+                <input type="text" name="search" value="{{ search }}" placeholder="Search {{ resource.get_label_plural() | lower }}…">
+                <button type="submit" class="btn btn-secondary btn-sm">Search</button>
+                {% if search %}
+                <a href="{{ prefix }}/resources/{{ resource_key }}" class="btn btn-secondary btn-sm">Clear</a>
+                {% endif %}
+            </div>
+            {% for f in filters %}
+            <select name="filter_{{ f.slug() }}" class="filter-select" onchange="this.form.submit()">
+                <option value="">{{ f.name }}</option>
+                {% for opt in f.options() %}
+                <option value="{{ opt.value }}" {% if request.query('filter_' + f.slug(), '') == opt.value %}selected{% endif %}>{{ opt.label }}</option>
+                {% endfor %}
+            </select>
+            {% endfor %}
+            {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+            {% if dir  %}<input type="hidden" name="dir"  value="{{ dir  }}">{% endif %}
+        </form>
+
+        {% if actions %}
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openActionsModal()">
+            Actions <svg style="width:12px;height:12px" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        {% endif %}
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    {% if actions %}
+                    <th style="width:36px"><input type="checkbox" id="select-all" title="Select all"></th>
+                    {% endif %}
+                    {% for field in fields %}
+                    <th>
+                        {% if field._sortable %}
+                        {% set next_dir = 'asc' if (sort == field.attribute and dir == 'desc') else 'desc' %}
+                        <a href="{{ prefix }}/resources/{{ resource_key }}?sort={{ field.attribute }}&dir={{ next_dir }}{% if search %}&search={{ search }}{% endif %}"
+                           class="sort-link {% if sort == field.attribute %}active{% endif %}">
+                            {{ field.label }}
+                            {% if sort == field.attribute %}
+                                {% if dir == 'asc' %}↑{% else %}↓{% endif %}
+                            {% endif %}
+                        </a>
+                        {% else %}
+                        {{ field.label }}
+                        {% endif %}
+                    </th>
+                    {% endfor %}
+                    <th class="col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    {% if actions %}
+                    <td><input type="checkbox" class="row-select" value="{{ item._attributes.get('id') }}"></td>
+                    {% endif %}
+                    {% for field in fields %}
+                    <td>
+                        {% if field.field_type == 'boolean' %}
+                            {% if field.value_for(item) %}
+                            <span class="badge badge-green">Yes</span>
+                            {% else %}
+                            <span class="badge badge-gray">No</span>
+                            {% endif %}
+                        {% elif field.field_type == 'badge' %}
+                            {% set val = field.value_for(item) %}
+                            {% set colour = field.get_colour(val) %}
+                            <span class="badge badge-{{ colour }}">{{ val }}</span>
+                        {% elif field.field_type == 'currency' %}
+                            {{ field.display_value(item) }}
+                        {% else %}
+                            {{ field.display_value(item) }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="col-actions">
+                        <a href="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}" class="btn btn-secondary btn-sm">View</a>
+                        <a href="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/edit" class="btn btn-secondary btn-sm">Edit</a>
+                        <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/delete"
+                              style="display:inline" onsubmit="return confirm('Delete this record?')">
+                            <input type="hidden" name="_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="{{ fields | length + (2 if actions else 1) }}">
+                        <div class="empty-state">
+                            <p>No {{ resource.get_label_plural() | lower }} found.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if pagination.last_page > 1 %}
+    <div class="pagination">
+        {% set p = pagination %}
+        <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page - 1, 1] | max }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
+           class="{% if p.current_page <= 1 %}disabled{% endif %}">‹</a>
+
+        {% for page_num in range(1, p.last_page + 1) %}
+            {% if page_num == 1 or page_num == p.last_page or (page_num >= p.current_page - 2 and page_num <= p.current_page + 2) %}
+            <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ page_num }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
+               class="{% if page_num == p.current_page %}active{% endif %}">{{ page_num }}</a>
+            {% elif page_num == p.current_page - 3 or page_num == p.current_page + 3 %}
+            <span>…</span>
+            {% endif %}
+        {% endfor %}
+
+        <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page + 1, p.last_page] | min }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}"
+           class="{% if p.current_page >= p.last_page %}disabled{% endif %}">›</a>
+        <span class="pagination-info">{{ p.total }} total</span>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Actions Modal -->
+{% if actions %}
+<div class="modal-overlay" id="actions-modal">
+    <div class="modal">
+        <div class="modal-title">Run Action</div>
+        {% for action in actions %}
+        <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/actions/{{ action.slug() }}"
+              id="action-form-{{ loop.index }}"
+              {% if action.destructive %}onsubmit="return confirm('{{ action.confirmation_text or 'Are you sure?' }}')"{% endif %}>
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <input type="hidden" name="ids" id="action-ids-{{ loop.index }}">
+            <div style="margin-bottom:.5rem;display:flex;align-items:center;justify-content:space-between;">
+                <span style="font-size:.875rem">{{ action.name }}</span>
+                <button type="submit" class="btn {% if action.destructive %}btn-danger{% else %}btn-primary{% endif %} btn-sm"
+                        onclick="document.getElementById('action-ids-{{ loop.index }}').value = getSelectedIds()">
+                    Run
+                </button>
+            </div>
+        </form>
+        {% endfor %}
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeActionsModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.row-select:checked')).map(function(el) { return el.value; }).join(',');
+}
+function openActionsModal() {
+    var ids = getSelectedIds();
+    if (!ids) { alert('Please select at least one record.'); return; }
+    document.getElementById('actions-modal').classList.add('open');
+}
+function closeActionsModal() {
+    document.getElementById('actions-modal').classList.remove('open');
+}
+var selectAll = document.getElementById('select-all');
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        document.querySelectorAll('.row-select').forEach(function(el) { el.checked = selectAll.checked; });
+    });
+}
+</script>
+{% endblock %}

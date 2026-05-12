@@ -1,0 +1,40 @@
+{% extends "admin/layout.html" %}
+{% from "admin/resource/_form.html" import render_field %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ prefix }}/">Dashboard</a>
+    <span>›</span>
+    <a href="{{ prefix }}/resources/{{ resource_key }}">{{ resource.get_label_plural() }}</a>
+    <span>›</span>
+    <span>Create</span>
+</div>
+
+<div class="page-header">
+    <h1 class="page-title">Create {{ resource.get_label() }}</h1>
+    <a href="{{ prefix }}/resources/{{ resource_key }}" class="btn btn-secondary">Cancel</a>
+</div>
+
+{% if errors.get('_general') %}
+<div class="flash-bar flash-error" style="margin-bottom:1rem;border-radius:8px;">{{ errors['_general'][0] }}</div>
+{% endif %}
+
+<div class="card">
+    <form method="post" action="{{ prefix }}/resources/{{ resource_key }}">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
+        <div class="card-body">
+            <div class="form-grid">
+                {% for field in fields %}
+                    {% if not field._readonly %}
+                    {{ render_field(field) }}
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        <div class="card-header" style="border-top:1px solid var(--border);border-bottom:none;justify-content:flex-end;gap:.5rem;">
+            <a href="{{ prefix }}/resources/{{ resource_key }}" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">Create {{ resource.get_label() }}</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

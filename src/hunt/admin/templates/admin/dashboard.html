@@ -1,0 +1,82 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<div class="breadcrumb"><span>Dashboard</span></div>
+<div class="page-header">
+    <h1 class="page-title">Dashboard</h1>
+</div>
+
+{% if metrics %}
+<div class="metrics-row">
+{% for metric in metrics %}
+    {% if metric.metric_type == 'value' %}
+    <div class="metric-card">
+        <div class="metric-name">{{ metric.name }}</div>
+        <div class="metric-value">{{ metric.formatted }}</div>
+        {% if metric.change is not none %}
+        <div class="metric-change {{ metric.change_type }}">
+            {% if metric.change >= 0 %}▲{% else %}▼{% endif %}
+            {{ metric.change | abs }}% {{ metric.trend_label }}
+        </div>
+        {% endif %}
+    </div>
+    {% elif metric.metric_type == 'partition' %}
+    <div class="metric-card">
+        <div class="metric-name">{{ metric.name }}</div>
+        {% for seg in metric.segments %}
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:.8rem;margin-top:.35rem;">
+            <span style="color:var(--muted)">{{ seg.label }}</span>
+            <span>{{ seg.value }} <span style="color:var(--muted)">({{ seg.percentage }}%)</span></span>
+        </div>
+        {% endfor %}
+    </div>
+    {% elif metric.metric_type == 'trend' %}
+    <div class="metric-card" style="grid-column: span 2">
+        <div class="metric-name">{{ metric.name }}</div>
+        <div id="trend-{{ loop.index }}" data-labels="{{ metric.labels | tojson }}" data-values="{{ metric.values | tojson }}" style="height:80px;margin-top:.5rem;">
+            <svg viewBox="0 0 {{ metric.values | length * 30 }} 60" preserveAspectRatio="none" style="width:100%;height:100%">
+            {% if metric.values %}
+            {% set max_val = metric.values | max %}
+            {% set min_val = metric.values | min %}
+            {% set range = (max_val - min_val) or 1 %}
+            {% set pts = [] %}
+            {% for v in metric.values %}
+                {% set x = loop.index0 * 30 + 15 %}
+                {% set y = 55 - ((v - min_val) / range * 50) %}
+                {% if pts.append(x | string + ',' + y | string) %}{% endif %}
+            {% endfor %}
+            <polyline points="{{ pts | join(' ') }}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+            {% endif %}
+            </svg>
+        </div>
+    </div>
+    {% endif %}
+{% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div class="empty-state">
+            <svg style="width:40px;height:40px;margin:0 auto;display:block" viewBox="0 0 20 20" fill="currentColor" opacity=".3"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+            <p>No dashboard metrics configured.<br>Call <code>Admin.dashboard(…)</code> with metric instances.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if resources %}
+<div style="margin-top:1.5rem;">
+    <h2 style="font-size:.9rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem;">Resources</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.75rem;">
+        {% for res_cls in resources %}
+        <a href="{{ prefix }}/resources/{{ res_cls.slug() }}" style="text-decoration:none;">
+            <div class="card" style="padding:1rem 1.25rem;transition:border-color .15s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                <div style="font-weight:600;font-size:.9375rem;margin-bottom:.25rem;color:var(--text)">{{ res_cls.get_label_plural() }}</div>
+                <div style="font-size:.75rem;color:var(--muted)">Manage {{ res_cls.get_label_plural() | lower }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

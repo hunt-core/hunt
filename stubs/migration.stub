@@ -1,0 +1,14 @@
+from hunt.database.schema.builder import Schema
+from hunt.database.schema.blueprint import Blueprint
+from hunt.database.schema.migration import Migration
+
+
+class {{class}}(Migration):
+    def up(self) -> None:
+        Schema.create("{{table}}", lambda bp: [
+            bp.id(),
+            bp.timestamps(),
+        ])
+
+    def down(self) -> None:
+        Schema.drop_if_exists("{{table}}")

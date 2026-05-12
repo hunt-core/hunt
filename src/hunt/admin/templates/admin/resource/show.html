@@ -1,0 +1,91 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ prefix }}/">Dashboard</a>
+    <span>›</span>
+    <a href="{{ prefix }}/resources/{{ resource_key }}">{{ resource.get_label_plural() }}</a>
+    <span>›</span>
+    <span>{{ title }}</span>
+</div>
+
+<div class="page-header">
+    <h1 class="page-title">{{ title }}</h1>
+    <div style="display:flex;gap:.5rem;">
+        <a href="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}/edit" class="btn btn-primary">Edit</a>
+        <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}/delete"
+              onsubmit="return confirm('Are you sure you want to delete this record?')">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-danger">Delete</button>
+        </form>
+        <a href="{{ prefix }}/resources/{{ resource_key }}" class="btn btn-secondary">Back</a>
+    </div>
+</div>
+
+<!-- Main detail panel -->
+<div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-header"><div class="card-title">{{ resource.get_label() }} Details</div></div>
+    <div class="detail-grid">
+        {% for field in fields %}
+        <div class="detail-row">
+            <div class="detail-label">{{ field.label }}</div>
+            <div class="detail-value">
+                {% if field.field_type == 'boolean' %}
+                    {% if field.value_for(instance) %}
+                    <span class="badge badge-green">Yes</span>
+                    {% else %}
+                    <span class="badge badge-gray">No</span>
+                    {% endif %}
+                {% elif field.field_type == 'badge' %}
+                    {% set val = field.value_for(instance) %}
+                    {% set colour = field.get_colour(val) %}
+                    <span class="badge badge-{{ colour }}">{{ val }}</span>
+                {% elif field.field_type == 'password' %}
+                    <span style="color:var(--muted)">••••••••</span>
+                {% else %}
+                    {{ field.display_value(instance) or '—' }}
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- HasMany relationship panels -->
+{% for panel in has_many_panels %}
+<div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-header"><div class="card-title">{{ panel.name }}</div></div>
+    {% set rel_items = related_data.get(panel.attribute, []) %}
+    {% if rel_items %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    {% for rf in panel.related_resource_class().fields() if rf.show_on_index %}
+                    <th>{{ rf.label }}</th>
+                    {% endfor %}
+                    <th class="col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rel_item in rel_items %}
+                <tr>
+                    {% for rf in panel.related_resource_class().fields() if rf.show_on_index %}
+                    <td>{{ rf.display_value(rel_item) }}</td>
+                    {% endfor %}
+                    <td class="col-actions">
+                        <a href="{{ prefix }}/resources/{{ panel.related_resource_class.slug() }}/{{ rel_item._attributes.get('id') }}" class="btn btn-secondary btn-sm">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body">
+        <div class="empty-state"><p>No related {{ panel.name | lower }} found.</p></div>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endblock %}
