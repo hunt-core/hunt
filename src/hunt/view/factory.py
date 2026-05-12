@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, TemplateNotFound, select_autoescape
 
 from hunt.view.directives import preprocess
 
@@ -14,8 +14,12 @@ class ViewFactory:
     def __init__(self, views_path: Path, cache_path: Path | None = None) -> None:
         self._views_path = views_path
         self._cache_path = cache_path
+        _hunt_views = Path(__file__).parent.parent / "views"
+        loaders: list = [_TemplateLoader(views_path, cache_path)]
+        if _hunt_views.is_dir():
+            loaders.append(_TemplateLoader(_hunt_views, None))
         self._env = Environment(
-            loader=_TemplateLoader(views_path, cache_path),
+            loader=ChoiceLoader(loaders),
             autoescape=select_autoescape(["html"]),
             auto_reload=True,
         )
@@ -35,7 +39,7 @@ class ViewFactory:
         try:
             template = self._env.get_template(path)
         except TemplateNotFound:
-            raise FileNotFoundError(f"View [{name}] not found at {self._views_path / path}")
+            raise FileNotFoundError(f"View [{name}] not found.")
 
         context = {**self._shared, **(data or {})}
 

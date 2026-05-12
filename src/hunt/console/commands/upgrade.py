@@ -1,51 +1,29 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import click
 
-from hunt.console.commands.new import (
-    _MIGRATION_USERS,
-    _MIGRATION_PASSWORD_RESETS,
-    _MODEL_USER,
-    _ADMIN_USER_RESOURCE,
-    _AUTH_LOGIN_CONTROLLER,
-    _AUTH_REGISTER_CONTROLLER,
-    _AUTH_PASSWORD_CONTROLLER,
-    _GUEST_MIDDLEWARE,
-    _ROUTES_AUTH,
-    _ROUTES_ADMIN,
-    _VIEW_AUTH_LAYOUT,
-    _VIEW_AUTH_LOGIN,
-    _VIEW_AUTH_REGISTER,
-    _VIEW_AUTH_FORGOT_PASSWORD,
-    _VIEW_AUTH_RESET_PASSWORD,
-)
+from hunt.console.commands.new import _SCAFFOLD_FILES, _file_hash
 
-# Relative paths → content for every scaffold-managed file.
-# Only copied when the destination does not already exist.
-_SCAFFOLD_FILES: dict[str, str] = {
-    "database/migrations/0001_create_users_table.py": _MIGRATION_USERS,
-    "database/migrations/0002_create_password_reset_tokens_table.py": _MIGRATION_PASSWORD_RESETS,
-    "app/models/user.py": _MODEL_USER,
-    "app/controllers/auth/__init__.py": "",
-    "app/controllers/auth/login_controller.py": _AUTH_LOGIN_CONTROLLER,
-    "app/controllers/auth/register_controller.py": _AUTH_REGISTER_CONTROLLER,
-    "app/controllers/auth/password_controller.py": _AUTH_PASSWORD_CONTROLLER,
-    "app/middleware/guest.py": _GUEST_MIDDLEWARE,
-    "app/admin/__init__.py": "",
-    "app/admin/user_resource.py": _ADMIN_USER_RESOURCE,
-    "routes/auth.py": _ROUTES_AUTH,
-    "routes/admin.py": _ROUTES_ADMIN,
-    "resources/views/auth/layout.html": _VIEW_AUTH_LAYOUT,
-    "resources/views/auth/login.html": _VIEW_AUTH_LOGIN,
-    "resources/views/auth/register.html": _VIEW_AUTH_REGISTER,
-    "resources/views/auth/forgot_password.html": _VIEW_AUTH_FORGOT_PASSWORD,
-    "resources/views/auth/reset_password.html": _VIEW_AUTH_RESET_PASSWORD,
-}
 
-# bootstrap/app.py patches — each entry is (detection_string, patch_fn).
-# patch_fn receives the file content and returns the patched content.
+def _read_lock(root: Path) -> dict[str, str]:
+    lock_file = root / ".hunt" / "scaffold.lock"
+    if not lock_file.exists():
+        return {}
+    try:
+        data = json.loads(lock_file.read_text())
+        return data.get("files", {})
+    except Exception:
+        return {}
+
+
+def _write_lock(root: Path, hashes: dict[str, str]) -> None:
+    lock_dir = root / ".hunt"
+    lock_dir.mkdir(exist_ok=True)
+    lock = {"version": 1, "files": hashes}
+    (lock_dir / "scaffold.lock").write_text(json.dumps(lock, indent=2))
 
 
 def _patch_auth_model(content: str) -> str:
@@ -68,7 +46,6 @@ def _patch_route_import(content: str, module: str, alias: str) -> str:
     if import_line in content or f"from routes.{module}" in content:
         return content
     lines = content.splitlines(keepends=True)
-    # Insert after the last "from routes." import line.
     last = next(
         (i for i in reversed(range(len(lines))) if lines[i].startswith("from routes.")),
         None,
@@ -83,7 +60,6 @@ def _patch_route_call(content: str, alias: str) -> str:
     if call_line in content or f"{alias}(router)" in content:
         return content
     lines = content.splitlines(keepends=True)
-    # Insert after the last "*_routes(router)" call line.
     last = next(
         (
             i for i in reversed(range(len(lines)))
@@ -139,18 +115,49 @@ def upgrade_command() -> None:
         )
         raise SystemExit(1)
 
+    stored_hashes = _read_lock(root)
+    updated_hashes = dict(stored_hashes)
+
     added: list[str] = []
-    skipped: list[str] = []
+    upgraded: list[str] = []
+    skipped_custom: list[str] = []
+    skipped_present: list[str] = []
 
     for rel, content in _SCAFFOLD_FILES.items():
         dest = root / rel
-        if dest.exists():
-            skipped.append(rel)
+        canonical_hash = _file_hash(content)
+
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content)
+            updated_hashes[rel] = canonical_hash
+            added.append(rel)
+            click.echo(f"  + {rel}")
             continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        current_hash = _file_hash(dest.read_text())
+
+        if current_hash == canonical_hash:
+            # File matches canonical content — already up to date.
+            updated_hashes[rel] = canonical_hash
+            skipped_present.append(rel)
+            continue
+
+        stored_hash = stored_hashes.get(rel)
+
+        if stored_hash is None or current_hash != stored_hash:
+            # File has been customised — skip to preserve changes.
+            skipped_custom.append(rel)
+            click.echo(f"  ~ {rel} (customised — skipped)")
+            continue
+
+        # File is unmodified from the last scaffold write — safe to update.
         dest.write_text(content)
-        added.append(rel)
-        click.echo(f"  + {rel}")
+        updated_hashes[rel] = canonical_hash
+        upgraded.append(rel)
+        click.echo(f"  ↑ {rel}")
+
+    _write_lock(root, updated_hashes)
 
     bootstrap_patches = _patch_bootstrap(root)
     for patch in bootstrap_patches:
@@ -158,14 +165,16 @@ def upgrade_command() -> None:
 
     click.echo("")
 
-    if not added and not bootstrap_patches:
+    if not added and not upgraded and not bootstrap_patches:
         click.echo("  Already up to date.")
         return
 
     if added:
         click.echo(f"  {len(added)} file(s) added.")
-    if skipped:
-        click.echo(f"  {len(skipped)} file(s) already present, not overwritten.")
+    if upgraded:
+        click.echo(f"  {len(upgraded)} file(s) updated.")
+    if skipped_custom:
+        click.echo(f"  {len(skipped_custom)} customised file(s) skipped.")
     if bootstrap_patches:
         click.echo("  bootstrap/app.py patched.")
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -35,7 +37,6 @@ def new_command(name: str, force: bool) -> None:
         "database/migrations",
         "database/factories",
         "database/seeders",
-        "resources/views/auth",
         "resources/views/errors",
         "routes",
         "storage/logs",
@@ -76,13 +77,10 @@ def new_command(name: str, force: bool) -> None:
     _write(target / "database" / "migrations" / "0002_create_password_reset_tokens_table.py", _MIGRATION_PASSWORD_RESETS)
     _write(target / "resources" / "views" / "welcome.html", _WELCOME_VIEW)
     _write(target / "resources" / "views" / "layout.html", _LAYOUT_VIEW)
-    _write(target / "resources" / "views" / "auth" / "layout.html", _VIEW_AUTH_LAYOUT)
-    _write(target / "resources" / "views" / "auth" / "login.html", _VIEW_AUTH_LOGIN)
-    _write(target / "resources" / "views" / "auth" / "register.html", _VIEW_AUTH_REGISTER)
-    _write(target / "resources" / "views" / "auth" / "forgot_password.html", _VIEW_AUTH_FORGOT_PASSWORD)
-    _write(target / "resources" / "views" / "auth" / "reset_password.html", _VIEW_AUTH_RESET_PASSWORD)
     _write(target / "public" / "index.py", _PUBLIC_INDEX)
     _write(target / "tests" / "__init__.py", "")
+
+    _write_lock(target, _SCAFFOLD_FILES)
 
     click.echo(f"\n  Application [{name}] created successfully.\n")
     click.echo("  Get started:")
@@ -101,6 +99,18 @@ def _write_secret(path: Path, content: str) -> None:
     """Write a file and restrict permissions to owner-read/write only."""
     path.write_text(content)
     path.chmod(0o600)
+
+
+def _file_hash(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
+def _write_lock(root: Path, files: dict[str, str]) -> None:
+    lock_dir = root / ".hunt"
+    lock_dir.mkdir(exist_ok=True)
+    hashes = {rel: _file_hash(content) for rel, content in files.items()}
+    lock = {"version": 1, "files": hashes}
+    (lock_dir / "scaffold.lock").write_text(json.dumps(lock, indent=2))
 
 
 _PYPROJECT = """\
@@ -689,176 +699,6 @@ def register(router: Router) -> None:
     router.post("/reset-password", reset.store).named("password.update")
 """
 
-_VIEW_AUTH_LAYOUT = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Auth{% endblock %}</title>
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, -apple-system, sans-serif; background: #0f0f0f; color: #e5e5e5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .auth-wrap { width: 100%; max-width: 420px; padding: 1.5rem; }
-        .auth-brand { text-align: center; margin-bottom: 2rem; font-size: 1.4rem; font-weight: 700; color: #6366f1; letter-spacing: -.5px; text-decoration: none; display: block; }
-        .auth-card { background: #161622; border: 1px solid #2a2a3e; border-radius: 12px; padding: 2rem; }
-        .auth-card h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 1.5rem; }
-        .field { margin-bottom: 1rem; }
-        .field label { display: block; font-size: .8rem; font-weight: 500; color: #aaa; margin-bottom: .4rem; letter-spacing: .02em; text-transform: uppercase; }
-        .field input { width: 100%; padding: .6rem .85rem; background: #0f0f0f; border: 1px solid #2e2e2e; border-radius: 6px; color: #e5e5e5; font-size: .95rem; transition: border-color .15s; }
-        .field input:focus { outline: none; border-color: #6366f1; }
-        .field-error { display: block; font-size: .8rem; color: #f87171; margin-top: .3rem; }
-        .alert-error { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); border-radius: 6px; padding: .75rem 1rem; font-size: .875rem; color: #f87171; margin-bottom: 1.25rem; }
-        .alert-success { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); border-radius: 6px; padding: .75rem 1rem; font-size: .875rem; color: #4ade80; margin-bottom: 1.25rem; }
-        .field-row { display: flex; justify-content: flex-end; margin-bottom: .75rem; }
-        .field-row a { font-size: .8rem; color: #6366f1; text-decoration: none; }
-        .field-row a:hover { text-decoration: underline; }
-        .btn-submit { width: 100%; padding: .65rem; background: #6366f1; color: #fff; border: none; border-radius: 6px; font-size: .95rem; font-weight: 500; cursor: pointer; margin-top: .25rem; transition: background .15s; }
-        .btn-submit:hover { background: #4f46e5; }
-        .auth-footer { text-align: center; margin-top: 1.25rem; font-size: .875rem; color: #666; }
-        .auth-footer a { color: #6366f1; text-decoration: none; }
-        .auth-footer a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-<div class="auth-wrap">
-    <a href="/" class="auth-brand">hunt</a>
-    <div class="auth-card">
-        {% block content %}{% endblock %}
-    </div>
-</div>
-</body>
-</html>
-"""
-
-_VIEW_AUTH_LOGIN = """\
-@extends('auth.layout')
-
-@section('content')
-<h1>Sign in</h1>
-
-{% if status %}
-<div class="alert-success">{{ status }}</div>
-{% endif %}
-
-{% if errors.get('email') %}
-<div class="alert-error">{{ errors['email'][0] }}</div>
-{% endif %}
-
-<form method="post" action="/login">
-    <input type="hidden" name="_token" value="{{ csrf_token }}">
-    <div class="field">
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" value="{{ old.get('email', '') }}" required autofocus autocomplete="email">
-        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
-    </div>
-    <div class="field">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="current-password">
-        {% if errors.get('password') %}<span class="field-error">{{ errors['password'][0] }}</span>{% endif %}
-    </div>
-    <div class="field-row">
-        <a href="/forgot-password">Forgot your password?</a>
-    </div>
-    <button type="submit" class="btn-submit">Sign in</button>
-</form>
-
-<p class="auth-footer">No account? <a href="/register">Create one</a></p>
-@endsection
-"""
-
-_VIEW_AUTH_REGISTER = """\
-@extends('auth.layout')
-
-@section('content')
-<h1>Create account</h1>
-
-<form method="post" action="/register">
-    <input type="hidden" name="_token" value="{{ csrf_token }}">
-    <div class="field">
-        <label for="name">Name</label>
-        <input type="text" id="name" name="name" value="{{ old.get('name', '') }}" required autofocus autocomplete="name">
-        {% if errors.get('name') %}<span class="field-error">{{ errors['name'][0] }}</span>{% endif %}
-    </div>
-    <div class="field">
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" value="{{ old.get('email', '') }}" required autocomplete="email">
-        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
-    </div>
-    <div class="field">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="new-password">
-        {% if errors.get('password') %}<span class="field-error">{{ errors['password'][0] }}</span>{% endif %}
-    </div>
-    <div class="field">
-        <label for="password_confirmation">Confirm password</label>
-        <input type="password" id="password_confirmation" name="password_confirmation" required autocomplete="new-password">
-    </div>
-    <button type="submit" class="btn-submit">Create account</button>
-</form>
-
-<p class="auth-footer">Already have an account? <a href="/login">Sign in</a></p>
-@endsection
-"""
-
-_VIEW_AUTH_FORGOT_PASSWORD = """\
-@extends('auth.layout')
-
-@section('content')
-<h1>Forgot password</h1>
-
-{% if status %}
-<div class="alert-success">{{ status }}</div>
-{% else %}
-
-<form method="post" action="/forgot-password">
-    <input type="hidden" name="_token" value="{{ csrf_token }}">
-    <div class="field">
-        <label for="email">Email address</label>
-        <input type="email" id="email" name="email" value="{{ old.get('email', '') }}" required autofocus autocomplete="email">
-        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
-    </div>
-    <button type="submit" class="btn-submit">Send reset link</button>
-</form>
-
-{% endif %}
-
-<p class="auth-footer"><a href="/login">Back to sign in</a></p>
-@endsection
-"""
-
-_VIEW_AUTH_RESET_PASSWORD = """\
-@extends('auth.layout')
-
-@section('content')
-<h1>Reset password</h1>
-
-{% if errors.get('email') %}
-<div class="alert-error">{{ errors['email'][0] }}</div>
-{% endif %}
-
-<form method="post" action="/reset-password">
-    <input type="hidden" name="_token" value="{{ csrf_token }}">
-    <input type="hidden" name="token" value="{{ token }}">
-    <div class="field">
-        <label for="email">Email address</label>
-        <input type="email" id="email" name="email" value="{{ email }}" required autocomplete="email">
-        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
-    </div>
-    <div class="field">
-        <label for="password">New password</label>
-        <input type="password" id="password" name="password" required autofocus autocomplete="new-password">
-        {% if errors.get('password') %}<span class="field-error">{{ errors['password'][0] }}</span>{% endif %}
-    </div>
-    <div class="field">
-        <label for="password_confirmation">Confirm new password</label>
-        <input type="password" id="password_confirmation" name="password_confirmation" required autocomplete="new-password">
-    </div>
-    <button type="submit" class="btn-submit">Reset password</button>
-</form>
-@endsection
-"""
-
 _ROUTES_ADMIN = """\
 from hunt.admin import Admin
 from hunt.admin.metrics import ValueMetric
@@ -882,3 +722,21 @@ def register(router: Router) -> None:
     )
     Admin.register_to(router)
 """
+
+# Canonical set of scaffold-managed files written by `hunt new`.
+# Keys are relative paths; values are the expected initial content.
+# Used by `hunt upgrade` for hash-based safe-update decisions.
+_SCAFFOLD_FILES: dict[str, str] = {
+    "database/migrations/0001_create_users_table.py": _MIGRATION_USERS,
+    "database/migrations/0002_create_password_reset_tokens_table.py": _MIGRATION_PASSWORD_RESETS,
+    "app/models/user.py": _MODEL_USER,
+    "app/controllers/auth/__init__.py": "",
+    "app/controllers/auth/login_controller.py": _AUTH_LOGIN_CONTROLLER,
+    "app/controllers/auth/register_controller.py": _AUTH_REGISTER_CONTROLLER,
+    "app/controllers/auth/password_controller.py": _AUTH_PASSWORD_CONTROLLER,
+    "app/middleware/guest.py": _GUEST_MIDDLEWARE,
+    "app/admin/__init__.py": "",
+    "app/admin/user_resource.py": _ADMIN_USER_RESOURCE,
+    "routes/auth.py": _ROUTES_AUTH,
+    "routes/admin.py": _ROUTES_ADMIN,
+}
