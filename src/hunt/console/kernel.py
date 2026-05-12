@@ -7,6 +7,7 @@ from hunt.console.commands.migrate import migrate_group, migrate_run, migrate_ro
 from hunt.console.commands.tinker import tinker_command
 from hunt.console.commands.route_list import route_list_command
 from hunt.console.commands.new import new_command
+from hunt.console.commands.upgrade import upgrade_command
 from hunt.console.commands.key_generate import key_generate_command
 from hunt.console.commands.cache import cache_group
 from hunt.console.commands.queue_work import queue_work_command
@@ -36,6 +37,7 @@ cli.add_command(serve_command, name="serve")
 cli.add_command(tinker_command, name="tinker")
 cli.add_command(route_list_command, name="route:list")
 cli.add_command(new_command, name="new")
+cli.add_command(upgrade_command, name="upgrade")
 cli.add_command(key_generate_command, name="key:generate")
 cli.add_command(queue_work_command, name="queue:work")
 cli.add_command(db_seed_command, name="db:seed")

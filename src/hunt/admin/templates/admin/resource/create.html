@@ -26,7 +26,7 @@
             <div class="form-grid">
                 {% for field in fields %}
                     {% if not field._readonly %}
-                    {{ render_field(field) }}
+                    {{ render_field(field, old=old, errors=errors) }}
                     {% endif %}
                 {% endfor %}
             </div>

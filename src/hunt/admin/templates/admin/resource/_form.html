@@ -2,7 +2,7 @@
     Shared form fields partial.
     Context: fields, errors, old, resource, prefix, resource_key, record_id (optional)
 #}
-{% macro render_field(field) %}
+{% macro render_field(field, old={}, errors={}) %}
 {% set val = old.get(field.attribute, '') %}
 {% set has_error = field.attribute in errors %}
 
