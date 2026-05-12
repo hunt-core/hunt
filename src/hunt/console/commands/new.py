@@ -21,6 +21,7 @@ def new_command(name: str, force: bool) -> None:
         shutil.rmtree(target)
 
     dirs = [
+        "app/admin",
         "app/controllers",
         "app/models",
         "app/middleware",
@@ -55,10 +56,16 @@ def new_command(name: str, force: bool) -> None:
     _write(target / "config" / "view.py", _CONFIG_VIEW)
     _write(target / "routes" / "web.py", _ROUTES_WEB)
     _write(target / "routes" / "api.py", _ROUTES_API)
+    _write(target / "routes" / "admin.py", _ROUTES_ADMIN)
     _write(target / "bootstrap" / "__init__.py", "")
     _write(target / "bootstrap" / "app.py", _BOOTSTRAP_APP)
     _write(target / "app" / "providers" / "app_service_provider.py", _APP_PROVIDER)
     _write(target / "app" / "controllers" / "welcome_controller.py", _WELCOME_CONTROLLER)
+    _write(target / "app" / "models" / "user.py", _MODEL_USER)
+    _write(target / "app" / "admin" / "__init__.py", "")
+    _write(target / "app" / "admin" / "user_resource.py", _ADMIN_USER_RESOURCE)
+    _write(target / "database" / "migrations" / "0001_create_users_table.py", _MIGRATION_USERS)
+    _write(target / "database" / "migrations" / "0002_create_password_reset_tokens_table.py", _MIGRATION_PASSWORD_RESETS)
     _write(target / "resources" / "views" / "welcome.html", _WELCOME_VIEW)
     _write(target / "resources" / "views" / "layout.html", _LAYOUT_VIEW)
     _write(target / "public" / "index.py", _PUBLIC_INDEX)
@@ -244,8 +251,10 @@ application.instance("router", router)
 # -- Load routes
 from routes.web import register as web_routes
 from routes.api import register as api_routes
+from routes.admin import register as admin_routes
 web_routes(router)
 api_routes(router)
+admin_routes(router)
 
 # -- Register named routes
 for route in router.routes():
@@ -342,4 +351,107 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bootstrap.app import app  # noqa: F401 — ASGI entry point
+"""
+
+_MIGRATION_USERS = """\
+from hunt.database.schema.migration import Migration
+from hunt.database.schema.builder import Schema
+
+
+class CreateUsersTable(Migration):
+    def up(self) -> None:
+        def blueprint(table):
+            table.id()
+            table.string("name")
+            table.string("email").unique()
+            table.string("password")
+            table.boolean("is_admin").default(0)
+            table.timestamp("email_verified_at").nullable()
+            table.string("remember_token", 100).nullable()
+            table.timestamps()
+
+        Schema.create("users", blueprint)
+
+    def down(self) -> None:
+        Schema.drop_if_exists("users")
+"""
+
+_MIGRATION_PASSWORD_RESETS = """\
+from hunt.database.schema.migration import Migration
+from hunt.database.schema.builder import Schema
+
+
+class CreatePasswordResetTokensTable(Migration):
+    def up(self) -> None:
+        def blueprint(table):
+            table.string("email")
+            table.string("token")
+            table.timestamp("created_at").nullable()
+            table.index("email")
+
+        Schema.create("password_reset_tokens", blueprint)
+
+    def down(self) -> None:
+        Schema.drop_if_exists("password_reset_tokens")
+"""
+
+_MODEL_USER = """\
+from hunt.database.model import Model
+
+
+class User(Model):
+    table = "users"
+    fillable = ["name", "email", "password", "is_admin"]
+    hidden = ["password", "remember_token"]
+    casts = {
+        "is_admin": "boolean",
+    }
+"""
+
+_ADMIN_USER_RESOURCE = """\
+from hunt.admin import AdminResource
+from hunt.admin.fields import Text, Email, Password, Boolean, DateTime
+from app.models.user import User
+
+
+class UserResource(AdminResource):
+    model = User
+    label = "User"
+    search_columns = ["name", "email"]
+    default_order = ("created_at", "desc")
+    per_page = 20
+
+    def fields(self):
+        return [
+            Text("Id", attribute="id").readonly().sortable(),
+            Text("Name", attribute="name").rules("required", "string", "max:255").sortable(),
+            Email("Email", attribute="email").rules("required", "email").sortable(),
+            Password("Password", attribute="password").rules("required", "min:8").hide_from_edit(),
+            Boolean("Admin", attribute="is_admin"),
+            DateTime("Created At", attribute="created_at").sortable(),
+        ]
+"""
+
+_ROUTES_ADMIN = """\
+from hunt.admin import Admin
+from hunt.admin.metrics import ValueMetric
+from hunt.http.router import Router
+from app.admin.user_resource import UserResource
+from app.models.user import User
+
+Admin.resource(UserResource)
+
+Admin.dashboard(
+    ValueMetric("Total Users", lambda: User.query().count()),
+)
+
+
+def register(router: Router) -> None:
+    from hunt.auth.manager import Auth
+
+    Admin.gate(
+        lambda request: Auth.check()
+        and bool(getattr(Auth.user(), "_attributes", {}).get("is_admin"))
+    )
+    Admin.register_to(router)
 """
