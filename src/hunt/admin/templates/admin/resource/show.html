@@ -1,0 +1,167 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li>
+            <a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300">
+                <svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/>
+                </svg>
+                <span class="sr-only">Dashboard</span>
+            </a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <a href="{{ prefix }}/resources/{{ resource_key }}" class="text-sm font-medium text-gray-400 hover:text-gray-200">{{ resource.get_label_plural() }}</a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-400">{{ title }}</span>
+        </li>
+    </ol>
+</nav>
+
+{# Page heading #}
+<div class="sm:flex sm:items-center mb-8">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">{{ title }}</h1>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 flex items-center gap-x-3">
+        {% if can_update %}
+        <a href="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}/edit"
+           class="rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+            Edit
+        </a>
+        {% endif %}
+        {% if can_delete %}
+        <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}/delete"
+              onsubmit="return confirm('Are you sure you want to delete this record?')" style="display:inline">
+            <input type="hidden" name="_token" value="{{ csrf_token }}">
+            <button type="submit"
+                    class="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600">
+                Delete
+            </button>
+        </form>
+        {% endif %}
+        <a href="{{ prefix }}/resources/{{ resource_key }}"
+           class="rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">
+            Back
+        </a>
+    </div>
+</div>
+
+{# Main detail panel — description list #}
+<div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl mb-6">
+    <div class="px-4 py-5 sm:px-6">
+        <h3 class="text-sm font-semibold text-white">{{ resource.get_label() }} Details</h3>
+    </div>
+    <div class="border-t border-white/10">
+        <dl class="divide-y divide-white/10">
+            {% for field in fields %}
+            <div class="px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt class="text-sm/6 font-medium text-gray-100">{{ field.label }}</dt>
+                <dd class="mt-1 text-sm/6 text-gray-400 sm:col-span-2 sm:mt-0">
+                    {% if field.field_type == 'boolean' %}
+                        {% if field.value_for(instance) %}
+                        <span class="inline-flex items-center rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400 ring-1 ring-inset ring-green-500/20">Yes</span>
+                        {% else %}
+                        <span class="inline-flex items-center rounded-md bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">No</span>
+                        {% endif %}
+                    {% elif field.field_type == 'badge' %}
+                        {% set val = field.value_for(instance) %}
+                        {% set colour = field.get_colour(val) %}
+                        {% if colour == 'green' %}
+                        <span class="inline-flex items-center rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400 ring-1 ring-inset ring-green-500/20">{{ val }}</span>
+                        {% elif colour == 'red' %}
+                        <span class="inline-flex items-center rounded-md bg-red-400/10 px-2 py-1 text-xs font-medium text-red-400 ring-1 ring-inset ring-red-400/20">{{ val }}</span>
+                        {% elif colour == 'yellow' %}
+                        <span class="inline-flex items-center rounded-md bg-yellow-400/10 px-2 py-1 text-xs font-medium text-yellow-400 ring-1 ring-inset ring-yellow-400/20">{{ val }}</span>
+                        {% elif colour == 'blue' %}
+                        <span class="inline-flex items-center rounded-md bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-400/20">{{ val }}</span>
+                        {% else %}
+                        <span class="inline-flex items-center rounded-md bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">{{ val }}</span>
+                        {% endif %}
+                    {% elif field.field_type == 'password' %}
+                        <span class="font-mono tracking-widest text-gray-500">••••••••</span>
+                    {% elif field.field_type == 'image' %}
+                        {% set img_url = field.url_for(instance) %}
+                        {% if img_url %}
+                        <img src="{{ img_url }}" alt="{{ field.label }}" class="h-32 w-auto rounded-lg object-cover ring-1 ring-white/10">
+                        {% else %}
+                        —
+                        {% endif %}
+                    {% elif field.field_type == 'richtext' %}
+                        {% set rich_val = field.value_for(instance) %}
+                        {% if rich_val %}
+                        <div class="prose prose-invert prose-sm max-w-none">{{ rich_val | safe }}</div>
+                        {% else %}
+                        —
+                        {% endif %}
+                    {% else %}
+                        {{ field.display_value(instance) or '—' }}
+                    {% endif %}
+                </dd>
+            </div>
+            {% endfor %}
+        </dl>
+    </div>
+</div>
+
+{# HasMany relationship panels #}
+{% for panel in has_many_panels %}
+<div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl mb-6">
+    <div class="px-4 py-5 sm:px-6">
+        <h3 class="text-sm font-semibold text-white">{{ panel.name }}</h3>
+    </div>
+    {% set rel_items = related_data.get(panel.attribute, []) %}
+    {% if rel_items %}
+    <div class="border-t border-white/10 overflow-x-auto">
+        <table class="min-w-full divide-y divide-white/15">
+            <thead>
+                <tr>
+                    {% for rf in panel.related_resource_class().fields() if rf._show_on_index %}
+                    <th scope="col" class="{% if loop.first %}py-3.5 pl-4 pr-3 sm:pl-6{% else %}px-3 py-3.5{% endif %} text-left text-sm font-semibold text-white">
+                        {{ rf.label }}
+                    </th>
+                    {% endfor %}
+                    <th scope="col" class="py-3.5 pr-4 pl-3 sm:pr-6">
+                        <span class="sr-only">View</span>
+                    </th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-white/10">
+                {% for rel_item in rel_items %}
+                <tr>
+                    {% for rf in panel.related_resource_class().fields() if rf._show_on_index %}
+                    <td class="{% if loop.first %}py-4 pl-4 pr-3 sm:pl-6 font-medium text-white{% else %}px-3 py-4 text-gray-400{% endif %} whitespace-nowrap text-sm">
+                        {{ rf.display_value(rel_item) }}
+                    </td>
+                    {% endfor %}
+                    <td class="py-4 pr-4 pl-3 text-right text-sm font-medium whitespace-nowrap sm:pr-6">
+                        <a href="{{ prefix }}/resources/{{ panel.related_resource_class.slug() }}/{{ rel_item._attributes.get('id') }}"
+                           class="text-indigo-400 hover:text-indigo-300">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="border-t border-white/10 py-12 text-center">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+             class="mx-auto size-10 text-gray-500">
+            <path d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+                  stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="mt-2 text-sm text-gray-400">No related {{ panel.name | lower }} found.</p>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

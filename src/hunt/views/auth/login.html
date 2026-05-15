@@ -1,0 +1,35 @@
+@extends('auth.layout')
+
+@section('content')
+<h1>Sign in</h1>
+
+{% if status %}
+<div class="alert-success">{{ status }}</div>
+{% endif %}
+
+{% if errors.get('email') %}
+<div class="alert-error">{{ errors['email'][0] }}</div>
+{% endif %}
+
+<form method="post" action="/login">
+    <input type="hidden" name="_token" value="{{ csrf_token }}">
+    <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" value="{{ old.get('email', '') }}" required autofocus autocomplete="email">
+        {% if errors.get('email') %}<span class="field-error">{{ errors['email'][0] }}</span>{% endif %}
+    </div>
+    <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+        {% if errors.get('password') %}<span class="field-error">{{ errors['password'][0] }}</span>{% endif %}
+    </div>
+    <div class="field-row">
+        {% if config('auth.features.forgot_password', true) %}<a href="/forgot-password">Forgot your password?</a>{% endif %}
+    </div>
+    <button type="submit" class="btn-submit">Sign in</button>
+</form>
+
+{% if config('auth.features.registration', true) %}
+<p class="auth-footer">No account? <a href="/register">Create one</a></p>
+{% endif %}
+@endsection

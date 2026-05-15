@@ -1,0 +1,84 @@
+{% extends "admin/layout.html" %}
+{% from "admin/resource/_form.html" import render_field %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li>
+            <a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300">
+                <svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/>
+                </svg>
+                <span class="sr-only">Dashboard</span>
+            </a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <a href="{{ prefix }}/resources/{{ resource_key }}" class="text-sm font-medium text-gray-400 hover:text-gray-200">{{ resource.get_label_plural() }}</a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <a href="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}" class="text-sm font-medium text-gray-400 hover:text-gray-200">{{ resource.title(instance) }}</a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-400">Edit</span>
+        </li>
+    </ol>
+</nav>
+
+{# Page heading #}
+<div class="sm:flex sm:items-center mb-8">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">Edit {{ resource.title(instance) }}</h1>
+    </div>
+    <div class="mt-4 sm:mt-0 sm:ml-16 flex items-center gap-x-3">
+        <a href="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}"
+           class="inline-flex items-center rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">View</a>
+        <a href="{{ prefix }}/resources/{{ resource_key }}"
+           class="inline-flex items-center rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">Back</a>
+    </div>
+</div>
+
+{# General error #}
+{% if errors.get('_general') %}
+<div class="rounded-md bg-red-500/10 p-4 outline outline-red-500/20 mb-6">
+    <div class="flex">
+        <svg class="size-5 shrink-0 text-red-400 mr-3 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"/>
+        </svg>
+        <p class="text-sm text-red-400">{{ errors['_general'][0] }}</p>
+    </div>
+</div>
+{% endif %}
+
+{# Form card #}
+<div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl">
+    <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}" enctype="multipart/form-data">
+        <input type="hidden" name="_method" value="PUT">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
+        <div class="px-4 py-6 sm:p-8">
+            <div class="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2">
+                {% for field in fields %}
+                {{ render_field(field, old=old, errors=errors, record=instance) }}
+                {% endfor %}
+            </div>
+        </div>
+        <div class="flex items-center justify-end gap-x-3 border-t border-white/10 px-4 py-4 sm:px-8">
+            <a href="{{ prefix }}/resources/{{ resource_key }}/{{ record_id }}"
+               class="rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">Cancel</a>
+            <button type="submit"
+                    class="rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+                Update {{ resource.get_label() }}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

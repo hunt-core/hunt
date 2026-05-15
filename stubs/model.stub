@@ -1,0 +1,7 @@
+from hunt.database.model import Model
+
+
+class {{class}}(Model):
+    table = "{{table}}"
+    fillable: list[str] = []
+    hidden: list[str] = []

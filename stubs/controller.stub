@@ -1,0 +1,8 @@
+from hunt.http.controller import Controller
+from hunt.http.request import Request
+from hunt.http.response import Response
+
+
+class {{class}}(Controller):
+    def index(self, request: Request) -> Response:
+        return self.view("{{view}}")

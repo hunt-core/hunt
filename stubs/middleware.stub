@@ -1,0 +1,8 @@
+from hunt.http.middleware import Middleware, Next
+from hunt.http.request import Request
+from hunt.http.response import Response
+
+
+class {{class}}(Middleware):
+    async def handle(self, request: Request, next: Next) -> Response:
+        return await next(request)

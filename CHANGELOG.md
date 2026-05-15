@@ -1,0 +1,82 @@
+# Changelog
+
+All notable changes to hunt are documented here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Unreleased]
+
+---
+
+## [0.2.0] — 2026-05-14
+
+### Added
+
+**Admin panel**
+- Full admin panel at `/hunt-admin` with resource CRUD, index filtering, sorting, and pagination
+- Field types: `Text`, `Email`, `Password`, `Textarea`, `RichText`, `Number`, `Boolean`, `Select`, `Image`, `DateTime`, `BelongsTo`, `HasMany`, `Badge`
+- Fluent field API: `.sortable()`, `.readonly()`, `.rules()`, `.hide_from_forms()`, `.show_on_index()`, `.hide_from_index()`, etc.
+- Filter system with `SelectFilter`, `BooleanFilter`, `TrashedFilter`; options accept both dict and tuple formats
+- Action system with `ActionResponse.success()`, `ActionResponse.error()`, `ActionResponse.redirect()`
+- Metric cards: `ValueMetric`, `TrendMetric`, `PartitionMetric`
+- Global search across all registered resources, results grouped by resource with "View all" links
+- Navigation API: `NavGroup`, `NavResource`, `NavLink` with backward-compatible auto-generated sidebar
+- `hunt make:admin-resource` command — scaffolds and auto-registers an `AdminResource`; accepts both `Post` and `post` as the model argument
+
+**Authentication**
+- Session-backed auth via `Auth.attempt()`, `Auth.login()`, `Auth.logout()`, `Auth.user()`, `Auth.check()`
+- Full login / registration / forgot-password / reset-password scaffold via `hunt new`
+- Auth feature flags in `config/auth.py` (`registration`, `login`, `forgot_password`) — disabled features remove routes entirely and hide corresponding links in built-in auth views
+- Session ID regenerated on login to prevent session fixation
+
+**CLI**
+- `hunt new` — scaffold a complete application with auth, admin, migrations, and config files; auto-generates `APP_KEY` in `.env`
+- `hunt upgrade` — add missing scaffold files to existing projects; shows unified diff for locally modified files; creates new config files (e.g. `config/auth.py`) without overwriting customised ones
+- `hunt schedule:list` / `hunt schedule:run` — list and run scheduled tasks
+- `hunt queue:work` / `hunt queue:failed` / `hunt queue:flush` / `hunt queue:retry` — queue worker and failed job management
+- Full `make:*` suite: `model`, `controller`, `migration`, `middleware`, `event`, `listener`, `job`, `mail`, `seeder`, `factory`, `command`, `request`, `resource`, `rule`, `policy`, `observer`, `notification`, `admin-resource`
+
+**Queue system**
+- Sync, database, and Redis queue drivers
+- CAS-based pop in the database driver prevents race conditions under concurrent workers
+- Job chaining, delayed dispatch, configurable retries and backoff
+- `queue:work --once` for single-job processing
+
+**Scheduler**
+- Cron-expression scheduler with `every_minute()`, `hourly()`, `daily()`, `weekly()`, `monthly()`, and arbitrary `.cron()` expressions
+- Constraint modifiers: `.environments()`, `.when()`, `.skip()`, `.between()`
+- Background execution, output capture, lifecycle hooks (`.on_success()`, `.on_failure()`), health-check pings
+
+**Templates & views**
+- hunt template syntax: `@extends`, `@section`, `@yield`, `@include`, `@foreach`, `@if`, `@auth`, `@guest`, `@csrf`, `@error`, `@env`
+- `ViewFactory` automatically injects `config()`, `csrf_token`, `auth_user`, `request`, `can()`, and flash data into every template
+- View composers and shared variables
+
+**Security**
+- CSRF protection middleware with per-session tokens
+- Static file server blocks dangerous extensions: `.py`, `.env`, `.sh`, `.svg`, `.php`, and more
+- `Image` field excludes SVG from allowed upload MIME types by default
+- bcrypt password hashing via `hash_password()`
+- HTML output auto-escaped; raw output requires explicit `{!! !!}` syntax
+
+**Other**
+- ORM with `where`, `or_where`, `order_by`, `limit`, `paginate`, `first_or_create`, `find_or_fail`, soft deletes, relationships (`has_one`, `has_many`, `belongs_to`)
+- Event/listener system with `Dispatcher.dispatch_sync()` and the `event()` helper
+- Validation with 15+ built-in rules including `unique`, `confirmed`, `regex`, `in`
+- Storage system with local and S3 drivers; `storage:link` command
+- Cache system with file and Redis drivers
+- Mail system with SMTP and log transports
+- Translation / localisation support
+- `hunt tinker` — interactive REPL with full application context
+
+### Fixed
+- `make:admin-resource` normalises PascalCase model names to the correct lowercase filename
+- Scaffolded `layout.html` uses `config('key', default)` function syntax (not `.get()`)
+
+---
+
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/hunt-core/hunt/releases/tag/v0.2.0

@@ -1,0 +1,197 @@
+{#
+    Shared form fields partial.
+    Context: fields, errors, old, resource, prefix, resource_key, record_id (optional)
+#}
+{% macro render_field(field, old={}, errors={}, record=none) %}
+{% set val = old.get(field.attribute, '') %}
+{% set has_error = field.attribute in errors %}
+
+{% if field.field_type == 'boolean' %}
+<div class="sm:col-span-1">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2 flex items-center gap-x-3">
+        <div class="grid size-4 grid-cols-1">
+            <input type="checkbox" id="field_{{ field.attribute }}" name="{{ field.attribute }}" value="1"
+                   {% if val == '1' or val == 1 or val == True %}checked{% endif %}
+                   {% if field._readonly %}disabled{% endif %}
+                   class="col-start-1 row-start-1 appearance-none rounded-sm border border-white/20 bg-gray-800/50 checked:border-indigo-500 checked:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 forced-colors:appearance-auto">
+            <svg class="pointer-events-none col-start-1 row-start-1 size-3.5 self-center justify-self-center stroke-white" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path class="opacity-0 group-has-checked:opacity-100" d="M3 8L6 11L11 3.5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <span class="text-sm text-gray-400">{{ field.label }}</span>
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% elif field.field_type == 'select' %}
+<div class="sm:col-span-1">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2 grid grid-cols-1">
+        <select id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+                {% if field._readonly %}disabled{% endif %}
+                {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+                class="col-start-1 row-start-1 w-full appearance-none rounded-md py-1.5 pr-8 pl-3 text-base outline-1 -outline-offset-1 focus-visible:outline-2 focus-visible:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 dark:*:bg-gray-800 {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 focus-visible:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus-visible:outline-indigo-500{% endif %}">
+            <option value="">— Select —</option>
+            {% for opt in field.get_options() %}
+            <option value="{{ opt.value }}" {% if val | string == opt.value | string %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+        </select>
+        <svg class="pointer-events-none col-start-1 row-start-1 mr-2 size-4 self-center justify-self-end {% if has_error %}text-red-400{% else %}text-gray-400{% endif %}" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>
+        </svg>
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% elif field.field_type == 'image' %}
+<div class="sm:col-span-2">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2">
+        {% set img_url = field.url_for(record) if record is not none else none %}
+        {% if img_url %}
+        <div class="mb-3">
+            <img src="{{ img_url }}" alt="{{ field.label }}" class="h-24 w-auto rounded-lg object-cover ring-1 ring-white/10">
+            <p class="mt-1 text-xs text-gray-500">Current image. Upload a new file to replace it.</p>
+        </div>
+        {% endif %}
+        <input type="file" id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+               accept="{{ field._accepted }}"
+               {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+               class="block w-full text-sm text-gray-400 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-500 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-400 cursor-pointer">
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% elif field.field_type == 'richtext' %}
+<div class="sm:col-span-2">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2">
+        <input type="hidden" id="field_{{ field.attribute }}" name="{{ field.attribute }}" value="{{ val }}">
+        <trix-editor input="field_{{ field.attribute }}"
+                     {% if field._readonly %}contenteditable="false"{% endif %}
+                     class="block w-full rounded-md text-base sm:text-sm/6 trix-admin"></trix-editor>
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% elif field.field_type == 'textarea' %}
+<div class="sm:col-span-2">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2">
+        <textarea id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+                  rows="{{ field._rows }}"
+                  {% if field._readonly %}readonly{% endif %}
+                  {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+                  class="block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 resize-y {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 placeholder:text-red-400/70 focus:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus:outline-indigo-500{% endif %}">{{ val }}</textarea>
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% elif field.field_type == 'password' %}
+<div class="sm:col-span-1">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2 {% if has_error %}grid grid-cols-1{% endif %}">
+        <input type="password" id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+               autocomplete="new-password"
+               {% if field._readonly %}readonly{% endif %}
+               {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+               class="{% if has_error %}col-start-1 row-start-1 pr-10 sm:pr-9{% endif %} block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 placeholder:text-red-400/70 focus:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus:outline-indigo-500{% endif %}">
+        {% if has_error %}
+        <svg class="pointer-events-none col-start-1 row-start-1 mr-3 size-5 self-center justify-self-end text-red-400 sm:size-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" clip-rule="evenodd"/>
+            <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+        </svg>
+        {% endif %}
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% elif field.field_type in ('datetime', 'date') %}
+<div class="sm:col-span-1">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2">
+        <input type="{{ 'datetime-local' if field.field_type == 'datetime' else 'date' }}"
+               id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+               value="{{ val }}"
+               {% if field._readonly %}readonly{% endif %}
+               {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+               class="block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 focus:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus:outline-indigo-500{% endif %} [color-scheme:dark]">
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% elif field.field_type == 'number' or field.field_type == 'currency' %}
+<div class="sm:col-span-1">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2">
+        <input type="number" id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+               value="{{ val }}"
+               {% if field.field_type == 'number' and field._min is not none %}min="{{ field._min }}"{% endif %}
+               {% if field.field_type == 'number' and field._max is not none %}max="{{ field._max }}"{% endif %}
+               step="{{ '0.01' if field.field_type == 'currency' else '1' }}"
+               {% if field._readonly %}readonly{% endif %}
+               {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+               class="block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 focus:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus:outline-indigo-500{% endif %}">
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
+{% else %}
+{# text, email, slug, badge, belongs_to default #}
+<div class="sm:col-span-1">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2 {% if has_error %}grid grid-cols-1{% endif %}">
+        <input type="{{ field.field_type if field.field_type in ('email',) else 'text' }}"
+               id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+               value="{{ val }}"
+               {% if field._readonly %}readonly{% endif %}
+               {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+               class="{% if has_error %}col-start-1 row-start-1 pr-10 sm:pr-9{% endif %} block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 placeholder:text-red-400/70 focus:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus:outline-indigo-500{% endif %}">
+        {% if has_error %}
+        <svg class="pointer-events-none col-start-1 row-start-1 mr-3 size-5 self-center justify-self-end text-red-400 sm:size-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" clip-rule="evenodd"/>
+            <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/>
+        </svg>
+        {% endif %}
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+{% endif %}
+{% endmacro %}
