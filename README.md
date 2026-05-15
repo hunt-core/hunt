@@ -1,10 +1,14 @@
-# hunt
+<p align="center">
+  <img src="docs/logo.png" alt="hunt framework" width="320" />
+</p>
 
-[![CI](https://github.com/hunt-core/hunt/actions/workflows/tests.yml/badge.svg)](https://github.com/hunt-core/hunt/actions/workflows/tests.yml)
-[![Lint](https://github.com/hunt-core/hunt/actions/workflows/lint.yml/badge.svg)](https://github.com/hunt-core/hunt/actions/workflows/lint.yml)
-[![PyPI](https://img.shields.io/pypi/v/hunt-framework)](https://pypi.org/project/hunt-framework/)
-[![Python](https://img.shields.io/pypi/pyversions/hunt-framework)](https://pypi.org/project/hunt-framework/)
-[![License](https://img.shields.io/github/license/hunt-core/hunt)](LICENSE)
+<p align="center">
+  <a href="https://github.com/hunt-core/hunt/actions/workflows/tests.yml"><img src="https://github.com/hunt-core/hunt/actions/workflows/tests.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/hunt-core/hunt/actions/workflows/lint.yml"><img src="https://github.com/hunt-core/hunt/actions/workflows/lint.yml/badge.svg" alt="Lint"></a>
+  <a href="https://pypi.org/project/hunt-framework/"><img src="https://img.shields.io/pypi/v/hunt-framework" alt="PyPI"></a>
+  <a href="https://pypi.org/project/hunt-framework/"><img src="https://img.shields.io/pypi/pyversions/hunt-framework" alt="Python"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/hunt-core/hunt" alt="License"></a>
+</p>
 
 A Python web framework. Routing, ORM, templates, migrations, validation, authentication, admin panel, and a CLI — all in one package.
 
