@@ -1,5 +1,11 @@
 # hunt
 
+[![CI](https://github.com/hunt-core/hunt/actions/workflows/tests.yml/badge.svg)](https://github.com/hunt-core/hunt/actions/workflows/tests.yml)
+[![Lint](https://github.com/hunt-core/hunt/actions/workflows/lint.yml/badge.svg)](https://github.com/hunt-core/hunt/actions/workflows/lint.yml)
+[![PyPI](https://img.shields.io/pypi/v/hunt-framework)](https://pypi.org/project/hunt-framework/)
+[![Python](https://img.shields.io/pypi/pyversions/hunt-framework)](https://pypi.org/project/hunt-framework/)
+[![License](https://img.shields.io/github/license/hunt-core/hunt)](LICENSE)
+
 A Python web framework. Routing, ORM, templates, migrations, validation, authentication, admin panel, and a CLI — all in one package.
 
 ---
