@@ -6,6 +6,19 @@ from typing import Any
 
 _IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
+# Types that need renaming on PostgreSQL (which rejects MySQL-specific names).
+_PG_TYPE_MAP: dict[str, str] = {
+    "TINYINT": "SMALLINT",
+    "MEDIUMTEXT": "TEXT",
+    "LONGTEXT": "TEXT",
+    "DATETIME": "TIMESTAMP",
+    "DOUBLE": "DOUBLE PRECISION",
+    "BLOB": "BYTEA",
+}
+
+# Matches FLOAT(precision,scale) as produced by Blueprint.float().
+_FLOAT_ARGS_RE = re.compile(r"^FLOAT\((\d+),\d+\)$")
+
 
 def _ident(name: str) -> str:
     if not _IDENT_RE.match(name):
@@ -305,33 +318,55 @@ class Blueprint:
     # SQL generation
     # ------------------------------------------------------------------
 
-    def to_create_sql(self) -> list[str]:
+    def to_create_sql(self, dialect: str = "sqlite") -> list[str]:
         stmts = []
         col_defs = []
         for col in self.columns:
-            col_defs.append(self._column_sql(col))
+            col_defs.append(self._column_sql(col, dialect))
         t = _ident(self.table)
         create = f"CREATE TABLE IF NOT EXISTS {t} (\n  " + ",\n  ".join(col_defs) + "\n)"
         stmts.append(create)
+        # MySQL does not support IF NOT EXISTS for index creation.
+        if_not_exists = "" if dialect == "mysql" else "IF NOT EXISTS "
         for idx in self.indexes:
             idx_name = _ident(idx.name) if idx.name else f"{t}_idx"
             safe_cols = ", ".join(_ident(c) for c in idx.columns)
             if idx.unique:
-                stmts.append(f"CREATE UNIQUE INDEX IF NOT EXISTS {idx_name} ON {t} ({safe_cols})")
+                stmts.append(f"CREATE UNIQUE INDEX {if_not_exists}{idx_name} ON {t} ({safe_cols})")
             else:
-                stmts.append(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {t} ({safe_cols})")
+                stmts.append(f"CREATE INDEX {if_not_exists}{idx_name} ON {t} ({safe_cols})")
         return stmts
 
     @staticmethod
-    def _column_sql(col: ColumnDef) -> str:
+    def _resolve_type(col_type: str, dialect: str) -> str:
+        """Map a column type string to the correct spelling for the target dialect."""
+        if dialect == "postgresql":
+            mapped = _PG_TYPE_MAP.get(col_type)
+            if mapped:
+                return mapped
+            m = _FLOAT_ARGS_RE.match(col_type)
+            if m:
+                return "REAL" if int(m.group(1)) <= 24 else "DOUBLE PRECISION"
+        return col_type
+
+    @staticmethod
+    def _column_sql(col: ColumnDef, dialect: str = "sqlite") -> str:
+        col_type = Blueprint._resolve_type(col.type, dialect)
         if col.length:
-            sql = f"{col.name} {col.type}({col.length})"
+            sql = f"{col.name} {col_type}({col.length})"
         else:
-            sql = f"{col.name} {col.type}"
+            sql = f"{col.name} {col_type}"
+        if col.unsigned and dialect == "mysql":
+            sql += " UNSIGNED"
         if col.primary:
             sql += " PRIMARY KEY"
         if col.auto_increment:
-            sql += " AUTOINCREMENT"
+            if dialect == "mysql":
+                sql += " AUTO_INCREMENT"
+            elif dialect == "postgresql":
+                sql += " GENERATED ALWAYS AS IDENTITY"
+            else:
+                sql += " AUTOINCREMENT"
         if not col.is_nullable and not col.primary:
             sql += " NOT NULL"
         if col.default_value is not None:

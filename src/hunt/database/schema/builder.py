@@ -38,8 +38,9 @@ class Schema:
         bp = Blueprint(_ident(table))
         callback(bp)
         engine = connection(cls._conn_name)
+        dialect = engine.dialect.name
         with engine.connect() as conn:
-            for sql in bp.to_create_sql():
+            for sql in bp.to_create_sql(dialect):
                 conn.execute(text(sql))
             conn.commit()
 
@@ -56,7 +57,7 @@ class Schema:
             # 1. Add new columns
             new_cols = [c for c in bp.columns if not c.is_change]
             for col in new_cols:
-                sql = f"ALTER TABLE {t} ADD COLUMN {Blueprint._column_sql(col)}"
+                sql = f"ALTER TABLE {t} ADD COLUMN {Blueprint._column_sql(col, dialect)}"
                 conn.execute(text(sql))
 
             # 2. Alter existing columns
@@ -66,7 +67,7 @@ class Schema:
                     _sqlite_rebuild_columns(conn, t, change_cols)
                 elif dialect == "mysql":
                     for col in change_cols:
-                        conn.execute(text(f"ALTER TABLE {t} MODIFY COLUMN {Blueprint._column_sql(col)}"))
+                        conn.execute(text(f"ALTER TABLE {t} MODIFY COLUMN {Blueprint._column_sql(col, dialect)}"))
                 else:  # postgresql and others
                     for col in change_cols:
                         _pg_alter_column(conn, t, col)
@@ -195,7 +196,7 @@ def _sqlite_rebuild_columns(conn, table: str, changes: list[ColumnDef]) -> None:
     for row in rows:
         name = row[1]
         if name in change_map:
-            new_col_defs.append(Blueprint._column_sql(change_map[name]))
+            new_col_defs.append(Blueprint._column_sql(change_map[name], "sqlite"))
         else:
             # Reconstruct SQL from PRAGMA info — sanitize PRAGMA-derived values
             col_type = str(row[2]) if row[2] else "TEXT"
