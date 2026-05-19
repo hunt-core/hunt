@@ -105,12 +105,23 @@ def _build_mime(mailable: Mailable) -> MIMEMultipart:
         msg.attach(MIMEText(html_body, "html"))
 
     for att in mailable._attachments:
-        path = Path(att["file"])
-        if path.exists():
+        if "_raw_data" in att:
+            raw = att["_raw_data"]
+            name = att["_raw_name"]
+            mime_type = att.get("_raw_mime", "application/octet-stream")
+            _, _, sub = mime_type.partition("/")
+            part = MIMEApplication(
+                raw if isinstance(raw, bytes) else raw.encode(), _subtype=sub or "octet-stream", Name=name
+            )
+            part["Content-Disposition"] = f'attachment; filename="{name}"'
+        else:
+            path = Path(att["file"])
+            if not path.exists():
+                continue
             with open(path, "rb") as f:
                 part = MIMEApplication(f.read(), Name=path.name)
             part["Content-Disposition"] = f'attachment; filename="{path.name}"'
-            msg.attach(part)
+        msg.attach(part)
 
     return msg
 
@@ -124,15 +135,41 @@ class _PendingMail:
     def __init__(self, manager: _MailManager, to: list[str]) -> None:
         self._manager = manager
         self._to = to
+        self._cc: list[str] = []
+        self._bcc: list[str] = []
+
+    def cc(self, address: str | list[str]) -> _PendingMail:
+        if isinstance(address, str):
+            self._cc.append(address)
+        else:
+            self._cc.extend(address)
+        return self
+
+    def bcc(self, address: str | list[str]) -> _PendingMail:
+        if isinstance(address, str):
+            self._bcc.append(address)
+        else:
+            self._bcc.extend(address)
+        return self
+
+    def _apply(self, mailable: Mailable) -> Mailable:
+        mailable.to(self._to)
+        if self._cc:
+            mailable.cc(self._cc)
+        if self._bcc:
+            mailable.bcc(self._bcc)
+        return mailable
 
     def send(self, mailable: Mailable) -> None:
-        mailable.to(self._to)
-        self._manager.send(mailable)
+        self._manager.send(self._apply(mailable))
 
     def queue(self, mailable: Mailable) -> None:
         """Queue the mailable for background sending (delegates to queue driver)."""
-        mailable.to(self._to)
-        self._manager.queue(mailable)
+        self._manager.queue(self._apply(mailable))
+
+    def later(self, delay: int, mailable: Mailable) -> None:
+        """Queue the mailable with a delay in seconds."""
+        self._manager.later(delay, self._apply(mailable))
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +295,13 @@ class _MailManager:
             self._fake._record(mailable)
             return
 
-        driver = self._resolve_driver()
-        driver_config = self._driver_config()
+        mailer_override = getattr(mailable, "_mailer_override", None)
+        if mailer_override and mailer_override != self._default:
+            driver_config = self._config.get("mailers", {}).get(mailer_override, self._config)
+            driver = self._resolve_driver_for(driver_config)
+        else:
+            driver_config = self._driver_config()
+            driver = self._resolve_driver()
         driver.send(mailable, driver_config)
 
     def queue(self, mailable: Mailable) -> None:
@@ -268,6 +310,15 @@ class _MailManager:
             from hunt.queue.manager import Queue
 
             Queue.push(_SendMailableJob(mailable, self))
+        except Exception:
+            self.send(mailable)
+
+    def later(self, delay: int, mailable: Mailable) -> None:
+        """Queue a mailable to be sent after ``delay`` seconds."""
+        try:
+            from hunt.queue.manager import Queue
+
+            Queue.later(delay, _SendMailableJob(mailable, self))
         except Exception:
             self.send(mailable)
 
@@ -301,7 +352,10 @@ class _MailManager:
         return mailers.get(self._default, self._config)
 
     def _resolve_driver(self) -> Any:
-        transport = self._driver_config().get("transport", self._default)
+        return self._resolve_driver_for(self._driver_config())
+
+    def _resolve_driver_for(self, config: dict) -> Any:
+        transport = config.get("transport", self._default)
         if transport == "smtp":
             return _SmtpDriver()
         if transport == "array":

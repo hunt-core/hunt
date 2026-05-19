@@ -11,6 +11,26 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.16] — 2026-05-19
+
+### Added
+
+**Mail**
+- **`Mailable.with_mailer(name)`** — send a single mailable through a specific named mailer (e.g. `WelcomeEmail().with_mailer("postmark")`) without changing the default
+- **`Mailable.attach_data(data, name, mime_type)`** — attach raw bytes (or str) without writing a temporary file; useful for dynamically generated PDFs, CSVs, etc.
+- **`Mail.to(...).cc(address)`** and **`.bcc(address)`** — fluent CC/BCC before sending
+- **`Mail.later(delay, mailable)`** and **`Mail.to(...).later(delay, mailable)`** — queue a mailable with a delay in seconds
+- **`NotificationFake`** — context-manager fake that intercepts `notifiable.notify()`; assertions: `assert_sent_to`, `assert_not_sent_to`, `assert_nothing_sent`, `sent(cls)`
+
+**Notifications**
+- **Slack channel** — send notifications via Slack incoming webhooks; implement `to_slack(notifiable)` returning a `SlackMessage` and add `"slack"` to `via()`
+- **`SlackMessage` fluent builder** — `content()`, `block()`, `attachment()`, `from_()`, `icon()`, `channel()`, `to(webhook_url)`
+- **Queueable notifications** — set `should_queue = True` on a `Notification` class to automatically dispatch each channel through the queue
+- **`notifiable.route_notification_for_slack()`** — override on notifiable to provide a per-entity webhook URL
+- **`notifiable.mark_notification_read(notification_id)`** — mark a single database notification as read by its UUID
+
+---
+
 ## [0.2.15] — 2026-05-19
 
 ### Added
@@ -241,7 +261,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.15...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.16...HEAD
+[0.2.16]: https://github.com/hunt-core/hunt/compare/v0.2.15...v0.2.16
 [0.2.15]: https://github.com/hunt-core/hunt/compare/v0.2.14...v0.2.15
 [0.2.14]: https://github.com/hunt-core/hunt/compare/v0.2.13...v0.2.14
 [0.2.13]: https://github.com/hunt-core/hunt/compare/v0.2.12...v0.2.13

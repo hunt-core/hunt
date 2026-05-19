@@ -33,6 +33,7 @@ class Mailable:
         self._attachments: list[dict] = []
         self._from_addr: str | None = None
         self._from_name: str | None = None
+        self._mailer_override: str | None = None
 
     # ------------------------------------------------------------------
     # Address fluents
@@ -92,8 +93,20 @@ class Mailable:
         self._text_content = content
         return self
 
+    def with_mailer(self, mailer: str) -> Mailable:
+        """Override which configured mailer to use for this mailable."""
+        self._mailer_override: str | None = mailer
+        return self
+
     def attach(self, file: str, options: dict | None = None) -> Mailable:
         self._attachments.append({"file": file, **(options or {})})
+        return self
+
+    def attach_data(self, data: bytes | str, name: str, mime_type: str = "application/octet-stream") -> Mailable:
+        """Attach raw bytes or a string without needing a file on disk."""
+        if isinstance(data, str):
+            data = data.encode()
+        self._attachments.append({"_raw_data": data, "_raw_name": name, "_raw_mime": mime_type})
         return self
 
     # ------------------------------------------------------------------

@@ -149,6 +149,62 @@ class QueueFake:
 
 
 # ---------------------------------------------------------------------------
+# NotificationFake
+# ---------------------------------------------------------------------------
+
+
+class NotificationFake:
+    """Replace the notification sender with a recording fake.
+
+    Usage::
+
+        with NotificationFake() as fake:
+            user.notify(InvoiceReady(invoice))
+            fake.assert_sent_to(user, InvoiceReady)
+    """
+
+    def __init__(self) -> None:
+        self._sent: list[tuple[Any, Any]] = []  # [(notifiable, notification), ...]
+
+    def __enter__(self) -> NotificationFake:
+        fake = self
+
+        class _FakeSender:
+            def __init__(self, notification: Any, notifiable: Any) -> None:
+                self._notification = notification
+                self._notifiable = notifiable
+
+            def send(self) -> None:
+                fake._sent.append((self._notifiable, self._notification))
+
+        from hunt.notifications import notifiable as _notifiable_mod
+
+        self._patcher = patch.object(_notifiable_mod, "_NotificationSender", _FakeSender)
+        self._patcher.start()
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self._patcher.stop()
+
+    def assert_sent_to(self, notifiable: Any, cls: type, count: int | None = None) -> None:
+        found = [n for nb, n in self._sent if nb is notifiable and isinstance(n, cls)]
+        if count is not None:
+            assert len(found) == count, f"Expected {count} {cls.__name__} to {notifiable!r}, got {len(found)}"
+        else:
+            assert found, f"Expected {cls.__name__} to be sent to {notifiable!r}, but it was not"
+
+    def assert_not_sent_to(self, notifiable: Any, cls: type) -> None:
+        found = [n for nb, n in self._sent if nb is notifiable and isinstance(n, cls)]
+        assert not found, f"Expected {cls.__name__} NOT to be sent to {notifiable!r}"
+
+    def assert_nothing_sent(self) -> None:
+        assert not self._sent, f"Expected no notifications sent, got {len(self._sent)}"
+
+    def sent(self, cls: type) -> list[Any]:
+        return [n for _, n in self._sent if isinstance(n, cls)]
+
+
+# ---------------------------------------------------------------------------
 # MailFake
 # ---------------------------------------------------------------------------
 

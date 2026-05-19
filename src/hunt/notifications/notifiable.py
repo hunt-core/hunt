@@ -38,6 +38,10 @@ class Notifiable:
             return self._attributes.get("id")  # type: ignore[attr-defined]
         return getattr(self, "id", None)
 
+    def route_notification_for_slack(self) -> str | None:
+        """Return the Slack webhook URL for this notifiable. Override to customise."""
+        return None
+
     def notifications(self) -> list[dict]:
         """Return all database notifications for this notifiable."""
         return _fetch_notifications(self, unread_only=False)
@@ -69,6 +73,22 @@ class Notifiable:
                     "notifiable_id = :nid AND notifiable_type = :ntype AND read_at IS NULL"
                 ),
                 {"t": now, "nid": notifiable_id, "ntype": notifiable_type},
+            )
+            conn.commit()
+
+    def mark_notification_read(self, notification_id: str) -> None:
+        """Mark a single notification as read by its ID."""
+        import time
+
+        from sqlalchemy import text
+
+        from hunt.database.connection import connection
+
+        now = int(time.time())
+        with connection().connect() as conn:
+            conn.execute(
+                text("UPDATE notifications SET read_at = :t WHERE id = :id AND read_at IS NULL"),
+                {"t": now, "id": notification_id},
             )
             conn.commit()
 
@@ -120,6 +140,7 @@ class _NotificationSender:
     CHANNELS: ClassVar[dict] = {
         "mail": "hunt.notifications.channels.mail.MailChannel",
         "database": "hunt.notifications.channels.database.DatabaseChannel",
+        "slack": "hunt.notifications.channels.slack.SlackChannel",
     }
 
     def __init__(self, notification: Notification, notifiable: Any) -> None:
@@ -127,8 +148,22 @@ class _NotificationSender:
         self._notifiable = notifiable
 
     def send(self) -> None:
+        should_queue = getattr(self._notification, "should_queue", False)
         channels = self._notification.via(self._notifiable)
         for channel in channels:
+            if should_queue:
+                self._queue_channel(channel)
+            else:
+                driver = self._resolve(channel)
+                if driver:
+                    driver.send(self._notifiable, self._notification)
+
+    def _queue_channel(self, channel: str) -> None:
+        try:
+            from hunt.queue.manager import Queue
+
+            Queue.push(_SendNotificationJob(self._notification, self._notifiable, channel))
+        except Exception:
             driver = self._resolve(channel)
             if driver:
                 driver.send(self._notifiable, self._notification)
@@ -142,3 +177,23 @@ class _NotificationSender:
 
         mod = importlib.import_module(module_path)
         return getattr(mod, cls_name)()
+
+
+class _SendNotificationJob:
+    """Delivers a single notification channel via the queue."""
+
+    queue: str = "default"
+    tries: int = 3
+
+    def __init__(self, notification: Any, notifiable: Any, channel: str) -> None:
+        self._notification = notification
+        self._notifiable = notifiable
+        self._channel = channel
+
+    def handle(self) -> None:
+        driver = _NotificationSender(self._notification, self._notifiable)._resolve(self._channel)
+        if driver:
+            driver.send(self._notifiable, self._notification)
+
+    def failed(self, exc: Exception) -> None:
+        pass
