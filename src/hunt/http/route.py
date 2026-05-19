@@ -45,7 +45,7 @@ class Route:
         result = self.uri
         for name in self._param_names:
             value = (params or {}).get(name, f"{{{name}}}")
-            result = re.sub(r"\{" + name + r"\??}", str(value), result)
+            result = re.sub(r"\{" + re.escape(name) + r"(?::[^}]+)?\??}", str(value), result)
         return result
 
     @staticmethod
@@ -55,11 +55,14 @@ class Route:
 
         def replacer(m: re.Match) -> str:
             pname = m.group(1)
-            optional = m.group(0).endswith("?}")
+            constraint = m.group(2)  # e.g. r"\d+" from {id:\d+}
+            optional = bool(m.group(3))
             param_names.append(pname)
+            regex = constraint if constraint else "[^/]+"
             if optional:
-                return f"(?P<{pname}>[^/]*)?"
-            return f"(?P<{pname}>[^/]+)"
+                return f"(?P<{pname}>{regex})?"
+            return f"(?P<{pname}>{regex})"
 
-        pattern = re.sub(r"\{(\w+)\??}", replacer, pattern)
+        # Matches {name}, {name?}, {name:constraint}, {name:constraint?}
+        pattern = re.sub(r"\{(\w+)(?::([^}?]+))?(\?)?}", replacer, pattern)
         return re.compile(pattern), param_names

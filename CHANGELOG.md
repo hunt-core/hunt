@@ -11,6 +11,20 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.12] — 2026-05-19
+
+### Added
+
+- **Route model binding** — annotate a route parameter with a `Model` subclass and hunt auto-resolves it via `find_or_fail`: `async def show(request, post: Post)` → `post` is the loaded model, 404 on missing
+- **Route regex constraints** — `{id:\d+}` syntax restricts what a route segment matches; `{slug:[a-z-]+}` etc.
+- **Implicit OPTIONS handling** — `OPTIONS` requests that match no explicit route now return `204` through global middleware (so `HandleCors` applies CORS headers automatically); includes `Allow` header listing registered methods for the path
+- `Response.with_etag(etag)` — sets `ETag` header (auto-quotes bare values)
+- `Response.last_modified(dt)` — sets `Last-Modified` header; accepts `datetime` or RFC 7231 string
+- `Response.cache(seconds, public=True)` — sets `Cache-Control: public, max-age=N`
+- `Response.no_cache()` — sets `Cache-Control: no-store, no-cache, must-revalidate` + `Pragma: no-cache`
+
+---
+
 ## [0.2.11] — 2026-05-19
 
 ### Added
@@ -175,7 +189,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.11...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.12...HEAD
+[0.2.12]: https://github.com/hunt-core/hunt/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/hunt-core/hunt/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/hunt-core/hunt/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/hunt-core/hunt/compare/v0.2.8...v0.2.9

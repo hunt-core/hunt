@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -51,6 +52,35 @@ class Response:
         if secure:
             cookie += "; Secure"
         self._cookie_headers.append(cookie)
+        return self
+
+    def with_etag(self, etag: str) -> Response:
+        """Set the ETag response header. Wraps bare values in double-quotes."""
+        value = etag if etag.startswith('"') or etag.startswith("W/") else f'"{etag}"'
+        self._headers["ETag"] = value
+        return self
+
+    def last_modified(self, dt: datetime | str) -> Response:
+        """Set the Last-Modified header. Accepts a datetime or an RFC 7231 string."""
+        if isinstance(dt, datetime):
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            value = dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        else:
+            value = str(dt)
+        self._headers["Last-Modified"] = value
+        return self
+
+    def cache(self, seconds: int, *, public: bool = True) -> Response:
+        """Set Cache-Control with max-age."""
+        scope = "public" if public else "private"
+        self._headers["Cache-Control"] = f"{scope}, max-age={seconds}"
+        return self
+
+    def no_cache(self) -> Response:
+        """Instruct clients and proxies never to cache this response."""
+        self._headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        self._headers["Pragma"] = "no-cache"
         return self
 
     def forget_cookie(self, name: str, path: str = "/") -> Response:

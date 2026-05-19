@@ -102,6 +102,16 @@ class Router:
     def routes(self) -> list[Route]:
         return list(self._routes)
 
+    def allowed_methods(self, path: str) -> list[str]:
+        """Return all HTTP methods registered for routes whose pattern matches path."""
+        if path != "/" and path.endswith("/"):
+            path = path.rstrip("/")
+        methods: set[str] = set()
+        for route in self._routes:
+            if route._pattern.fullmatch(path) is not None:
+                methods.update(route.methods)
+        return sorted(methods)
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

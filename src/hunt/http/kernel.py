@@ -95,6 +95,8 @@ class HttpKernel:
         try:
             route, params = self._router.dispatch(request.method, request.path)
         except RouteNotFoundException:
+            if request.method == "OPTIONS":
+                return await self._handle_options(request)
             return self._render_error(request, HttpException(404, "Not Found"))
 
         request.set_route_params(params)
@@ -112,8 +114,25 @@ class HttpKernel:
         except Exception as e:
             return self._render_exception(request, e)
 
+    async def _handle_options(self, request: Request) -> Response:
+        """Return an implicit 204 for OPTIONS preflight — runs global middleware (e.g. CORS)."""
+        allowed = self._router.allowed_methods(request.path)
+        if not allowed:
+            return self._render_error(request, HttpException(404, "Not Found"))
+        allow_value = ", ".join(sorted({*allowed, "OPTIONS"}))
+
+        async def _options_action(req: Request) -> Response:
+            return Response("", 204, {"Allow": allow_value})
+
+        pipeline = self._build_pipeline(self._global_middleware, _options_action)
+        try:
+            return await pipeline(request)
+        except Exception:
+            return Response("", 204, {"Allow": allow_value})
+
     def _make_handler(self, action: Callable, params: dict[str, str]) -> Next:
         async def handler(request: Request) -> Response:
+            from hunt.database.model import Model
             from hunt.validation.form_request import FormRequest
 
             sig = inspect.signature(action)
@@ -122,7 +141,11 @@ class HttpKernel:
                 if name in ("request", "req"):
                     kwargs[name] = request
                 elif name in params:
-                    kwargs[name] = params[name]
+                    ann = param.annotation
+                    if ann is not inspect.Parameter.empty and isinstance(ann, type) and issubclass(ann, Model):
+                        kwargs[name] = ann.find_or_fail(params[name])
+                    else:
+                        kwargs[name] = params[name]
                 elif param.default is not inspect.Parameter.empty:
                     kwargs[name] = param.default
                 elif param.annotation is not inspect.Parameter.empty:
