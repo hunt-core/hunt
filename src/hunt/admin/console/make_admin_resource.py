@@ -46,14 +46,14 @@ def make_admin_resource_command(model: str) -> None:
     if file_path.exists():
         raise click.ClickException(f"File already exists: app/admin/{snake_name}.py")
 
-    content = (
+    _DEFAULT_STUB = (
         "from hunt.admin import AdminResource\n"
         "from hunt.admin.fields import Text, Number, DateTime\n"
-        f"from app.models.{model_slug} import {model_class}\n"
+        "from app.models.{{model_slug}} import {{model_class}}\n"
         "\n\n"
-        f"class {class_name}(AdminResource):\n"
-        f"    model = {model_class}\n"
-        f'    label = "{model_class}"\n'
+        "class {{class_name}}(AdminResource):\n"
+        "    model = {{model_class}}\n"
+        '    label = "{{model_class}}"\n'
         '    search_columns = ["id"]\n'
         '    default_order = ("id", "desc")\n'
         "    per_page = 15\n"
@@ -74,6 +74,15 @@ def make_admin_resource_command(model: str) -> None:
         "\n"
         "    def metrics(self):\n"
         "        return []\n"
+    )
+
+    from hunt.console.commands.make import load_stub
+
+    stub = load_stub("admin-resource", _DEFAULT_STUB)
+    content = (
+        stub.replace("{{class_name}}", class_name)
+        .replace("{{model_class}}", model_class)
+        .replace("{{model_slug}}", model_slug)
     )
 
     file_path.write_text(content)

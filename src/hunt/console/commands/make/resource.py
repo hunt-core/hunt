@@ -34,8 +34,10 @@ class {class_name}:
 @click.option("-c", "--collection", "is_collection", is_flag=True, help="Generate a collection resource instead")
 def make_resource_command(name: str, is_collection: bool) -> None:
     """Create a new API resource transformer class."""
+    from hunt.console.commands.make import load_stub
+
     class_name = Str.pascal(Str.snake(name))
-    content = _STUB.format(class_name=class_name)
+    content = load_stub("resource", _STUB).format(class_name=class_name)
 
     out = Path.cwd() / "app" / "resources" / f"{Str.snake(name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)

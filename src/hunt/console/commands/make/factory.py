@@ -25,6 +25,8 @@ class {class_name}(Factory):
 @click.option("--model", "model_name", default="", help="Model class this factory creates")
 def make_factory_command(name: str, model_name: str) -> None:
     """Create a new model Factory class."""
+    from hunt.console.commands.make import load_stub
+
     class_name = name if name.endswith("Factory") else f"{name}Factory"
     if not model_name:
         model_name = name.replace("Factory", "")
@@ -33,5 +35,5 @@ def make_factory_command(name: str, model_name: str) -> None:
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(_STUB.format(class_name=class_name, model_name=model_name))
+    out.write_text(load_stub("factory", _STUB).format(class_name=class_name, model_name=model_name))
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")

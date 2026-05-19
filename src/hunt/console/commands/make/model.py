@@ -34,15 +34,7 @@ def make_model_command(name: str, migration: bool, controller: bool) -> None:
         _create_controller(f"{class_name}Controller", resource=False)
 
 
-def _load_stub(name: str) -> str:
-    stub_path = Path(__file__).parents[5] / "stubs" / f"{name}.stub"
-    if stub_path.exists():
-        return stub_path.read_text()
-    return _default_stubs[name]
-
-
-_default_stubs: dict[str, str] = {
-    "model": """\
+_MODEL_STUB = """\
 from hunt.database.model import Model
 
 
@@ -50,5 +42,10 @@ class {{class}}(Model):
     table = "{{table}}"
     fillable: list[str] = []
     hidden: list[str] = []
-""",
-}
+"""
+
+
+def _load_stub(name: str) -> str:
+    from hunt.console.commands.make import load_stub
+
+    return load_stub(name, _MODEL_STUB)

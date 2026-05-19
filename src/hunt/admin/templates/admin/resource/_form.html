@@ -169,8 +169,86 @@
     {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
 </div>
 
+{% elif field.field_type == 'belongs_to' %}
+<div class="sm:col-span-1">
+    <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2">
+        {% if field._searchable %}
+        {# Autocomplete: text input for display, hidden input for actual FK value #}
+        <div class="relative" id="autocomplete_{{ field.attribute }}">
+            <input type="hidden" id="field_{{ field.attribute }}" name="{{ field.attribute }}" value="{{ val }}">
+            <input type="text" id="field_{{ field.attribute }}_display"
+                   autocomplete="off"
+                   placeholder="Type to search…"
+                   {% if field._readonly %}readonly{% endif %}
+                   {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+                   class="block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 focus:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus:outline-indigo-500{% endif %}">
+            <ul id="field_{{ field.attribute }}_results"
+                class="hidden absolute z-50 mt-1 w-full rounded-md bg-gray-800 py-1 inset-ring inset-ring-white/10 shadow-lg max-h-48 overflow-y-auto text-sm text-white">
+            </ul>
+        </div>
+        <script>
+        (function() {
+            var hidden  = document.getElementById('field_{{ field.attribute }}');
+            var display = document.getElementById('field_{{ field.attribute }}_display');
+            var list    = document.getElementById('field_{{ field.attribute }}_results');
+            var timer;
+            display.addEventListener('input', function() {
+                clearTimeout(timer);
+                timer = setTimeout(function() {
+                    var q = display.value.trim();
+                    fetch('{{ prefix }}/resources/{{ resource_key }}/search-relation?field={{ field.attribute }}&q=' + encodeURIComponent(q))
+                        .then(function(r) { return r.json(); })
+                        .then(function(data) {
+                            list.innerHTML = '';
+                            if (!data.results || !data.results.length) { list.classList.add('hidden'); return; }
+                            data.results.forEach(function(item) {
+                                var li = document.createElement('li');
+                                li.textContent = item.label;
+                                li.className = 'px-3 py-2 cursor-pointer hover:bg-white/10';
+                                li.addEventListener('mousedown', function(e) {
+                                    e.preventDefault();
+                                    hidden.value  = item.id;
+                                    display.value = item.label;
+                                    list.classList.add('hidden');
+                                });
+                                list.appendChild(li);
+                            });
+                            list.classList.remove('hidden');
+                        })
+                        .catch(function() { list.classList.add('hidden'); });
+                }, 250);
+            });
+            display.addEventListener('blur', function() { setTimeout(function() { list.classList.add('hidden'); }, 200); });
+        })();
+        </script>
+        {% else %}
+        {# Select: loads all related records (suitable for smaller tables) #}
+        <div class="grid grid-cols-1">
+            <select id="field_{{ field.attribute }}" name="{{ field.attribute }}"
+                    {% if field._readonly %}disabled{% endif %}
+                    {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
+                    class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white/5 py-1.5 pr-8 pl-3 text-sm text-white inset-ring inset-ring-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 disabled:opacity-50 dark:*:bg-gray-800 {% if has_error %}outline-red-500/50{% endif %}">
+                <option value="">— Select —</option>
+                {% for opt_id, opt_label in field.get_options() %}
+                <option value="{{ opt_id }}" {% if val | string == opt_id | string %}selected{% endif %}>{{ opt_label }}</option>
+                {% endfor %}
+            </select>
+            <svg class="pointer-events-none col-start-1 row-start-1 mr-2 size-4 self-center justify-self-end text-gray-400" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>
+            </svg>
+        </div>
+        {% endif %}
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
+</div>
+
 {% else %}
-{# text, email, slug, badge, belongs_to default #}
+{# text, email, slug, badge default #}
 <div class="sm:col-span-1">
     <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">
         {{ field.label }}

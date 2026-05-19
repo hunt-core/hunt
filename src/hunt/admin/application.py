@@ -121,6 +121,7 @@ class _Admin:
         from hunt.admin.controllers import action as action_ctrl
         from hunt.admin.controllers import dashboard as dash_ctrl
         from hunt.admin.controllers import queue as queue_ctrl
+        from hunt.admin.controllers import relation_search as relation_search_ctrl
         from hunt.admin.controllers import resource as res_ctrl
         from hunt.admin.controllers import search as search_ctrl
         from hunt.admin.middleware.gate import AdminGate
@@ -144,6 +145,9 @@ class _Admin:
 
             # Global search
             router.get("/search", search_ctrl.index)
+
+            # Relation autocomplete (for searchable BelongsTo fields)
+            router.get("/resources/{resource_key}/search-relation", relation_search_ctrl.search_relation)
 
             # Queue monitor
             router.get("/queue", queue_ctrl.index)

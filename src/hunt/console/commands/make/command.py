@@ -24,12 +24,14 @@ def {func_name}() -> None:
 @click.option("--command", "command_name", default=None, help="The CLI command signature (e.g. 'send:emails')")
 def make_command_command(name: str, command_name: str | None) -> None:
     """Create a new console command."""
+    from hunt.console.commands.make import load_stub
+
     class_name = Str.pascal(Str.snake(name))
     snake = Str.snake(name)
     func_name = (snake[: -len("_command")] if snake.endswith("_command") else snake) + "_command"
     cmd = command_name or Str.snake(name).replace("_", "-")
 
-    content = _STUB.format(
+    content = load_stub("command", _STUB).format(
         class_name=class_name,
         func_name=func_name,
         command_name=cmd,

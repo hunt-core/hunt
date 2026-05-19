@@ -56,3 +56,21 @@ class Action:
 
     def handle(self, request: object, models: list) -> ActionResponse:
         raise NotImplementedError(f"{type(self).__name__} must implement handle()")
+
+
+class BulkDeleteAction(Action):
+    """Built-in action that deletes all selected records."""
+
+    name: str = "Delete Selected"
+    destructive: bool = True
+    confirmation_text: str = "Are you sure you want to delete the selected records? This cannot be undone."
+
+    def handle(self, request: object, models: list) -> ActionResponse:
+        deleted = 0
+        for instance in models:
+            try:
+                instance.delete()
+                deleted += 1
+            except Exception:
+                pass
+        return ActionResponse.success(f"{deleted} record(s) deleted successfully.")

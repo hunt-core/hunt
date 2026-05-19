@@ -25,13 +25,14 @@ class {class_name}(FormRequest):
 @click.argument("name")
 def make_request_command(name: str) -> None:
     """Create a new Form Request class."""
-    class_name = name if name.endswith("Request") else f"{name}Request"
+    from hunt.console.commands.make import load_stub
     from hunt.support.str import Str
 
+    class_name = name if name.endswith("Request") else f"{name}Request"
     out = Path.cwd() / "app" / "requests" / f"{Str.snake(class_name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(_STUB.format(class_name=class_name))
+    out.write_text(load_stub("request", _STUB).format(class_name=class_name))
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")

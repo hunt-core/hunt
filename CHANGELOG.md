@@ -11,6 +11,28 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.17] — 2026-05-19
+
+### Added
+
+**Admin — N+1 fix**
+- `BelongsTo` fields on the index page are now batch-loaded: one query per relation field, not one per row. Resolved titles are cached on each model instance via `_relation_cache`.
+- Non-searchable `BelongsTo` renders as a `<select>` on create/edit forms (loads up to 500 related records via `BelongsTo.get_options()`).
+- Searchable `BelongsTo` (`.searchable()`) renders as a text-input autocomplete that calls `GET /hunt-admin/resources/{key}/search-relation?field={attr}&q={q}` and returns JSON results — no full-table load.
+
+**Admin — Bulk actions**
+- `BulkDeleteAction` — built-in action that deletes all selected records; add it to `actions()` on any resource. Confirmation dialog is shown before submission.
+
+**Admin — Audit log**
+- `AuditLog` mixin for `AdminResource` subclasses: records create / update / delete events to an `admin_audit_logs` table (created automatically on first write). Stores a field-level diff for updates.
+- "History" tab on the record detail page when `AuditLog` is active, showing action, user, changed fields, and timestamp.
+
+**Admin — Custom stubs**
+- All `hunt make:*` commands now check `stubs/<name>.stub` in the project root before using the built-in template. Supported stub names: `model`, `controller`, `controller.resource`, `controller.api`, `middleware`, `event`, `job`, `mail`, `seeder`, `request`, `notification`, `listener`, `listener.queued`, `observer`, `factory`, `policy`, `rule`, `command`, `resource`, `admin-resource`.
+- `make:admin-resource` also supports `stubs/admin-resource.stub` for custom scaffolding templates.
+
+---
+
 ## [0.2.16] — 2026-05-19
 
 ### Added
@@ -261,7 +283,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.16...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.17...HEAD
+[0.2.17]: https://github.com/hunt-core/hunt/compare/v0.2.16...v0.2.17
 [0.2.16]: https://github.com/hunt-core/hunt/compare/v0.2.15...v0.2.16
 [0.2.15]: https://github.com/hunt-core/hunt/compare/v0.2.14...v0.2.15
 [0.2.14]: https://github.com/hunt-core/hunt/compare/v0.2.13...v0.2.14

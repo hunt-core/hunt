@@ -7,6 +7,46 @@ from hunt.http.response import HttpException, RedirectResponse, Response
 from hunt.validation.validator import Validator
 
 
+def _eager_load_belongs_to(fields: list, items: list) -> None:
+    """Batch-load BelongsTo FK relations to avoid one query per row on the index."""
+    from hunt.admin.fields.belongs_to import BelongsTo
+
+    for field in fields:
+        if not isinstance(field, BelongsTo):
+            continue
+        try:
+            related_resource = field.related_resource_class()
+            fk_values = list(
+                {
+                    item._attributes.get(field.attribute)
+                    for item in items
+                    if item._attributes.get(field.attribute) is not None
+                }
+            )
+            if not fk_values:
+                continue
+            related_items = related_resource.model.query().where_in("id", fk_values).get()
+            related_map = {str(r._attributes.get("id")): related_resource.title(r) for r in related_items}
+            for item in items:
+                if not hasattr(item, "_relation_cache"):
+                    item._relation_cache = {}
+                fk = item._attributes.get(field.attribute)
+                if fk is not None:
+                    item._relation_cache[field.attribute] = related_map.get(str(fk), str(fk))
+        except Exception:
+            continue
+
+
+def _current_user_id() -> Any:
+    try:
+        from hunt.auth.manager import Auth
+
+        user = Auth.user()
+        return user._attributes.get("id") if user is not None else None
+    except Exception:
+        return None
+
+
 def _get_resource(resource_key: str) -> Any:
     from hunt.admin.application import Admin
 
@@ -58,13 +98,16 @@ def index(request: Request, resource_key: str) -> Response:
     paginate_result = query.paginate(per_page, page)
 
     index_fields = [f for f in resource.fields() if f._show_on_index]
+    items = paginate_result["data"]
+    _eager_load_belongs_to(index_fields, items)
+
     ctx = Admin._base_context(request)
     ctx.update(
         {
             "title": resource.get_label_plural(),
             "resource": resource,
             "resource_key": resource_key,
-            "items": paginate_result["data"],
+            "items": items,
             "pagination": paginate_result,
             "fields": index_fields,
             "search": request.query("search", ""),
@@ -115,6 +158,12 @@ def show(request: Request, resource_key: str, id: str) -> Response:
         except Exception:
             related_data[panel.attribute] = []
 
+    from hunt.admin.audit import AuditLog, _read_audit
+
+    audit_history: list[dict] = []
+    if isinstance(resource, AuditLog):
+        audit_history = _read_audit(type(resource).__name__, id)
+
     ctx = Admin._base_context(request)
     ctx.update(
         {
@@ -128,6 +177,7 @@ def show(request: Request, resource_key: str, id: str) -> Response:
             "record_id": id,
             "can_update": resource.can_update(request, instance),
             "can_delete": resource.can_delete(request, instance),
+            "audit_history": audit_history,
         }
     )
     return Admin._render("admin/resource/show.html", ctx)
@@ -208,7 +258,13 @@ def store(request: Request, resource_key: str) -> Response:
         Validator.make(data, rules).validate()
 
     stored = _store_image_fields(data, create_fields)
-    resource.model.create(stored)
+    instance = resource.model.create(stored)
+
+    from hunt.admin.audit import AuditLog, _write_audit
+
+    if isinstance(resource, AuditLog) and instance is not None:
+        record_id = instance._attributes.get("id", "")
+        _write_audit(_current_user_id(), type(resource).__name__, record_id, "create", {}, dict(instance._attributes))
 
     return _flash_and_redirect(
         request,
@@ -261,8 +317,14 @@ def update(request: Request, resource_key: str, id: str) -> Response:
     from hunt.http.request import UploadedFile
 
     final = {k: v for k, v in stored.items() if not isinstance(v, UploadedFile)}
+    old_attrs = dict(instance._attributes)
     instance.fill(final)
     instance.save()
+
+    from hunt.admin.audit import AuditLog, _write_audit
+
+    if isinstance(resource, AuditLog):
+        _write_audit(_current_user_id(), type(resource).__name__, id, "update", old_attrs, dict(instance._attributes))
 
     return _flash_and_redirect(
         request,
@@ -280,6 +342,7 @@ def destroy(request: Request, resource_key: str, id: str) -> Response:
     if not resource.can_delete(request, instance):
         raise HttpException(403, "Forbidden.")
 
+    old_attrs = dict(instance._attributes)
     try:
         instance.delete()
     except Exception:
@@ -289,6 +352,11 @@ def destroy(request: Request, resource_key: str, id: str) -> Response:
             "Could not delete record. Please try again.",
             f"{Admin.prefix}/resources/{resource_key}",
         )
+
+    from hunt.admin.audit import AuditLog, _write_audit
+
+    if isinstance(resource, AuditLog):
+        _write_audit(_current_user_id(), type(resource).__name__, id, "delete", old_attrs, {})
 
     return _flash_and_redirect(
         request,

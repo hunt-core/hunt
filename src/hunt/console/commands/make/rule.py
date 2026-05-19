@@ -27,8 +27,10 @@ class {class_name}:
 @click.argument("name")
 def make_rule_command(name: str) -> None:
     """Create a new custom validation rule class."""
+    from hunt.console.commands.make import load_stub
+
     class_name = Str.pascal(Str.snake(name))
-    content = _STUB.format(class_name=class_name)
+    content = load_stub("rule", _STUB).format(class_name=class_name)
 
     out = Path.cwd() / "app" / "rules" / f"{Str.snake(name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)

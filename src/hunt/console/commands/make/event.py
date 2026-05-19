@@ -20,10 +20,12 @@ class {class_name}(Event):
 @click.argument("name")
 def make_event_command(name: str) -> None:
     """Create a new Event class."""
+    from hunt.console.commands.make import load_stub
+
     out = Path.cwd() / "app" / "events" / f"{name}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(_STUB.format(class_name=name))
+    out.write_text(load_stub("event", _STUB).format(class_name=name))
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")

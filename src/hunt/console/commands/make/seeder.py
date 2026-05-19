@@ -20,11 +20,13 @@ class {class_name}(Seeder):
 @click.argument("name")
 def make_seeder_command(name: str) -> None:
     """Create a new database Seeder class."""
+    from hunt.console.commands.make import load_stub
+
     class_name = name if name.endswith("Seeder") else f"{name}Seeder"
     out = Path.cwd() / "database" / "seeders" / f"{class_name}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(_STUB.format(class_name=class_name))
+    out.write_text(load_stub("seeder", _STUB).format(class_name=class_name))
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")

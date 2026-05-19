@@ -11,8 +11,10 @@ from hunt.support.str import Str
 @click.argument("name")
 def make_notification_command(name: str) -> None:
     """Create a new Notification class."""
+    from hunt.console.commands.make import load_stub
+
     class_name = Str.pascal(Str.snake(name))
-    content = _STUB.replace("{{class}}", class_name)
+    content = load_stub("notification", _STUB).replace("{{class}}", class_name)
 
     out = Path.cwd() / "app" / "notifications" / f"{Str.snake(name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)

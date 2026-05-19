@@ -48,8 +48,10 @@ class {class_name}:
 @click.option("-m", "--model", default=None, help="The model the observer watches")
 def make_observer_command(name: str, model: str | None) -> None:
     """Create a new model observer class."""
+    from hunt.console.commands.make import load_stub
+
     class_name = Str.pascal(Str.snake(name))
-    content = _STUB.format(class_name=class_name)
+    content = load_stub("observer", _STUB).format(class_name=class_name)
 
     if model:
         model_class = Str.pascal(Str.snake(model))

@@ -1,5 +1,6 @@
-from hunt.admin.action import Action, ActionResponse
+from hunt.admin.action import Action, ActionResponse, BulkDeleteAction
 from hunt.admin.application import Admin
+from hunt.admin.audit import AuditLog
 from hunt.admin.fields import (
     Badge,
     BelongsTo,
@@ -26,10 +27,12 @@ __all__ = [
     "ActionResponse",
     "Admin",
     "AdminResource",
+    "AuditLog",
     "Badge",
     "BelongsTo",
     "Boolean",
     "BooleanFilter",
+    "BulkDeleteAction",
     "Currency",
     "Date",
     "DateTime",

@@ -17,13 +17,15 @@ def make_controller_command(name: str, resource: bool, api: bool) -> None:
 
 
 def _create_controller(name: str, resource: bool = False, api: bool = False) -> None:
+    from hunt.console.commands.make import load_stub
+
     class_name = Str.pascal(name)
     if resource and not api:
-        stub = _RESOURCE_STUB
+        stub = load_stub("controller.resource", _RESOURCE_STUB)
     elif api:
-        stub = _API_STUB
+        stub = load_stub("controller.api", _API_STUB)
     else:
-        stub = _PLAIN_STUB
+        stub = load_stub("controller", _PLAIN_STUB)
     content = stub.replace("{{class}}", class_name)
 
     out = Path.cwd() / "app" / "controllers" / f"{Str.snake(name)}.py"

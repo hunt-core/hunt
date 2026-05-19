@@ -37,7 +37,10 @@ class {class_name}(Job):
 @click.option("-q", "--queued", is_flag=True, help="Make this a queued (Job-based) listener")
 def make_listener_command(name: str, event_name: str, queued: bool) -> None:
     """Create a new Listener class."""
-    stub = _QUEUED_STUB if queued else _STUB
+    from hunt.console.commands.make import load_stub
+
+    stub_name = "listener.queued" if queued else "listener"
+    stub = load_stub(stub_name, _QUEUED_STUB if queued else _STUB)
     out = Path.cwd() / "app" / "listeners" / f"{name}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():

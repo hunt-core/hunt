@@ -164,4 +164,51 @@
     {% endif %}
 </div>
 {% endfor %}
+
+{# Audit log / history panel — only when AuditLog mixin is active #}
+{% if audit_history is defined and audit_history is not none %}
+<div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl mb-6">
+    <div class="px-4 py-5 sm:px-6">
+        <h3 class="text-sm font-semibold text-white">History</h3>
+        <p class="mt-1 text-xs text-gray-500">Recent changes to this record.</p>
+    </div>
+    {% if audit_history %}
+    <div class="border-t border-white/10 overflow-x-auto">
+        <table class="min-w-full divide-y divide-white/15 text-sm">
+            <thead>
+                <tr>
+                    <th class="py-3 pl-4 pr-3 sm:pl-6 text-left font-semibold text-white">Action</th>
+                    <th class="px-3 py-3 text-left font-semibold text-white">User</th>
+                    <th class="px-3 py-3 text-left font-semibold text-white">Changes</th>
+                    <th class="px-3 py-3 pr-4 sm:pr-6 text-left font-semibold text-white">When</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-white/10">
+                {% for entry in audit_history %}
+                <tr>
+                    <td class="py-3 pl-4 pr-3 sm:pl-6 text-white font-medium whitespace-nowrap capitalize">{{ entry.action }}</td>
+                    <td class="px-3 py-3 text-gray-400 whitespace-nowrap">{{ entry.user_id or '—' }}</td>
+                    <td class="px-3 py-3 text-gray-400">
+                        {% set diff = entry.diff %}
+                        {% if diff %}
+                            {% for key, change in diff.items() %}
+                            <div class="text-xs"><span class="text-gray-300">{{ key }}</span>: <span class="line-through text-red-400/70">{{ change.old }}</span> → <span class="text-green-400/80">{{ change.new }}</span></div>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-gray-600">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-3 pr-4 sm:pr-6 text-gray-500 whitespace-nowrap text-xs">{{ entry.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="border-t border-white/10 py-8 text-center text-sm text-gray-500">
+        No history entries yet.
+    </div>
+    {% endif %}
+</div>
+{% endif %}
 {% endblock %}
