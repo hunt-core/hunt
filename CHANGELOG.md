@@ -11,6 +11,17 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.6] — 2026-05-19
+
+### Added
+
+- `Job.name` class attribute — optional short name used by the CLI to identify jobs without requiring a full dotted class path
+- `hunt job:list` — scans `app/jobs/` and prints a table of every discovered `Job` subclass with its name, class path, queue, and tries
+- `hunt job:run <name>` — runs a job synchronously; `name` can be the short `name` attribute, the class name, or a full dotted path (`app.jobs.my_job.MyJob`); accepts `--data key=value` for constructor arguments (values are JSON-decoded so integers, booleans, and arrays work)
+- `make:job` scaffold now includes the `name` attribute pre-filled with the snake_case job name
+
+---
+
 ## [0.2.5] — 2026-05-19
 
 ### Added
@@ -107,7 +118,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/hunt-core/hunt/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/hunt-core/hunt/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/hunt-core/hunt/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/hunt-core/hunt/compare/v0.2.0...v0.2.3

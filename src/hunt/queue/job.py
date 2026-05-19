@@ -6,6 +6,7 @@ from typing import Any
 class Job:
     """Base class for queueable jobs."""
 
+    name: str = ""
     queue: str = "default"
     tries: int = 3
     timeout: int = 60

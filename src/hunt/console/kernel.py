@@ -26,6 +26,8 @@ from hunt.console.commands.make.rule import make_rule_command
 from hunt.console.commands.make.seeder import make_seeder_command
 from hunt.console.commands.migrate import migrate_fresh, migrate_group, migrate_rollback, migrate_run, migrate_status
 from hunt.console.commands.new import new_command
+from hunt.console.commands.job_list import job_list_command
+from hunt.console.commands.job_run import job_run_command
 from hunt.console.commands.queue_failed import queue_failed_command, queue_flush_command, queue_retry_command
 from hunt.console.commands.queue_table import queue_table_command
 from hunt.console.commands.queue_work import queue_work_command
@@ -57,6 +59,8 @@ cli.add_command(queue_failed_command, name="queue:failed")
 cli.add_command(queue_retry_command, name="queue:retry")
 cli.add_command(queue_flush_command, name="queue:flush")
 cli.add_command(queue_table_command, name="queue:table")
+cli.add_command(job_list_command, name="job:list")
+cli.add_command(job_run_command, name="job:run")
 cli.add_command(db_seed_command, name="db:seed")
 
 # Cache group

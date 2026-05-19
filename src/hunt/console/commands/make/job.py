@@ -11,6 +11,7 @@ from hunt.queue.job import Job
 
 
 class {class_name}(Job):
+    name = "{job_name}"
     queue = "default"
 
     def __init__(self) -> None:
@@ -33,5 +34,6 @@ def make_job_command(name: str) -> None:
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(_STUB.format(class_name=name))
+    job_name = "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
+    out.write_text(_STUB.format(class_name=name, job_name=job_name))
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")

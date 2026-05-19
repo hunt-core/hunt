@@ -16,7 +16,7 @@ A Python web framework. Routing, ORM, templates, migrations, validation, authent
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.11+how
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ---
