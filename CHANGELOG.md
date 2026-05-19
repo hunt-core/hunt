@@ -11,6 +11,26 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.4] — 2026-05-19
+
+### Fixed
+
+- `QueryBuilder.count()` no longer forwards `ORDER BY`, `LIMIT`, or `OFFSET` into the count query — PostgreSQL (correctly) rejects `ORDER BY` on an aggregate without a `GROUP BY`, causing paginated admin index pages to crash on non-SQLite backends
+
+---
+
+## [0.2.3] — 2026-05-18
+
+### Fixed
+
+- Schema builder now generates correct DDL for MySQL and PostgreSQL — previously all DDL was SQLite-specific
+- `AUTOINCREMENT` keyword replaced with `AUTO_INCREMENT` (MySQL) and `GENERATED ALWAYS AS IDENTITY` (PostgreSQL) for auto-increment primary keys
+- MySQL-specific column types (`LONGTEXT`, `MEDIUMTEXT`, `TINYINT`, `DATETIME`, `DOUBLE`, `BLOB`, `FLOAT(p,s)`) are now mapped to their PostgreSQL equivalents (`TEXT`, `TEXT`, `SMALLINT`, `TIMESTAMP`, `DOUBLE PRECISION`, `BYTEA`, `REAL`/`DOUBLE PRECISION`) instead of being sent verbatim and rejected
+- `UNSIGNED` modifier on integer columns now emitted for MySQL; silently omitted on PostgreSQL and SQLite where it is unsupported
+- `CREATE INDEX IF NOT EXISTS` replaced with `CREATE INDEX` on MySQL, which does not support the `IF NOT EXISTS` clause for index creation
+
+---
+
 ## [0.2.0] — 2026-05-14
 
 ### Added
@@ -78,5 +98,7 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/hunt-core/hunt/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/hunt-core/hunt/compare/v0.2.0...v0.2.3
 [0.2.0]: https://github.com/hunt-core/hunt/releases/tag/v0.2.0

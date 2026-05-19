@@ -310,6 +310,9 @@ class QueryBuilder:
 
     def count(self) -> int:
         qb = self.select_raw("COUNT(*) as _count")
+        qb._order_bys = []
+        qb._limit_val = None
+        qb._offset_val = None
         sql, bindings = qb._build_select()
         rows = self._execute(sql, bindings)
         if rows:
