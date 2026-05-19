@@ -6,6 +6,131 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+# ---------------------------------------------------------------------------
+# Redis store
+# ---------------------------------------------------------------------------
+
+
+class RedisStore:
+    """Cache store backed by Redis.
+
+    Install redis-py to use: ``pip install redis``
+    """
+
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 6379,
+        db: int = 0,
+        password: str | None = None,
+        prefix: str = "hunt_cache:",
+    ) -> None:
+        try:
+            import redis as _redis
+        except ImportError as exc:
+            raise ImportError("Install redis-py to use the Redis cache driver: pip install redis") from exc
+        self._redis = _redis.Redis(host=host, port=port, db=db, password=password, decode_responses=False)
+        self._prefix = prefix
+
+    def _key(self, key: str) -> str:
+        return f"{self._prefix}{key}"
+
+    def get(self, key: str, default: Any = None) -> Any:
+        raw = self._redis.get(self._key(key))
+        if raw is None:
+            return default
+        try:
+            return json.loads(raw)
+        except Exception:
+            return default
+
+    def put(self, key: str, value: Any, seconds: int = 0) -> None:
+        encoded = json.dumps(value, default=str).encode()
+        if seconds:
+            self._redis.setex(self._key(key), seconds, encoded)
+        else:
+            self._redis.set(self._key(key), encoded)
+
+    def forever(self, key: str, value: Any) -> None:
+        self.put(key, value, 0)
+
+    def forget(self, key: str) -> None:
+        self._redis.delete(self._key(key))
+
+    def flush(self) -> None:
+        pattern = f"{self._prefix}*"
+        cursor = 0
+        while True:
+            cursor, keys = self._redis.scan(cursor, match=pattern, count=100)
+            if keys:
+                self._redis.delete(*keys)
+            if cursor == 0:
+                break
+
+    def has(self, key: str) -> bool:
+        return bool(self._redis.exists(self._key(key)))
+
+    def increment(self, key: str, amount: int = 1) -> int:
+        return int(self._redis.incrby(self._key(key), amount))
+
+    def decrement(self, key: str, amount: int = 1) -> int:
+        return self.increment(key, -amount)
+
+    def add(self, key: str, value: Any, seconds: int = 0) -> bool:
+        encoded = json.dumps(value, default=str).encode()
+        if seconds:
+            result = self._redis.set(self._key(key), encoded, ex=seconds, nx=True)
+        else:
+            result = self._redis.setnx(self._key(key), encoded)
+        return bool(result)
+
+    def pull(self, key: str, default: Any = None) -> Any:
+        pipe = self._redis.pipeline()
+        k = self._key(key)
+        pipe.get(k)
+        pipe.delete(k)
+        raw, _ = pipe.execute()
+        if raw is None:
+            return default
+        try:
+            return json.loads(raw)
+        except Exception:
+            return default
+
+    def get_many(self, keys: list[str]) -> dict[str, Any]:
+        if not keys:
+            return {}
+        rkeys = [self._key(k) for k in keys]
+        values = self._redis.mget(rkeys)
+        result: dict[str, Any] = {}
+        for k, raw in zip(keys, values, strict=False):
+            result[k] = json.loads(raw) if raw is not None else None
+        return result
+
+    def put_many(self, values: dict[str, Any], seconds: int = 0) -> None:
+        pipe = self._redis.pipeline()
+        for k, v in values.items():
+            encoded = json.dumps(v, default=str).encode()
+            if seconds:
+                pipe.setex(self._key(k), seconds, encoded)
+            else:
+                pipe.set(self._key(k), encoded)
+        pipe.execute()
+
+    def remember(self, key: str, seconds: int, callback: Callable) -> Any:
+        value = self.get(key)
+        if value is None:
+            value = callback()
+            self.put(key, value, seconds)
+        return value
+
+    def remember_forever(self, key: str, callback: Callable) -> Any:
+        value = self.get(key)
+        if value is None:
+            value = callback()
+            self.forever(key, value)
+        return value
+
 
 class ArrayStore:
     """In-memory cache (lost between requests in production; good for tests)."""
@@ -36,6 +161,26 @@ class ArrayStore:
 
     def has(self, key: str) -> bool:
         return self.get(key) is not None
+
+    def add(self, key: str, value: Any, seconds: int = 0) -> bool:
+        """Store value only if the key is not already present. Returns True if stored."""
+        if self.has(key):
+            return False
+        self.put(key, value, seconds)
+        return True
+
+    def pull(self, key: str, default: Any = None) -> Any:
+        """Get and remove a cache entry in one call."""
+        value = self.get(key, default)
+        self.forget(key)
+        return value
+
+    def get_many(self, keys: list[str]) -> dict[str, Any]:
+        return {k: self.get(k) for k in keys}
+
+    def put_many(self, values: dict[str, Any], seconds: int = 0) -> None:
+        for k, v in values.items():
+            self.put(k, v, seconds)
 
     def increment(self, key: str, amount: int = 1) -> int:
         val = int(self.get(key, 0)) + amount
@@ -114,6 +259,24 @@ class FileStore(ArrayStore):
     def has(self, key: str) -> bool:
         return self.get(key) is not None
 
+    def add(self, key: str, value: Any, seconds: int = 0) -> bool:
+        if self.has(key):
+            return False
+        self.put(key, value, seconds)
+        return True
+
+    def pull(self, key: str, default: Any = None) -> Any:
+        value = self.get(key, default)
+        self.forget(key)
+        return value
+
+    def get_many(self, keys: list[str]) -> dict[str, Any]:
+        return {k: self.get(k) for k in keys}
+
+    def put_many(self, values: dict[str, Any], seconds: int = 0) -> None:
+        for k, v in values.items():
+            self.put(k, v, seconds)
+
     def increment(self, key: str, amount: int = 1) -> int:
         val = int(self.get(key, 0)) + amount
         self.put(key, val)
@@ -124,15 +287,26 @@ class FileStore(ArrayStore):
 
 
 class _CacheManager:
-    _store: ArrayStore | FileStore | None = None
+    _store: ArrayStore | FileStore | RedisStore | None = None
 
-    def configure(self, driver: str = "file", path: Path | None = None) -> None:
+    def configure(
+        self,
+        driver: str = "file",
+        path: Path | None = None,
+        host: str = "127.0.0.1",
+        port: int = 6379,
+        db: int = 0,
+        password: str | None = None,
+        prefix: str = "hunt_cache:",
+    ) -> None:
         if driver == "array":
             self._store = ArrayStore()
+        elif driver == "redis":
+            self._store = RedisStore(host=host, port=port, db=db, password=password, prefix=prefix)
         else:
             self._store = FileStore(path or Path("storage/framework/cache"))
 
-    def _get_store(self) -> ArrayStore:
+    def _get_store(self) -> ArrayStore | FileStore | RedisStore:
         if self._store is None:
             self._store = ArrayStore()
         return self._store
@@ -160,6 +334,18 @@ class _CacheManager:
 
     def decrement(self, key: str, amount: int = 1) -> int:
         return self._get_store().decrement(key, amount)
+
+    def add(self, key: str, value: Any, seconds: int = 0) -> bool:
+        return self._get_store().add(key, value, seconds)
+
+    def pull(self, key: str, default: Any = None) -> Any:
+        return self._get_store().pull(key, default)
+
+    def get_many(self, keys: list[str]) -> dict[str, Any]:
+        return self._get_store().get_many(keys)
+
+    def put_many(self, values: dict[str, Any], seconds: int = 0) -> None:
+        self._get_store().put_many(values, seconds)
 
     def remember(self, key: str, seconds: int, callback: Callable) -> Any:
         return self._get_store().remember(key, seconds, callback)

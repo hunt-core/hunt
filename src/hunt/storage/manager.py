@@ -55,5 +55,44 @@ class _StorageManager:
     def url(self, path: str) -> str:
         return self.disk().url(path)
 
+    def path(self, relative: str = "") -> str:
+        return self.disk().path(relative)
+
+    def size(self, path: str) -> int:
+        return self.disk().size(path)
+
+    def last_modified(self, path: str) -> int:
+        return self.disk().last_modified(path)
+
+    def mime_type(self, path: str) -> str:
+        return self.disk().mime_type(path)
+
+    def copy(self, from_path: str, to_path: str) -> bool:
+        return self.disk().copy(from_path, to_path)
+
+    def move(self, from_path: str, to_path: str) -> bool:
+        return self.disk().move(from_path, to_path)
+
+    def append(self, path: str, contents: str | bytes) -> bool:
+        return self.disk().append(path, contents)
+
+    def prepend(self, path: str, contents: str | bytes) -> bool:
+        return self.disk().prepend(path, contents)
+
+    def files(self, directory: str = "") -> list[str]:
+        return self.disk().files(directory)
+
+    def all_files(self, directory: str = "") -> list[str]:
+        return self.disk().all_files(directory)
+
+    def directories(self, directory: str = "") -> list[str]:
+        return self.disk().directories(directory)
+
+    def make_directory(self, path: str) -> bool:
+        return self.disk().make_directory(path)
+
+    def delete_directory(self, directory: str) -> bool:
+        return self.disk().delete_directory(directory)
+
 
 Storage = _StorageManager()

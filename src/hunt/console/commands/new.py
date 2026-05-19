@@ -384,6 +384,9 @@ Log.configure(
 Cache.configure(
     driver=os.environ.get("CACHE_DRIVER", "file"),
     path=BASE_PATH / "storage" / "framework" / "cache",
+    host=os.environ.get("REDIS_HOST", "127.0.0.1"),
+    port=int(os.environ.get("REDIS_PORT", "6379")),
+    password=os.environ.get("REDIS_PASSWORD") or None,
 )
 
 # -- Storage

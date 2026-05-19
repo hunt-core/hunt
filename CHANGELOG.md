@@ -11,6 +11,30 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.15] — 2026-05-19
+
+### Added
+
+**Cache**
+- **Redis cache driver** — `CACHE_DRIVER=redis` now works; requires `pip install redis`; honours `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` from env
+- `Cache.add(key, value, seconds)` — store only if the key is not already present; returns `True` if written, `False` otherwise
+- `Cache.pull(key, default=None)` — get and remove a cache entry in one call
+- `Cache.get_many(keys)` — batch-get; returns `{key: value}` dict (`None` for missing keys)
+- `Cache.put_many(values, seconds)` — batch-put a dict of key/value pairs
+
+**Storage**
+- `Storage.path()`, `Storage.size()`, `Storage.last_modified()`, `Storage.mime_type()` — convenience proxies now available directly on `Storage` (previously only on `Storage.disk()`)
+- `Storage.copy()`, `Storage.move()`, `Storage.append()`, `Storage.prepend()`, `Storage.files()`, `Storage.all_files()`, `Storage.directories()`, `Storage.make_directory()`, `Storage.delete_directory()` — same; all proxy to the default disk
+
+**Logging**
+- **`daily` log channel** — rotates at midnight, keeps configurable number of days; set `driver: "daily"` in channel config
+- **`stderr` log channel** — writes to stderr only (good for containers and systemd); `driver: "stderr"`
+- **`stack` log channel** — fans out to multiple named channels simultaneously; `driver: "stack", channels: ["file", "stderr"]`
+- **`Log.channel(name)`** — select a specific named channel: `Log.channel("stderr").error("...")`
+- **Multi-channel `Log.configure()`** — pass `channels={"file": {...}, "daily": {...}}` and `default="stack"` for full multi-channel setup
+
+---
+
 ## [0.2.14] — 2026-05-19
 
 ### Added
@@ -217,7 +241,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.14...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.15...HEAD
+[0.2.15]: https://github.com/hunt-core/hunt/compare/v0.2.14...v0.2.15
 [0.2.14]: https://github.com/hunt-core/hunt/compare/v0.2.13...v0.2.14
 [0.2.13]: https://github.com/hunt-core/hunt/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/hunt-core/hunt/compare/v0.2.11...v0.2.12
