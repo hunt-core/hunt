@@ -37,13 +37,14 @@ class Model(metaclass=ModelMeta):
     appends: ClassVar[list[str]] = []
     casts: ClassVar[dict[str, str]] = {}
     timestamps: ClassVar[bool] = True
+    attributes: ClassVar[dict] = {}
     _soft_deletes: ClassVar[bool] = False
     _connection: ClassVar[str | None] = None
 
     _event_listeners: ClassVar[dict[str, list]] = {}
 
     def __init__(self, attributes: dict | None = None) -> None:
-        self._attributes: dict[str, Any] = {}
+        self._attributes: dict[str, Any] = dict(type(self).attributes)
         self._original: dict[str, Any] = {}
         self._exists: bool = False
         self._relations: dict[str, Any] = {}
@@ -266,6 +267,42 @@ class Model(metaclass=ModelMeta):
             existing.save()
             return existing
         return cls.create({**search, **values})
+
+    @classmethod
+    def first_or_new(cls, search: dict, attributes: dict | None = None) -> tuple[Model, bool]:
+        """Like first_or_create but does not persist the new instance."""
+        qb = cls.query()
+        for k, v in search.items():
+            qb = qb.where(k, v)
+        existing = qb.first()
+        if existing:
+            return existing, False
+        return cls({**search, **(attributes or {})}), True
+
+    @classmethod
+    def create_many(cls, rows: list[dict]) -> None:
+        """Bulk-insert records in a single query. Model events are not fired."""
+        now = int(time.time())
+        use_timestamps = cls.timestamps
+        prepared = []
+        for attrs in rows:
+            instance = cls()
+            instance.fill(attrs)
+            if use_timestamps:
+                instance._attributes.setdefault("created_at", now)
+                instance._attributes["updated_at"] = now
+            prepared.append(dict(instance._attributes))
+        cls.query().insert_many(prepared)
+
+    def increment(self, column: str, amount: int = 1) -> bool:
+        self.query().where(self.primary_key, self._attributes[self.primary_key]).increment(column, amount)
+        self._attributes[column] = (self._attributes.get(column) or 0) + amount
+        return True
+
+    def decrement(self, column: str, amount: int = 1) -> bool:
+        self.query().where(self.primary_key, self._attributes[self.primary_key]).decrement(column, amount)
+        self._attributes[column] = (self._attributes.get(column) or 0) - amount
+        return True
 
     # ------------------------------------------------------------------
     # Relationships

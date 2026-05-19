@@ -11,6 +11,19 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.10] — 2026-05-19
+
+### Added
+
+- **Query scopes** — define `scope_<name>(cls, query)` on a Model and call it fluently: `Post.query().published().get()`
+- `Model.increment(col, amount=1)` / `decrement(col, amount=1)` — instance-level shortcuts that update the DB and the in-memory attribute in one call
+- `Model.first_or_new(search, attributes)` — like `first_or_create` but returns an unsaved instance instead of persisting
+- `Model.attributes` class variable — default column values applied to every new (unsaved) instance
+- `Model.create_many(rows)` / `QueryBuilder.insert_many(rows)` — bulk-insert a list of dicts in a single SQL statement
+- `Blueprint.foreign(col).references(col).on(table).on_delete(action).on_update(action)` — FK constraints now emit `FOREIGN KEY ... REFERENCES ... ON DELETE ... ON UPDATE ...` in `CREATE TABLE`; supported actions: `CASCADE`, `SET NULL`, `RESTRICT`, `NO ACTION`, `SET DEFAULT`
+
+---
+
 ## [0.2.9] — 2026-05-19
 
 ### Added
@@ -152,7 +165,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.9...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.10...HEAD
+[0.2.10]: https://github.com/hunt-core/hunt/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/hunt-core/hunt/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/hunt-core/hunt/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/hunt-core/hunt/compare/v0.2.6...v0.2.7

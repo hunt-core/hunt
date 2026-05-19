@@ -86,6 +86,9 @@ class ColumnDef:
         return self
 
 
+_VALID_FK_ACTIONS = frozenset({"CASCADE", "SET NULL", "RESTRICT", "NO ACTION", "SET DEFAULT"})
+
+
 @dataclass
 class IndexDef:
     columns: list[str]
@@ -93,11 +96,21 @@ class IndexDef:
     name: str = ""
 
 
+@dataclass
+class ForeignKeyDef:
+    column: str
+    ref_table: str = ""
+    ref_column: str = "id"
+    on_delete: str | None = None
+    on_update: str | None = None
+
+
 class Blueprint:
     def __init__(self, table: str) -> None:
         self.table = table
         self.columns: list[ColumnDef] = []
         self.indexes: list[IndexDef] = []
+        self._foreign_keys: list[ForeignKeyDef] = []
         self._drop_columns: list[str] = []
         self._rename_columns: list[tuple[str, str]] = []  # [(old, new), ...]
         self._rename_to: str | None = None
@@ -323,6 +336,15 @@ class Blueprint:
         col_defs = []
         for col in self.columns:
             col_defs.append(self._column_sql(col, dialect))
+        for fk in self._foreign_keys:
+            if not fk.ref_table:
+                continue
+            fk_sql = f"FOREIGN KEY ({_ident(fk.column)}) REFERENCES {_ident(fk.ref_table)}({_ident(fk.ref_column)})"
+            if fk.on_delete:
+                fk_sql += f" ON DELETE {fk.on_delete}"
+            if fk.on_update:
+                fk_sql += f" ON UPDATE {fk.on_update}"
+            col_defs.append(fk_sql)
         t = _ident(self.table)
         create = f"CREATE TABLE IF NOT EXISTS {t} (\n  " + ",\n  ".join(col_defs) + "\n)"
         stmts.append(create)
@@ -383,13 +405,27 @@ class Blueprint:
 
 class _ForeignKeyBuilder:
     def __init__(self, blueprint: Blueprint, column: str) -> None:
-        self._blueprint = blueprint
-        self._column = column
+        self._def = ForeignKeyDef(column=column)
+        blueprint._foreign_keys.append(self._def)
 
     def references(self, column: str) -> _ForeignKeyBuilder:
-        self._ref_column = column
+        self._def.ref_column = column
         return self
 
     def on(self, table: str) -> _ForeignKeyBuilder:
-        self._ref_table = table
+        self._def.ref_table = table
+        return self
+
+    def on_delete(self, action: str) -> _ForeignKeyBuilder:
+        action_upper = action.upper()
+        if action_upper not in _VALID_FK_ACTIONS:
+            raise ValueError(f"Invalid FK action: {action!r}. Must be one of: {', '.join(sorted(_VALID_FK_ACTIONS))}")
+        self._def.on_delete = action_upper
+        return self
+
+    def on_update(self, action: str) -> _ForeignKeyBuilder:
+        action_upper = action.upper()
+        if action_upper not in _VALID_FK_ACTIONS:
+            raise ValueError(f"Invalid FK action: {action!r}. Must be one of: {', '.join(sorted(_VALID_FK_ACTIONS))}")
+        self._def.on_update = action_upper
         return self

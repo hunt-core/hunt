@@ -285,6 +285,23 @@ class QueryBuilder:
         return qb
 
     # ------------------------------------------------------------------
+    # Query scopes
+    # ------------------------------------------------------------------
+
+    def __getattr__(self, name: str) -> Any:
+        if not name.startswith("_"):
+            model_cls = self.__dict__.get("_model_class")
+            if model_cls is not None:
+                scope_fn = getattr(model_cls, f"scope_{name}", None)
+                if scope_fn is not None:
+
+                    def _invoke(*args: Any, **kwargs: Any) -> QueryBuilder:
+                        return scope_fn(self, *args, **kwargs)
+
+                    return _invoke
+        raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
+
+    # ------------------------------------------------------------------
     # Collection protocol — makes QueryBuilder usable as a list directly
     # ------------------------------------------------------------------
 
@@ -443,6 +460,25 @@ class QueryBuilder:
 
     def insert_get_id(self, data: dict) -> Any:
         return self.insert(data)
+
+    def insert_many(self, rows: list[dict]) -> None:
+        """Bulk-insert rows in a single SQL statement."""
+        if not rows:
+            return
+        cols = [_ident(k) for k in rows[0].keys()]
+        columns = ", ".join(cols)
+        placeholders_list = []
+        bindings: dict[str, Any] = {}
+        for i, row in enumerate(rows):
+            ph = ", ".join(f":_r{i}_{k}" for k in row.keys())
+            placeholders_list.append(f"({ph})")
+            for k, v in row.items():
+                bindings[f"_r{i}_{k}"] = v
+        sql = f"INSERT INTO {self._table} ({columns}) VALUES {', '.join(placeholders_list)}"
+        engine = connection(self._conn_name)
+        with engine.connect() as conn:
+            conn.execute(text(sql), bindings)
+            conn.commit()
 
     def update(self, data: dict) -> int:
         where_clause, bindings = self._build_where_clause()
