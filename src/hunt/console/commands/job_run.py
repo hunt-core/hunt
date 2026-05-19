@@ -115,6 +115,6 @@ def job_run_command(name: str, data: tuple[str, ...], queue: str | None) -> None
     click.echo(f"  Running {cls.__name__}...")
     try:
         instance.handle()
-        click.echo(f"  Done.")
+        click.echo("  Done.")
     except Exception as exc:
         raise click.ClickException(f"{cls.__name__} raised an exception: {exc}") from exc

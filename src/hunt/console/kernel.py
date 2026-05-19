@@ -6,6 +6,8 @@ from hunt.admin.console.make_admin_resource import make_admin_resource_command
 from hunt.console.commands.cache import cache_group
 from hunt.console.commands.config_cache import config_cache_command, config_clear_command
 from hunt.console.commands.db.seed import db_seed_command
+from hunt.console.commands.job_list import job_list_command
+from hunt.console.commands.job_run import job_run_command
 from hunt.console.commands.key_generate import key_generate_command
 from hunt.console.commands.make.command import make_command_command
 from hunt.console.commands.make.controller import make_controller_command
@@ -26,9 +28,11 @@ from hunt.console.commands.make.rule import make_rule_command
 from hunt.console.commands.make.seeder import make_seeder_command
 from hunt.console.commands.migrate import migrate_fresh, migrate_group, migrate_rollback, migrate_run, migrate_status
 from hunt.console.commands.new import new_command
-from hunt.console.commands.job_list import job_list_command
-from hunt.console.commands.job_run import job_run_command
-from hunt.console.commands.queue_failed import queue_failed_command, queue_flush_command, queue_retry_command
+from hunt.console.commands.queue_failed import (
+    queue_failed_command,
+    queue_flush_command,
+    queue_retry_command,
+)
 from hunt.console.commands.queue_table import queue_table_command
 from hunt.console.commands.queue_work import queue_work_command
 from hunt.console.commands.route_list import route_list_command
