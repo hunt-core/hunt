@@ -66,7 +66,7 @@ class Model(metaclass=ModelMeta):
         raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name.startswith("_") or name in type(self).__dict__:
+        if name.startswith("_") or any(name in klass.__dict__ for klass in type(self).__mro__):
             super().__setattr__(name, value)
             return
         # Mutator pattern: set_<name>_attribute
@@ -103,7 +103,7 @@ class Model(metaclass=ModelMeta):
     # ------------------------------------------------------------------
 
     def save(self) -> bool:
-        if self.timestamps:
+        if self.__dict__.get("timestamps", type(self).timestamps):
             now = int(time.time())
             if not self._exists:
                 self._attributes.setdefault("created_at", now)

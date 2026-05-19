@@ -11,6 +11,22 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.9] — 2026-05-19
+
+### Added
+
+- `QueryBuilder.where_group(callback)` / `or_where_group(callback)` — wrap a sub-query in parentheses for correct AND/OR precedence (e.g. `WHERE (a=1 OR b=2) AND (c=3 OR d=4)`)
+- `QueryBuilder.min(col)`, `max(col)`, `avg(col)`, `sum(col)` — standard SQL aggregates alongside the existing `count()`
+- `QueryBuilder.pluck(col)` — returns a flat `list` of values for a single column
+- `ILIKE` / `NOT ILIKE` added to the SQL operator allowlist (PostgreSQL case-insensitive LIKE)
+
+### Fixed
+
+- `Model.timestamps = False` per-instance now correctly disables timestamp tracking without mutating the class attribute; `__setattr__` now checks the full MRO so inherited config attributes are stored on the instance
+- Session files are now garbage-collected on ~1% of requests, preventing unbounded growth of the session directory
+
+---
+
 ## [0.2.8] — 2026-05-19
 
 ### Fixed
@@ -136,7 +152,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/hunt-core/hunt/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/hunt-core/hunt/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/hunt-core/hunt/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/hunt-core/hunt/compare/v0.2.5...v0.2.6

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import tempfile
 import time
@@ -32,6 +33,8 @@ class FileSessionStore:
             session_id = os.urandom(32).hex()
         self._id = session_id
         self._data = self._read(session_id)
+        if random.random() < 0.01:
+            self._gc()
 
     def age_flash(self) -> None:
         """Promote new flash data to old so it's readable this request."""
@@ -126,6 +129,18 @@ class FileSessionStore:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _gc(self) -> None:
+        now = time.time()
+        for f in self._path.iterdir():
+            if f.name.startswith("."):
+                continue
+            try:
+                payload = json.loads(f.read_text())
+                if payload.get("expires_at", 0) < now:
+                    f.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def _file(self, session_id: str) -> Path:
         return self._path / session_id

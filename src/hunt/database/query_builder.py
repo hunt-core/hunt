@@ -25,6 +25,8 @@ _VALID_OPERATORS = frozenset(
         ">=",
         "LIKE",
         "NOT LIKE",
+        "ILIKE",
+        "NOT ILIKE",
         "IS NULL",
         "IS NOT NULL",
         "IN",
@@ -64,6 +66,7 @@ class QueryBuilder:
         self._joins: list[str] = []
         self._withs: dict[str, Callable | None] = {}
         self._raw_wheres: list[tuple[str, dict]] = []
+        self._nested_wheres: list[tuple[str, Callable[[QueryBuilder], QueryBuilder]]] = []
 
     # ------------------------------------------------------------------
     # Cloning
@@ -84,6 +87,7 @@ class QueryBuilder:
         qb._joins = list(self._joins)
         qb._withs = dict(self._withs)
         qb._raw_wheres = list(self._raw_wheres)
+        qb._nested_wheres = list(self._nested_wheres)
         return qb
 
     # ------------------------------------------------------------------
@@ -155,6 +159,18 @@ class QueryBuilder:
         if condition:
             return callback(self)
         return self
+
+    def where_group(self, callback: Callable[[QueryBuilder], QueryBuilder]) -> QueryBuilder:
+        """AND a grouped sub-clause: `.where_group(lambda q: q.where("a", 1).or_where("b", 2))`."""
+        qb = self._clone()
+        qb._nested_wheres.append(("AND", callback))
+        return qb
+
+    def or_where_group(self, callback: Callable[[QueryBuilder], QueryBuilder]) -> QueryBuilder:
+        """OR a grouped sub-clause against the rest of the WHERE clause."""
+        qb = self._clone()
+        qb._nested_wheres.append(("OR", callback))
+        return qb
 
     # ------------------------------------------------------------------
     # Joins
@@ -322,6 +338,52 @@ class QueryBuilder:
 
     def exists(self) -> bool:
         return self.count() > 0
+
+    def min(self, column: str) -> Any:
+        col = _ident(column)
+        qb = self.select_raw(f"MIN({col}) as _agg")
+        qb._order_bys = []
+        qb._limit_val = None
+        qb._offset_val = None
+        rows = self._execute(*qb._build_select())
+        return rows[0]["_agg"] if rows else None
+
+    def max(self, column: str) -> Any:
+        col = _ident(column)
+        qb = self.select_raw(f"MAX({col}) as _agg")
+        qb._order_bys = []
+        qb._limit_val = None
+        qb._offset_val = None
+        rows = self._execute(*qb._build_select())
+        return rows[0]["_agg"] if rows else None
+
+    def avg(self, column: str) -> float | None:
+        col = _ident(column)
+        qb = self.select_raw(f"AVG({col}) as _agg")
+        qb._order_bys = []
+        qb._limit_val = None
+        qb._offset_val = None
+        rows = self._execute(*qb._build_select())
+        val = rows[0]["_agg"] if rows else None
+        return float(val) if val is not None else None
+
+    def sum(self, column: str) -> Any:
+        col = _ident(column)
+        qb = self.select_raw(f"SUM({col}) as _agg")
+        qb._order_bys = []
+        qb._limit_val = None
+        qb._offset_val = None
+        rows = self._execute(*qb._build_select())
+        return rows[0]["_agg"] if rows else None
+
+    def pluck(self, column: str) -> list[Any]:
+        """Return a flat list of values for a single column."""
+        col = _ident(column)
+        qb = self._clone()
+        qb._selects = [col]
+        qb._model_class = None
+        rows = qb._execute(*qb._build_select())
+        return [row.get(col) for row in rows]
 
     def paginate(self, per_page: int = 15, page: int = 1) -> dict:
         total = self.count()
@@ -501,13 +563,29 @@ class QueryBuilder:
             parts.append(f"({raw_sql})")
             bindings.update(raw_bindings)
 
-        and_clause = " AND ".join(parts)
-
         or_parts: list[str] = []
         for i, (col, op, val) in enumerate(self._or_wheres):
             key = f"ow{i}"
             or_parts.append(f"{col} {op} :{key}")
             bindings[key] = val
+
+        for i, (logic, callback) in enumerate(self._nested_wheres):
+            sub = QueryBuilder(self._table, None, self._conn_name)
+            sub = callback(sub)
+            sub_clause, sub_bindings = sub._build_where_clause()
+            if not sub_clause:
+                continue
+            prefix = f"_ng{i}_"
+            prefixed = {prefix + k: v for k, v in sub_bindings.items()}
+            for k in sorted(sub_bindings, key=len, reverse=True):
+                sub_clause = sub_clause.replace(f":{k}", f":{prefix}{k}")
+            bindings.update(prefixed)
+            if logic == "AND":
+                parts.append(f"({sub_clause})")
+            else:
+                or_parts.append(f"({sub_clause})")
+
+        and_clause = " AND ".join(parts)
 
         if or_parts and and_clause:
             return f"({and_clause}) OR {' OR '.join(or_parts)}", bindings
