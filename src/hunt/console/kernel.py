@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import click
 
+from hunt import __version__
 from hunt.admin.console.make_admin_resource import make_admin_resource_command
 from hunt.console.commands.cache import cache_group
 from hunt.console.commands.config_cache import config_cache_command, config_clear_command
@@ -68,7 +69,7 @@ def _load_app_commands(cli: click.Group) -> None:
 
 
 @click.group()
-@click.version_option(prog_name="hunt")
+@click.version_option(version=__version__, prog_name="hunt")
 def cli() -> None:
     """hunt — A Python web framework."""
 
