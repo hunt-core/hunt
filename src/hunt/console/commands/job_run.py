@@ -65,7 +65,9 @@ def _resolve_by_dotted_path(dotted: str) -> type:
     metavar="KEY=VALUE",
     help="Constructor argument as key=value. Repeat for multiple. Values are JSON-decoded (1→int, true→bool, etc.).",
 )
-@click.option("--queue", default=None, help="Override the queue name stored in the jobs table (no effect for sync run).")
+@click.option(
+    "--queue", default=None, help="Override the queue name stored in the jobs table (no effect for sync run)."
+)
 def job_run_command(name: str, data: tuple[str, ...], queue: str | None) -> None:
     """Run a job synchronously.
 
@@ -102,9 +104,7 @@ def job_run_command(name: str, data: tuple[str, ...], queue: str | None) -> None
 
     if cls is None:
         raise click.ClickException(
-            f"Job {name!r} not found. "
-            "Run `hunt job:list` to see available jobs, "
-            "or pass the full dotted class path."
+            f"Job {name!r} not found. Run `hunt job:list` to see available jobs, or pass the full dotted class path."
         )
 
     try:
