@@ -10,6 +10,25 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader, TemplateNotFound
 from hunt.view.directives import preprocess
 
 
+class _OldInput:
+    """Callable + attribute-accessible wrapper for old form input data."""
+
+    def __init__(self, data: dict) -> None:
+        object.__setattr__(self, "_data", data)
+
+    def __call__(self, key: str, default: str = "") -> Any:
+        return object.__getattribute__(self, "_data").get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return object.__getattribute__(self, "_data").get(key, "")
+
+    def __getattr__(self, key: str) -> Any:
+        return object.__getattribute__(self, "_data").get(key, "")
+
+    def get(self, key: str, default: Any = "") -> Any:
+        return object.__getattribute__(self, "_data").get(key, default)
+
+
 class ViewFactory:
     def __init__(self, views_path: Path, cache_path: Path | None = None) -> None:
         self._views_path = views_path
@@ -116,7 +135,7 @@ class ViewFactory:
         if "errors" not in context:
             context["errors"] = flash.get("_errors", {})
         if "old" not in context:
-            context["old"] = flash.get("_old_input", {})
+            context["old"] = _OldInput(flash.get("_old_input", {}))
 
     @staticmethod
     def _inject_gate(context: dict) -> None:

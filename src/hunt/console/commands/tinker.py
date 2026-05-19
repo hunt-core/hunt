@@ -23,9 +23,13 @@ def tinker_command() -> None:
         except ImportError:
             pass
 
-        IPython.start_ipython(argv=[], config=cfg)
+        from hunt.support.helpers import dd, dump
+
+        IPython.start_ipython(argv=[], user_ns={"dd": dd, "dump": dump}, config=cfg)
     except ImportError:
         click.echo("IPython is not installed. Run: pip install ipython")
         import code
 
-        code.interact(banner="hunt Tinker (basic REPL)", local={})
+        from hunt.support.helpers import dd, dump
+
+        code.interact(banner="hunt Tinker (basic REPL)", local={"dd": dd, "dump": dump})

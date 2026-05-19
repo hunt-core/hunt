@@ -32,7 +32,39 @@ def config(key: str, default: Any = None) -> Any:
 
 
 def env(key: str, default: Any = None) -> Any:
-    return os.environ.get(key, default)
+    val = os.environ.get(key)
+    if val is None:
+        return default
+    low = val.lower()
+    if low == "true":
+        return True
+    if low == "false":
+        return False
+    try:
+        return int(val)
+    except ValueError:
+        pass
+    try:
+        return float(val)
+    except ValueError:
+        pass
+    return val
+
+
+def dump(*values: Any) -> Any:
+    import pprint
+
+    for v in values:
+        pprint.pprint(v)
+    return values[-1] if values else None
+
+
+def dd(*values: Any) -> None:
+    import pprint
+
+    for v in values:
+        pprint.pprint(v)
+    raise SystemExit(0)
 
 
 def base_path(*parts: str) -> str:

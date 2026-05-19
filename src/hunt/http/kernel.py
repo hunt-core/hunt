@@ -97,6 +97,12 @@ class HttpKernel:
         except RouteNotFoundException:
             if request.method == "OPTIONS":
                 return await self._handle_options(request)
+            allowed = self._router.allowed_methods(request.path)
+            if allowed:
+                allow_value = ", ".join(sorted({*allowed, "OPTIONS"}))
+                resp = self._render_error(request, HttpException(405, "Method Not Allowed"))
+                resp.header("Allow", allow_value)
+                return resp
             return self._render_error(request, HttpException(404, "Not Found"))
 
         request.set_route_params(params)

@@ -11,6 +11,23 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.18] — 2026-05-19
+
+### Added
+
+**Developer experience**
+- `dump(*values)` — pretty-prints values to stdout and returns the last value (non-terminating).
+- `dd(*values)` — pretty-prints values and raises `SystemExit(0)` (terminates). Both are pre-imported in `hunt tinker`.
+- `env()` now coerces string values from the environment: `"true"` / `"false"` → `bool`; numeric strings → `int` or `float`. Non-matching strings are returned unchanged.
+- `old()` in templates is now callable: `{{ old("field") }}` returns the flashed value with an optional default (`{{ old("field", "n/a") }}`). Attribute syntax (`{{ old.field }}`) and item syntax (`{{ old["field"] }}`) continue to work.
+- `QueryBuilder.only(*columns)` — alias for `select(*columns)`.
+- `QueryBuilder.without(*columns)` — selects all columns except the specified ones (introspects the table schema at query time).
+
+**HTTP**
+- Wrong-method requests now return `405 Method Not Allowed` with an `Allow` header listing valid methods, instead of `404 Not Found`. Only paths that have at least one registered route trigger the 405.
+
+---
+
 ## [0.2.17] — 2026-05-19
 
 ### Added

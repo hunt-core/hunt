@@ -61,6 +61,7 @@ class QueryBuilder:
         self._limit_val: int | None = None
         self._offset_val: int | None = None
         self._selects: list[str] = ["*"]
+        self._without: list[str] = []
         self._distinct = False
         self._with_trashed = False
         self._joins: list[str] = []
@@ -82,6 +83,7 @@ class QueryBuilder:
         qb._limit_val = self._limit_val
         qb._offset_val = self._offset_val
         qb._selects = list(self._selects)
+        qb._without = list(self._without)
         qb._distinct = self._distinct
         qb._with_trashed = self._with_trashed
         qb._joins = list(self._joins)
@@ -245,6 +247,14 @@ class QueryBuilder:
     def select(self, *columns: str) -> QueryBuilder:
         qb = self._clone()
         qb._selects = [_ident(c) for c in columns]
+        return qb
+
+    def only(self, *columns: str) -> QueryBuilder:
+        return self.select(*columns)
+
+    def without(self, *columns: str) -> QueryBuilder:
+        qb = self._clone()
+        qb._without = [_ident(c) for c in columns]
         return qb
 
     def select_raw(self, *expressions: str) -> QueryBuilder:
@@ -545,9 +555,23 @@ class QueryBuilder:
     # SQL building
     # ------------------------------------------------------------------
 
+    def _columns_for_table(self) -> list[str]:
+        from sqlalchemy import inspect as sa_inspect
+
+        engine = connection(self._conn_name)
+        try:
+            return [col["name"] for col in sa_inspect(engine).get_columns(self._table)]
+        except Exception:
+            return []
+
     def _build_select(self) -> tuple[str, dict]:
         distinct = "DISTINCT " if self._distinct else ""
-        cols = ", ".join(self._selects)
+        selects = self._selects
+        if self._without and selects == ["*"]:
+            exclude = set(self._without)
+            all_cols = self._columns_for_table()
+            selects = [c for c in all_cols if c not in exclude] or ["*"]
+        cols = ", ".join(selects)
         sql = f"SELECT {distinct}{cols} FROM {self._table}"
         for join in self._joins:
             sql += f" {join}"
