@@ -66,6 +66,7 @@ def new_command(name: str, force: bool) -> None:
     _write(target / "config" / "app.py", _CONFIG_APP)
     _write(target / "config" / "auth.py", _CONFIG_AUTH)
     _write(target / "config" / "database.py", _CONFIG_DATABASE)
+    _write(target / "config" / "session.py", _CONFIG_SESSION)
     _write(target / "config" / "view.py", _CONFIG_VIEW)
     _write(target / "config" / "mail.py", _CONFIG_MAIL)
     _write(target / "config" / "filesystems.py", _CONFIG_FILESYSTEMS)
@@ -288,6 +289,17 @@ config = {
         "address": os.environ.get("MAIL_FROM_ADDRESS", "hello@example.com"),
         "name": os.environ.get("MAIL_FROM_NAME", "hunt"),
     },
+}
+"""
+
+_CONFIG_SESSION = """\
+import os
+
+config = {
+    # Session cookie lifetime in seconds (default: 7200 = 2 hours)
+    "lifetime": int(os.environ.get("SESSION_LIFETIME", "7200")),
+    # SameSite cookie attribute: "Strict", "Lax", or "None"
+    "same_site": os.environ.get("SESSION_SAME_SITE", "Strict"),
 }
 """
 
@@ -1022,6 +1034,7 @@ def register(router: Router) -> None:
 # Config files written by `hunt new` and added (never overwritten) by `hunt upgrade`.
 _NEW_CONFIG_FILES: dict[str, str] = {
     "config/auth.py": _CONFIG_AUTH,
+    "config/session.py": _CONFIG_SESSION,
 }
 
 # Canonical set of scaffold-managed files written by `hunt new`.

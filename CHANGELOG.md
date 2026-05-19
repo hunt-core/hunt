@@ -11,6 +11,20 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.14] — 2026-05-19
+
+### Added
+
+- **`Auth.login_using_id(id)`** — fetch a user by primary key and log them in; returns the user instance or `None`
+- **`Auth.once(credentials)`** — validate credentials and authenticate the user for the current request only; the session is never written
+- **`Auth.once_using_id(id)`** — authenticate a specific user for the current request only without touching the session
+- **Configurable `username` field on session guards** — pass `"username": "phone"` (or any column) in `Auth.configure()` guard config; defaults to `"email"`
+- **`FileSessionStore.pull(key, default=None)`** — get a session value and remove it in one call
+- **`FileSessionStore.remember(key, callback)`** — return existing value if present, otherwise call `callback`, store the result, and return it
+- **Configurable session lifetime** — `config/session.py` `session.lifetime` (seconds) now controls both the session file expiry and the cookie `Max-Age`; defaults to `7200`; new `hunt new` scaffolds `config/session.py`; `SESSION_LIFETIME` env var supported out of the box
+
+---
+
 ## [0.2.13] — 2026-05-19
 
 ### Added
@@ -203,7 +217,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.13...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.14...HEAD
+[0.2.14]: https://github.com/hunt-core/hunt/compare/v0.2.13...v0.2.14
 [0.2.13]: https://github.com/hunt-core/hunt/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/hunt-core/hunt/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/hunt-core/hunt/compare/v0.2.10...v0.2.11

@@ -8,6 +8,8 @@ if TYPE_CHECKING:
 
 # Per-coroutine request context — safe under async concurrency
 _request_var: ContextVar[Any] = ContextVar("_request_var", default=None)
+# Per-request "once" user — set by Auth.once() / Auth.once_using_id(); not persisted to session
+_once_user_var: ContextVar[Any] = ContextVar("_once_user_var", default=None)
 
 
 def _set_request(request: Any) -> None:
@@ -33,15 +35,19 @@ def _get_session() -> FileSessionStore | None:
 class _SessionGuard:
     """Auth guard backed by the request session (cookie-based)."""
 
-    def __init__(self, name: str, model: type | None = None) -> None:
+    def __init__(self, name: str, model: type | None = None, username: str = "email") -> None:
         self._name = name
         self._model = model
+        self._username = username
         self._session_key = "_auth_id" if name == "web" else f"_auth_id_{name}"
 
     def set_model(self, model: type) -> None:
         self._model = model
 
     def user(self) -> Any | None:
+        once_user = _once_user_var.get()
+        if once_user is not None:
+            return once_user
         session = _get_session()
         if session is None:
             return None
@@ -56,11 +62,14 @@ class _SessionGuard:
             return None
 
     def id(self) -> Any | None:
+        once_user = _once_user_var.get()
+        if once_user is not None:
+            return once_user._attributes.get("id")
         session = _get_session()
         return session.get(self._session_key) if session else None
 
     def check(self) -> bool:
-        return self.id() is not None
+        return self.user() is not None
 
     def guest(self) -> bool:
         return not self.check()
@@ -68,10 +77,9 @@ class _SessionGuard:
     def attempt(self, credentials: dict[str, Any]) -> bool:
         if self._model is None:
             raise RuntimeError(f"Guard '{self._name}': model not configured.")
-        email_field = "email"
         password = credentials.get("password", "")
-        identifier = credentials.get(email_field)
-        user = self._model.where(email_field, identifier).first()
+        identifier = credentials.get(self._username)
+        user = self._model.where(self._username, identifier).first()
         if user is None:
             return False
         hashed = user._attributes.get("password", "")
@@ -86,6 +94,40 @@ class _SessionGuard:
             raise RuntimeError("Session middleware is not active.")
         session.regenerate()
         session.put(self._session_key, user._attributes["id"])
+
+    def login_using_id(self, user_id: Any) -> Any | None:
+        """Fetch a user by primary key and log them in. Returns the user or None."""
+        if self._model is None:
+            raise RuntimeError(f"Guard '{self._name}': model not configured.")
+        user = self._model.find(user_id)
+        if user is None:
+            return None
+        self.login(user)
+        return user
+
+    def once(self, credentials: dict[str, Any]) -> bool:
+        """Authenticate for the current request only — no session is written."""
+        if self._model is None:
+            raise RuntimeError(f"Guard '{self._name}': model not configured.")
+        password = credentials.get("password", "")
+        identifier = credentials.get(self._username)
+        user = self._model.where(self._username, identifier).first()
+        if user is None:
+            return False
+        if not verify_password(password, user._attributes.get("password", "")):
+            return False
+        _once_user_var.set(user)
+        return True
+
+    def once_using_id(self, user_id: Any) -> Any | None:
+        """Authenticate a specific user for the current request only."""
+        if self._model is None:
+            raise RuntimeError(f"Guard '{self._name}': model not configured.")
+        user = self._model.find(user_id)
+        if user is None:
+            return None
+        _once_user_var.set(user)
+        return user
 
     def logout(self) -> None:
         session = _get_session()
@@ -189,7 +231,8 @@ class _AuthManager:
             driver = config.get("driver", "session")
             model = config.get("model")
             if driver == "session":
-                g: Any = _SessionGuard(name, model)
+                username = config.get("username", "email")
+                g: Any = _SessionGuard(name, model, username)
             elif driver == "token":
                 field = config.get("field", "api_token")
                 g = _TokenGuard(name, model, field)
@@ -233,6 +276,15 @@ class _AuthManager:
 
     def login(self, user: Any) -> None:
         self._default_guard.login(user)
+
+    def login_using_id(self, user_id: Any) -> Any | None:
+        return self._default_guard.login_using_id(user_id)
+
+    def once(self, credentials: dict[str, Any]) -> bool:
+        return self._default_guard.once(credentials)
+
+    def once_using_id(self, user_id: Any) -> Any | None:
+        return self._default_guard.once_using_id(user_id)
 
     def logout(self) -> None:
         self._default_guard.logout()

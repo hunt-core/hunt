@@ -31,8 +31,20 @@ class StartSession(Middleware):
             os.environ.get("SESSION_SECURE", "").lower() == "true" or request._scope.get("scheme", "http") == "https"
         )
         same_site = _session_same_site()
-        _set_cookie(response, COOKIE_NAME, store.id, max_age=7200, http_only=True, secure=secure, same_site=same_site)
+        lifetime = _session_lifetime()
+        _set_cookie(
+            response, COOKIE_NAME, store.id, max_age=lifetime, http_only=True, secure=secure, same_site=same_site
+        )
         return response
+
+
+def _session_lifetime() -> int:
+    try:
+        from hunt.support.helpers import config as _cfg
+
+        return int(_cfg("session.lifetime", 7200))
+    except Exception:
+        return 7200
 
 
 def _session_same_site() -> str:

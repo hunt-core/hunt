@@ -12,10 +12,19 @@ from typing import Any
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+def _session_lifetime() -> int:
+    try:
+        from hunt.support.helpers import config as _cfg
+
+        return int(_cfg("session.lifetime", 7200))
+    except Exception:
+        return 7200
+
+
 class FileSessionStore:
     """File-backed session store. One JSON file per session ID."""
 
-    LIFETIME = 7200  # 2 hours
+    LIFETIME = 7200  # 2 hours — override via config/session.py session.lifetime
 
     def __init__(self, path: Path) -> None:
         self._path = Path(path)
@@ -43,9 +52,10 @@ class FileSessionStore:
     def save(self) -> None:
         if not self._id:
             return
+        lifetime = _session_lifetime()
         payload = {
             "data": self._data,
-            "expires_at": time.time() + self.LIFETIME,
+            "expires_at": time.time() + lifetime,
         }
         path = self._file(self._id)
         # Write to a temp file then atomically replace to avoid partial reads
@@ -81,6 +91,19 @@ class FileSessionStore:
 
     def forget(self, key: str) -> None:
         self._data.pop(key, None)
+
+    def pull(self, key: str, default: Any = None) -> Any:
+        """Get a value and remove it from the session in one call."""
+        value = self._data.pop(key, default)
+        return value
+
+    def remember(self, key: str, callback: Any) -> Any:
+        """Return the session value for key; if absent, call callback, store, and return the result."""
+        if key in self._data:
+            return self._data[key]
+        value = callback() if callable(callback) else callback
+        self._data[key] = value
+        return value
 
     def flush(self) -> None:
         self._data = {}
