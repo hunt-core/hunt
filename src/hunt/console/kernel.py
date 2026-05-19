@@ -45,6 +45,28 @@ from hunt.console.commands.upgrade import upgrade_command
 from hunt.console.commands.view_cache import view_cache_command, view_clear_command
 
 
+def _load_app_commands(cli: click.Group) -> None:
+    """Load app/console/kernel.py and call register(cli) if it exists."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    kernel_file = Path.cwd() / "app" / "console" / "kernel.py"
+    if not kernel_file.exists():
+        return
+    sys.path.insert(0, str(Path.cwd()))
+    try:
+        spec = importlib.util.spec_from_file_location("app.console.kernel", kernel_file)
+        if spec is None or spec.loader is None:
+            return
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        if callable(getattr(mod, "register", None)):
+            mod.register(cli)
+    except Exception as exc:
+        click.echo(f"  Warning: could not load app/console/kernel.py — {exc}", err=True)
+
+
 @click.group()
 @click.version_option(prog_name="hunt")
 def cli() -> None:
@@ -111,3 +133,6 @@ cli.add_command(schedule_list_command, name="schedule:list")
 
 # Storage commands
 cli.add_command(storage_link_command, name="storage:link")
+
+# Load app-level commands from app/console/kernel.py if present
+_load_app_commands(cli)

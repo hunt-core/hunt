@@ -78,6 +78,7 @@ def new_command(name: str, force: bool) -> None:
     _write(target / "app" / "providers" / "app_service_provider.py", _APP_PROVIDER)
     _write(target / "app" / "providers" / "event_service_provider.py", _EVENT_PROVIDER)
     _write(target / "app" / "console" / "schedule.py", _SCHEDULE)
+    _write(target / "app" / "console" / "kernel.py", _CONSOLE_KERNEL)
     _write(target / "app" / "controllers" / "welcome_controller.py", _WELCOME_CONTROLLER)
     _write(target / "app" / "controllers" / "auth" / "__init__.py", "")
     _write(target / "app" / "controllers" / "auth" / "login_controller.py", _AUTH_LOGIN_CONTROLLER)
@@ -504,6 +505,19 @@ def schedule(scheduler: Scheduler) -> None:
     pass
     # scheduler.call(lambda: None, description="Example task").daily()
     # scheduler.command("db:seed").weekly()
+"""
+
+_CONSOLE_KERNEL = """\
+from __future__ import annotations
+
+import click
+
+
+def register(cli: click.Group) -> None:
+    \"\"\"Register application commands with the hunt CLI.\"\"\"
+    pass
+    # from app.console.commands.my_command import my_command
+    # cli.add_command(my_command)
 """
 
 _WELCOME_CONTROLLER = """\
@@ -1024,6 +1038,7 @@ _SCAFFOLD_FILES: dict[str, str] = {
     "app/middleware/guest.py": _GUEST_MIDDLEWARE,
     "app/admin/__init__.py": "",
     "app/admin/user_resource.py": _ADMIN_USER_RESOURCE,
+    "app/console/kernel.py": _CONSOLE_KERNEL,
     "routes/auth.py": _ROUTES_AUTH,
     "routes/admin.py": _ROUTES_ADMIN,
 }

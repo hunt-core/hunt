@@ -35,10 +35,38 @@ def make_command_command(name: str, command_name: str | None) -> None:
         command_name=cmd,
     )
 
-    out = Path.cwd() / "app" / "console" / "commands" / f"{Str.snake(name)}.py"
+    snake_name = Str.snake(name)
+    out = Path.cwd() / "app" / "console" / "commands" / f"{snake_name}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
     out.write_text(content)
     click.echo(f"  Created Command: {out.relative_to(Path.cwd())}")
+
+    # Auto-register the new command in app/console/kernel.py
+    kernel_file = Path.cwd() / "app" / "console" / "kernel.py"
+    if kernel_file.exists():
+        module_path = f"app.console.commands.{snake_name}"
+        import_line = f"from {module_path} import {func_name}"
+        register_line = f"    cli.add_command({func_name})"
+        src = kernel_file.read_text()
+        if func_name not in src:
+            # Insert import before the register function, add command inside it
+            src = src.replace(
+                "\ndef register(",
+                f"\n{import_line}\n\ndef register(",
+            )
+            src = src.replace(
+                "    pass\n",
+                f"    {func_name},\n    pass\n",
+                1,
+            )
+            # Replace "pass" placeholder with the real add_command call
+            src = src.replace(
+                f"    {func_name},\n    pass\n",
+                f"{register_line}\n",
+                1,
+            )
+            kernel_file.write_text(src)
+            click.echo("  Registered in: app/console/kernel.py")
