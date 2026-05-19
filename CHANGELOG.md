@@ -11,6 +11,15 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.5] — 2026-05-19
+
+### Added
+
+- Queue monitor page at `/hunt-admin/queue` — lists pending, processing, and delayed jobs with status badges; shows failed jobs with truncated exception details and retry / delete / flush-all actions
+- "System" navigation group auto-added to admin sidebar with a Queue link
+
+---
+
 ## [0.2.4] — 2026-05-19
 
 ### Fixed
@@ -98,7 +107,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/hunt-core/hunt/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/hunt-core/hunt/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/hunt-core/hunt/compare/v0.2.0...v0.2.3
 [0.2.0]: https://github.com/hunt-core/hunt/releases/tag/v0.2.0

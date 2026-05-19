@@ -97,6 +97,8 @@ class _Admin:
                 for t in self._tools
             ]
             items.append(NavGroup("Tools", tool_links))
+        _queue_icon = "M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H15M2.25 13.5h3.86a2.251 2.251 0 0 1 2.012 1.244l.256.512a2.252 2.252 0 0 0 2.013 1.244h3.218a2.252 2.252 0 0 0 2.013-1.244l.256-.512a2.251 2.251 0 0 1 2.012-1.244h3.860"
+        items.append(NavGroup("System", [NavLink("Queue", f"{self.prefix}/queue", icon=_queue_icon)]))
         return items
 
     # ------------------------------------------------------------------
@@ -118,6 +120,7 @@ class _Admin:
         """Register all admin routes under self.prefix with AdminGate middleware."""
         from hunt.admin.controllers import action as action_ctrl
         from hunt.admin.controllers import dashboard as dash_ctrl
+        from hunt.admin.controllers import queue as queue_ctrl
         from hunt.admin.controllers import resource as res_ctrl
         from hunt.admin.controllers import search as search_ctrl
         from hunt.admin.middleware.gate import AdminGate
@@ -141,6 +144,12 @@ class _Admin:
 
             # Global search
             router.get("/search", search_ctrl.index)
+
+            # Queue monitor
+            router.get("/queue", queue_ctrl.index)
+            router.post("/queue/failed/{id}/retry", queue_ctrl.retry)
+            router.post("/queue/failed/{id}/delete", queue_ctrl.delete_failed)
+            router.post("/queue/flush", queue_ctrl.flush)
 
     # ------------------------------------------------------------------
     # Rendering

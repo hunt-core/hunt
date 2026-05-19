@@ -1,0 +1,198 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li>
+            <a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300">
+                <svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/>
+                </svg>
+                <span class="sr-only">Dashboard</span>
+            </a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-400">Queue</span>
+        </li>
+    </ol>
+</nav>
+
+{# Page heading #}
+<div class="sm:flex sm:items-center mb-8">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">Queue</h1>
+        <p class="mt-2 text-sm text-gray-400">Monitor pending jobs and manage failed jobs.</p>
+    </div>
+</div>
+
+{# ── Failed Jobs ─────────────────────────────────────────────────── #}
+<div class="mb-10">
+    <div class="sm:flex sm:items-center mb-4">
+        <div class="sm:flex-auto">
+            <h2 class="text-sm font-semibold text-white">Failed Jobs
+                {% if failed_jobs %}
+                <span class="ml-2 inline-flex items-center rounded-full bg-red-400/10 px-2 py-0.5 text-xs font-medium text-red-400 ring-1 ring-inset ring-red-400/20">{{ failed_jobs | length }}</span>
+                {% endif %}
+            </h2>
+        </div>
+        {% if failed_jobs %}
+        <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+            <form method="post" action="{{ prefix }}/queue/flush" onsubmit="return confirm('Flush all failed jobs? This cannot be undone.')">
+                <input type="hidden" name="_token" value="{{ csrf_token }}">
+                <button type="submit" class="inline-flex items-center gap-x-1.5 rounded-md bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-400 ring-1 ring-inset ring-red-500/20 hover:bg-red-500/20">
+                    <svg class="-ml-0.5 size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                    </svg>
+                    Flush all
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if failed_table_missing %}
+    <div class="rounded-md bg-yellow-400/10 px-4 py-3 ring-1 ring-inset ring-yellow-400/20">
+        <p class="text-sm text-yellow-300">The <code class="font-mono">jobs_failed</code> table does not exist. Run your queue migrations first.</p>
+    </div>
+    {% elif not failed_jobs %}
+    <div class="rounded-lg border border-dashed border-white/10 py-12 text-center">
+        <svg class="mx-auto size-10 text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+        </svg>
+        <p class="mt-2 text-sm text-gray-500">No failed jobs.</p>
+    </div>
+    {% else %}
+    <div class="flow-root">
+        <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+            <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+                <table class="min-w-full divide-y divide-white/15">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-white sm:pl-0">ID</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Queue</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Job</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Exception</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Failed At</th>
+                            <th scope="col" class="py-3.5 pr-4 pl-3 sm:pr-0"><span class="sr-only">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/10">
+                        {% for job in failed_jobs %}
+                        <tr>
+                            <td class="py-4 pl-4 pr-3 text-sm font-medium text-white whitespace-nowrap sm:pl-0">{{ job.id }}</td>
+                            <td class="px-3 py-4 text-sm text-gray-400 whitespace-nowrap">{{ job.queue }}</td>
+                            <td class="px-3 py-4 text-sm text-gray-300 whitespace-nowrap font-mono">{{ job._job_class }}</td>
+                            <td class="px-3 py-4 text-sm text-gray-400 max-w-xs">
+                                {% if job._exception_short %}
+                                <details>
+                                    <summary class="cursor-pointer text-red-400 hover:text-red-300 truncate max-w-xs">
+                                        {{ job._exception_short[:80] }}{% if job._exception_short | length > 80 %}…{% endif %}
+                                    </summary>
+                                    <pre class="mt-2 whitespace-pre-wrap break-all text-xs text-gray-400 bg-white/5 rounded p-2 max-h-40 overflow-y-auto">{{ job._exception_short }}</pre>
+                                </details>
+                                {% else %}
+                                <span class="text-gray-600">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-4 text-sm text-gray-400 whitespace-nowrap">{{ job._failed_at_fmt }}</td>
+                            <td class="py-4 pr-4 pl-3 text-right text-sm font-medium whitespace-nowrap sm:pr-0">
+                                <div class="flex items-center justify-end gap-x-2">
+                                    <form method="post" action="{{ prefix }}/queue/failed/{{ job.id }}/retry">
+                                        <input type="hidden" name="_token" value="{{ csrf_token }}">
+                                        <button type="submit" class="inline-flex items-center gap-x-1 rounded px-2 py-1 text-xs font-semibold text-indigo-400 bg-indigo-500/10 ring-1 ring-inset ring-indigo-500/20 hover:bg-indigo-500/20" title="Retry">
+                                            <svg class="size-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                <path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clip-rule="evenodd"/>
+                                            </svg>
+                                            Retry
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{{ prefix }}/queue/failed/{{ job.id }}/delete" onsubmit="return confirm('Delete this failed job?')">
+                                        <input type="hidden" name="_token" value="{{ csrf_token }}">
+                                        <button type="submit" class="text-gray-500 hover:text-red-400" title="Delete">
+                                            <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                            </svg>
+                                            <span class="sr-only">Delete</span>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{# ── Pending / Processing Jobs ────────────────────────────────────── #}
+<div>
+    <div class="sm:flex sm:items-center mb-4">
+        <div class="sm:flex-auto">
+            <h2 class="text-sm font-semibold text-white">Pending Jobs
+                {% if pending_jobs %}
+                <span class="ml-2 inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-gray-300 ring-1 ring-inset ring-white/10">{{ pending_jobs | length }}</span>
+                {% endif %}
+            </h2>
+        </div>
+    </div>
+
+    {% if jobs_table_missing %}
+    <div class="rounded-md bg-yellow-400/10 px-4 py-3 ring-1 ring-inset ring-yellow-400/20">
+        <p class="text-sm text-yellow-300">The <code class="font-mono">jobs</code> table does not exist. Run your queue migrations first.</p>
+    </div>
+    {% elif not pending_jobs %}
+    <div class="rounded-lg border border-dashed border-white/10 py-12 text-center">
+        <svg class="mx-auto size-10 text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H15M2.25 13.5h3.86a2.251 2.251 0 0 1 2.012 1.244l.256.512a2.252 2.252 0 0 0 2.013 1.244h3.218a2.252 2.252 0 0 0 2.013-1.244l.256-.512a2.251 2.251 0 0 1 2.012-1.244h3.860"/>
+        </svg>
+        <p class="mt-2 text-sm text-gray-500">No jobs in queue.</p>
+    </div>
+    {% else %}
+    <div class="flow-root">
+        <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+            <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+                <table class="min-w-full divide-y divide-white/15">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-white sm:pl-0">ID</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Queue</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Job</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Status</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Attempts</th>
+                            <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Created At</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/10">
+                        {% for job in pending_jobs %}
+                        <tr>
+                            <td class="py-4 pl-4 pr-3 text-sm font-medium text-white whitespace-nowrap sm:pl-0">{{ job.id }}</td>
+                            <td class="px-3 py-4 text-sm text-gray-400 whitespace-nowrap">{{ job.queue }}</td>
+                            <td class="px-3 py-4 text-sm text-gray-300 whitespace-nowrap font-mono">{{ job._job_class }}</td>
+                            <td class="px-3 py-4 text-sm whitespace-nowrap">
+                                {% if job._status == 'Processing' %}
+                                <span class="inline-flex items-center rounded-md bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-400/20">Processing</span>
+                                {% elif job._status == 'Delayed' %}
+                                <span class="inline-flex items-center rounded-md bg-yellow-400/10 px-2 py-1 text-xs font-medium text-yellow-400 ring-1 ring-inset ring-yellow-400/20">Delayed</span>
+                                {% else %}
+                                <span class="inline-flex items-center rounded-md bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-4 text-sm text-gray-400 whitespace-nowrap">{{ job.attempts }}</td>
+                            <td class="px-3 py-4 text-sm text-gray-400 whitespace-nowrap">{{ job._created_at_fmt }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
