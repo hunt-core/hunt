@@ -5,6 +5,49 @@ from typing import Any
 from hunt.validation.rules import RULES
 
 
+def _get_nested(data: Any, path: str) -> Any:
+    """Walk nested dicts/lists by a dot-separated path (e.g. 'address.city', 'items.0.name')."""
+    current = data
+    for part in path.split("."):
+        if current is None:
+            return None
+        if isinstance(current, dict):
+            current = current.get(part)
+        elif isinstance(current, (list, tuple)) and part.isdigit():
+            idx = int(part)
+            current = current[idx] if idx < len(current) else None
+        else:
+            return None
+    return current
+
+
+def _expand_wildcard_field(field: str, data: dict) -> list[str]:
+    """Expand 'a.*.b' wildcards into concrete paths based on the current data.
+
+    Supports multiple wildcards via recursion: 'a.*.b.*.c' works.
+    Returns an empty list when the list is absent or empty.
+    """
+    if ".*" not in field:
+        return [field]
+
+    star_pos = field.index(".*")
+    prefix = field[:star_pos]
+    suffix = field[star_pos + 2 :].lstrip(".")  # strip leading dot after .*
+
+    lst = _get_nested(data, prefix) if prefix else data
+    if not isinstance(lst, (list, tuple)):
+        return []
+
+    result = []
+    for i in range(len(lst)):
+        concrete = f"{prefix}.{i}.{suffix}" if suffix else f"{prefix}.{i}"
+        if ".*" in concrete:
+            result.extend(_expand_wildcard_field(concrete, data))
+        else:
+            result.append(concrete)
+    return result
+
+
 class ValidationException(Exception):
     def __init__(self, errors: dict[str, list[str]]) -> None:
         self.errors = errors
@@ -75,9 +118,19 @@ class Validator:
 
     def _run(self) -> None:
         self._errors = {}
+
+        # Expand wildcard patterns (e.g. "items.*.name") into concrete paths
+        expanded_rules: dict[str, Any] = {}
         for field, rule_def in self._rules.items():
+            if ".*" in field:
+                for concrete in _expand_wildcard_field(field, self._data):
+                    expanded_rules[concrete] = rule_def
+            else:
+                expanded_rules[field] = rule_def
+
+        for field, rule_def in expanded_rules.items():
             raw_rules = rule_def if isinstance(rule_def, list) else rule_def.split("|")
-            value = self._data.get(field)
+            value = _get_nested(self._data, field) if "." in field else self._data.get(field)
 
             # --- Meta-rule flags ---
             rule_names = [(r.split(":")[0] if isinstance(r, str) else getattr(r, "__name__", "")) for r in raw_rules]
@@ -87,7 +140,8 @@ class Validator:
             has_required = any(n.startswith("required") for n in rule_names)
 
             # `sometimes`: skip entirely if field not present in input
-            if sometimes and field not in self._data:
+            top_key = field.split(".")[0]
+            if sometimes and top_key not in self._data:
                 continue
 
             # `nullable`: if value is None/empty and not required, skip all rules

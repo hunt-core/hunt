@@ -11,6 +11,16 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.11] — 2026-05-19
+
+### Added
+
+- **Nested validation** — dotted paths (`"address.city"`) and wildcard paths (`"items.*.name"`) now work in validator rules; errors are reported under the full path key (e.g. `"items.0.name"`)
+- `required_with:field1,field2` — field is required when any of the listed fields are present and non-empty
+- `required_without:field1,field2` — field is required when any of the listed fields are absent or empty
+
+---
+
 ## [0.2.10] — 2026-05-19
 
 ### Added
@@ -165,7 +175,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.11...HEAD
+[0.2.11]: https://github.com/hunt-core/hunt/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/hunt-core/hunt/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/hunt-core/hunt/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/hunt-core/hunt/compare/v0.2.7...v0.2.8

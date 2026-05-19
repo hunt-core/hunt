@@ -219,6 +219,26 @@ def _different(value: Any, params: list, data: dict) -> str | None:
     return None
 
 
+def _required_with(value: Any, params: list, data: dict) -> str | None:
+    """required_with:field1,field2 — required if any listed field is present and non-empty."""
+    if not params:
+        return None
+    if any(data.get(p) not in (None, "") for p in params):
+        if value is None or value == "":
+            return "The field is required."
+    return None
+
+
+def _required_without(value: Any, params: list, data: dict) -> str | None:
+    """required_without:field1,field2 — required if any listed field is absent or empty."""
+    if not params:
+        return None
+    if any(data.get(p) in (None, "") for p in params):
+        if value is None or value == "":
+            return "The field is required."
+    return None
+
+
 def _required_if(value: Any, params: list, data: dict) -> str | None:
     """required_if:other_field,expected_value"""
     if len(params) < 2:
@@ -498,6 +518,8 @@ RULES: dict[str, Any] = {
     "size": _size,
     "array": _array,
     "different": _different,
+    "required_with": _required_with,
+    "required_without": _required_without,
     "required_if": _required_if,
     "required_unless": _required_unless,
     "gt": _gt,
