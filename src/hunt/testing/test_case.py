@@ -99,6 +99,38 @@ class TestResponse:
             assert value in actual, f"Header '{name}': expected '{value}', got '{actual}'"
         return self
 
+    def assert_cookie(self, name: str, value: str | None = None) -> TestResponse:
+        cookies: dict[str, str] = {}
+        for raw in self._response._cookie_headers:
+            parts = raw.split(";")
+            pair = parts[0].strip()
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                cookies[k.strip()] = v.strip()
+        assert name in cookies, f"Cookie '{name}' not found in response"
+        if value is not None:
+            assert cookies[name] == value, f"Cookie '{name}': expected '{value}', got '{cookies[name]}'"
+        return self
+
+    def assert_json_count(self, key: str | None = None, count: int = 0) -> TestResponse:
+        data = self.json()
+        target = data.get(key) if key and isinstance(data, dict) else data
+        assert isinstance(target, (list, dict)), f"Expected a list/dict at '{key}', got {type(target).__name__}"
+        assert len(target) == count, f"Expected {count} items at '{key}', got {len(target)}"
+        return self
+
+    def assert_json_missing(self, key: str) -> TestResponse:
+        data = self.json()
+        assert isinstance(data, dict) and key not in data, f"Expected JSON key '{key}' to be absent"
+        return self
+
+    def assert_json_fragment(self, fragment: dict) -> TestResponse:
+        data = self.json()
+        assert isinstance(data, dict), "Response is not a JSON object"
+        for k, v in fragment.items():
+            assert k in data and data[k] == v, f"JSON fragment mismatch at '{k}': expected {v!r}, got {data.get(k)!r}"
+        return self
+
 
 class HuntTestCase:
     """Base test class providing HTTP test helpers."""
@@ -120,14 +152,17 @@ class HuntTestCase:
         return self
 
     def _make_scope(self, method: str, path: str, headers: dict | None = None) -> dict:
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(path)
         raw_headers = []
         for k, v in (headers or {}).items():
             raw_headers.append((k.lower().encode(), v.encode()))
         return {
             "type": "http",
             "method": method.upper(),
-            "path": path,
-            "query_string": b"",
+            "path": parts.path or "/",
+            "query_string": (parts.query or "").encode(),
             "headers": raw_headers,
             "scheme": "http",
             "server": ("testserver", 80),
@@ -240,6 +275,45 @@ class HuntTestCase:
 
         actual = QueryBuilder(table).count()
         assert actual == count, f"Expected {count} records in '{table}', found {actual}"
+
+
+class DatabaseTransactions:
+    """Mixin: wrap each test in a DB transaction that is rolled back on teardown.
+
+    Faster than ``RefreshDatabase`` for large tables — no DELETE statements are
+    issued; the transaction is simply rolled back.  Works with SQLAlchemy
+    synchronous engines (SQLite, MySQL, PostgreSQL).
+
+    Usage::
+
+        class MyTest(HuntTestCase, DatabaseTransactions):
+            ...
+    """
+
+    _db_connection: Any = None
+    _db_transaction: Any = None
+
+    def setup_method(self) -> None:
+        from hunt.database.connection import connection as get_engine
+
+        engine = get_engine()
+        self._db_connection = engine.connect()
+        self._db_transaction = self._db_connection.begin()
+
+        from unittest.mock import patch
+
+        from hunt.database import connection as conn_module
+
+        self._conn_patcher = patch.object(conn_module, "connection", return_value=self._db_connection)
+        self._conn_patcher.start()
+
+    def teardown_method(self) -> None:
+        if self._db_transaction is not None:
+            self._db_transaction.rollback()
+        if self._db_connection is not None:
+            self._db_connection.close()
+        if hasattr(self, "_conn_patcher"):
+            self._conn_patcher.stop()
 
 
 class RefreshDatabase:

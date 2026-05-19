@@ -149,6 +149,71 @@ class QueueFake:
 
 
 # ---------------------------------------------------------------------------
+# MailFake
+# ---------------------------------------------------------------------------
+
+
+class MailFake:
+    """Replace the mail transport with a recording fake.
+
+    Usage::
+
+        with MailFake() as fake:
+            Mail.to("user@example.com").send(WelcomeMail(user))
+            fake.assert_sent(WelcomeMail)
+            fake.assert_sent_to("user@example.com", WelcomeMail)
+    """
+
+    def __init__(self) -> None:
+        self._sent: list[tuple[str, Any]] = []  # [(to_address, mailable), ...]
+
+    def __enter__(self) -> MailFake:
+        fake = self
+
+        class _FakeTransport:
+            def send(self, to: str, subject: str, html: str, text: str = "") -> None:
+                pass
+
+        from hunt.mail.manager import Mail
+
+        # Patch send_now on the Mailer so it records instead of sending
+        def _fake_send_now(mailer_self: Any, mailable: Any) -> None:
+            to = getattr(mailer_self, "_to", "")
+            fake._sent.append((to, mailable))
+
+        self._patcher = patch.object(Mail, "send_now", _fake_send_now, create=True)
+        self._patcher.start()
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self._patcher.stop()
+
+    def assert_sent(self, cls: type, count: int | None = None) -> None:
+        found = [m for _, m in self._sent if isinstance(m, cls)]
+        if count is not None:
+            assert len(found) == count, f"Expected {count} send(s) of {cls.__name__}, got {len(found)}"
+        else:
+            assert found, f"Expected {cls.__name__} to be sent, but it was not"
+
+    def assert_not_sent(self, cls: type) -> None:
+        found = [m for _, m in self._sent if isinstance(m, cls)]
+        assert not found, f"Expected {cls.__name__} NOT to be sent, but it was"
+
+    def assert_sent_to(self, to: str, cls: type | None = None) -> None:
+        if cls is None:
+            found = [m for addr, m in self._sent if addr == to]
+        else:
+            found = [m for addr, m in self._sent if addr == to and isinstance(m, cls)]
+        assert found, f"Expected mail to '{to}' but none found"
+
+    def assert_nothing_sent(self) -> None:
+        assert not self._sent, f"Expected no mail sent, got {len(self._sent)}"
+
+    def sent(self, cls: type) -> list[Any]:
+        return [m for _, m in self._sent if isinstance(m, cls)]
+
+
+# ---------------------------------------------------------------------------
 # freeze_time
 # ---------------------------------------------------------------------------
 

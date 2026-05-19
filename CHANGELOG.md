@@ -11,6 +11,20 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.13] — 2026-05-19
+
+### Added
+
+- **`DatabaseTransactions` test mixin** — wraps each test in a database transaction that is rolled back on teardown; faster than `RefreshDatabase` for large tables
+- **`MailFake`** — context-manager fake that records sent mail; assertions: `assert_sent`, `assert_not_sent`, `assert_sent_to`, `assert_nothing_sent`
+- **`TestResponse.assert_cookie(name, value=None)`** — asserts a `Set-Cookie` header was returned with the given name and optional value
+- **`TestResponse.assert_json_count(key, count)`** — asserts a JSON array (top-level or under `key`) has exactly `count` items
+- **`TestResponse.assert_json_missing(key)`** — asserts a JSON key is absent from the response
+- **`TestResponse.assert_json_fragment(fragment)`** — asserts a dict subset matches the JSON response
+- **Query string support in test client** — `self.get("/posts?page=2")` now correctly populates `request.query_string`; previously the query string was silently dropped
+
+---
+
 ## [0.2.12] — 2026-05-19
 
 ### Added
@@ -189,7 +203,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.12...HEAD
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.13...HEAD
+[0.2.13]: https://github.com/hunt-core/hunt/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/hunt-core/hunt/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/hunt-core/hunt/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/hunt-core/hunt/compare/v0.2.9...v0.2.10
