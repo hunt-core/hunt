@@ -16,7 +16,7 @@ A Python web framework. Routing, ORM, templates, migrations, validation, authent
 
 ## Requirements
 
-- Python 3.11+how
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
 ---
@@ -240,6 +240,17 @@ class CreatePostsTable(Migration):
         Schema.drop_if_exists("posts")
 ```
 
+**Altering tables:**
+
+```python
+Schema.table("posts", lambda bp: [
+    bp.string("subtitle").nullable(),        # add column
+    bp.drop_column("legacy_field"),          # drop column (raises if absent)
+    bp.drop_column_if_exists("old_field"),   # safe drop — idempotent
+    bp.rename_column("body", "content"),     # rename column
+])
+```
+
 **Running migrations:**
 
 ```bash
@@ -326,6 +337,25 @@ from hunt.http.middleware.authenticate import Authenticate
 router.get("/dashboard", DashboardController().index).middleware(Authenticate)
 ```
 
+### Two-factor authentication
+
+Add TOTP-based 2FA to any application with one command:
+
+```bash
+hunt make:2fa-controllers
+```
+
+This scaffolds routes, controllers, Tailwind-styled templates, and a migration that adds `two_factor_secret`, `two_factor_enabled`, and `two_factor_recovery_codes` columns to the `users` table. After running `hunt migrate`, protect any route group with the included middleware:
+
+```python
+from hunt.http.middleware.two_factor import EnsureTwoFactorAuthenticated
+
+with router.group(middleware=[Authenticate, EnsureTwoFactorAuthenticated]):
+    router.get("/dashboard", DashboardController().index)
+```
+
+Users who have 2FA enabled are redirected to `/two-factor/challenge` after login. Recovery codes are generated automatically during setup.
+
 ### Feature flags
 
 `config/auth.py` controls which auth features are active. Set any flag to `False` to remove those routes entirely (returns 404) and hide the corresponding links in the built-in auth views:
@@ -379,7 +409,7 @@ Admin.register_to(router)
 **Filters:**
 
 ```python
-from hunt.admin.filter import SelectFilter, BooleanFilter
+from hunt.admin import SelectFilter, BooleanFilter, DateRangeFilter
 
 class StatusFilter(SelectFilter):
     name = "Status"
@@ -387,21 +417,36 @@ class StatusFilter(SelectFilter):
 
     def options(self):
         return [("active", "Active"), ("inactive", "Inactive")]
+
+class CreatedAtFilter(DateRangeFilter):
+    name = "Created At"
+    attribute = "created_at"
 ```
 
 **Actions:**
 
 ```python
-from hunt.admin.action import Action, ActionResponse
+from hunt.admin import Action, ActionResponse
 
 class ActivateUsers(Action):
     name = "Activate"
 
     def handle(self, request, models):
         for user in models:
-            user._attributes["status"] = "active"
+            user.status = "active"
             user.save()
         return ActionResponse.success(f"{len(models)} user(s) activated.")
+```
+
+Built-in actions: `BulkDeleteAction`, `RestoreAction` (soft deletes), `ExportCsvAction` (CSV download).
+
+`ActionResponse` types: `.success(text)`, `.error(text)`, `.redirect(url)`, `.download(content, filename)`.
+
+**Customizing templates:**
+
+```bash
+hunt admin:publish          # copy all admin templates to resources/views/admin/
+hunt admin:publish --force  # overwrite existing
 ```
 
 ---
@@ -450,28 +495,68 @@ class AuthMiddleware(Middleware):
 ## CLI reference
 
 ```bash
-hunt new <name>               # scaffold a new application
-hunt upgrade                  # add missing scaffold files to an existing app
-hunt serve                    # start the development server
-hunt serve --port 3000        # custom port
-hunt serve --host 0.0.0.0     # bind to all interfaces
-hunt tinker                   # interactive REPL
+# Application
+hunt new <name>                      # scaffold a new application
+hunt upgrade                         # pull in new scaffold files to existing app
+hunt serve                           # start the dev server (auto-reload)
+hunt tinker                          # interactive REPL with app bootstrapped
+hunt key:generate                    # generate and write a new APP_KEY
 
-hunt make:model <Name>        # create a model
-hunt make:model <Name> -m     # model + migration
-hunt make:controller <Name>   # create a controller
-hunt make:controller <Name> --resource  # CRUD controller
-hunt make:controller <Name> --api       # API controller
-hunt make:migration <name>    # create a migration
-hunt make:middleware <Name>   # create a middleware
+# Routes
+hunt route:list                      # print all registered routes
 
-hunt migrate                  # run pending migrations
-hunt migrate:rollback         # rollback last batch
-hunt migrate:fresh            # drop all + re-run
-hunt migrate:status           # show migration status
+# Migrations
+hunt migrate                         # run pending migrations
+hunt migrate:rollback                # rollback last batch
+hunt migrate:fresh                   # drop all tables and re-run
+hunt migrate:status                  # show migration status
 
-hunt route:list               # list all registered routes
-hunt key:generate             # generate a new APP_KEY
+# Database
+hunt db:seed                         # run database seeders
+hunt db:seed --class PostSeeder      # run a specific seeder
+
+# Cache
+hunt cache:clear                     # clear all cached values
+hunt cache:forget <key>              # remove a single cache key
+
+# Queue
+hunt queue:work                      # start the queue worker
+hunt queue:work --queue high --tries 3
+hunt queue:failed                    # list failed jobs
+hunt queue:retry <id>                # re-queue a failed job
+hunt queue:flush                     # delete all failed jobs
+hunt queue:table                     # create the jobs migration
+
+# Jobs
+hunt job:list                        # list all discovered Job classes
+hunt job:run <name>                  # run a job synchronously
+hunt job:run <name> --data key=value
+
+# Scheduler
+hunt schedule:run                    # run due scheduled tasks (call from cron)
+hunt schedule:list                   # list all scheduled tasks
+
+# Code generation
+hunt make:model <Name>               # app/models/name.py
+hunt make:model <Name> -m            # model + migration
+hunt make:controller <Name>          # app/controllers/name_controller.py
+hunt make:controller <Name> --resource
+hunt make:migration <name>           # database/migrations/TIMESTAMP_name.py
+hunt make:middleware <Name>          # app/middleware/name.py
+hunt make:request <Name>             # app/requests/name_request.py
+hunt make:event <Name>               # app/events/name.py
+hunt make:listener <Name>            # app/listeners/name.py
+hunt make:mail <Name>                # app/mail/name.py
+hunt make:notification <Name>        # app/notifications/name.py
+hunt make:seeder <Name>              # database/seeders/NameSeeder.py
+hunt make:factory <Name>             # database/factories/NameFactory.py
+hunt make:job <Name>                 # app/jobs/name.py
+hunt make:command <Name>             # app/console/commands/name.py
+hunt make:admin-resource <Model>     # app/admin/model_resource.py
+hunt make:2fa-controllers            # 2FA routes, controllers, templates, migration
+
+# Admin
+hunt admin:publish                   # copy admin templates to resources/views/admin/
 ```
 
 ---
