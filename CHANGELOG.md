@@ -11,6 +11,16 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.20] — 2026-05-20
+
+### Added
+
+- `SoftDeletes` mixin: add `SoftDeletes` before `Model` in the class bases to opt in to soft-delete behaviour (`from hunt.database.soft_deletes import SoftDeletes`). Previously `_soft_deletes = True` had to be set manually as a class attribute.
+- `QueryBuilder.only_trashed()` — restricts results to soft-deleted rows (`deleted_at IS NOT NULL`). Complements the existing `with_trashed()`.
+- Both are importable from `hunt.database`: `from hunt.database import SoftDeletes`.
+
+---
+
 ## [0.2.19] — 2026-05-20
 
 ### Added

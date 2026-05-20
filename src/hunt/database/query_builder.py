@@ -64,6 +64,7 @@ class QueryBuilder:
         self._without: list[str] = []
         self._distinct = False
         self._with_trashed = False
+        self._only_trashed = False
         self._joins: list[str] = []
         self._withs: dict[str, Callable | None] = {}
         self._raw_wheres: list[tuple[str, dict]] = []
@@ -86,6 +87,7 @@ class QueryBuilder:
         qb._without = list(self._without)
         qb._distinct = self._distinct
         qb._with_trashed = self._with_trashed
+        qb._only_trashed = self._only_trashed
         qb._joins = list(self._joins)
         qb._withs = dict(self._withs)
         qb._raw_wheres = list(self._raw_wheres)
@@ -271,6 +273,12 @@ class QueryBuilder:
     def with_trashed(self) -> QueryBuilder:
         qb = self._clone()
         qb._with_trashed = True
+        return qb
+
+    def only_trashed(self) -> QueryBuilder:
+        qb = self._clone()
+        qb._with_trashed = True
+        qb._only_trashed = True
         return qb
 
     # ------------------------------------------------------------------
@@ -612,11 +620,14 @@ class QueryBuilder:
         parts: list[str] = []
         bindings: dict[str, Any] = {}
 
-        # Auto-exclude soft-deleted records
-        if self._model_class and not self._with_trashed:
+        # Soft-delete visibility
+        if self._model_class:
             uses_soft_deletes = getattr(self._model_class, "_soft_deletes", False)
             if uses_soft_deletes:
-                parts.append(f"{self._table}.deleted_at IS NULL")
+                if self._only_trashed:
+                    parts.append(f"{self._table}.deleted_at IS NOT NULL")
+                elif not self._with_trashed:
+                    parts.append(f"{self._table}.deleted_at IS NULL")
 
         for i, (col, op, val) in enumerate(self._wheres):
             key = f"w{i}"
