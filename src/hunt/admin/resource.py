@@ -152,12 +152,20 @@ class AdminResource:
 
     def apply_filters(self, query: Any, request: Any) -> Any:
         """Apply each registered Filter using its query-string value."""
+        from hunt.admin.filter import DateRangeFilter
+
         for f in self.filters():
-            key = f"filter_{f.slug()}"
-            value = request.query(key, None)
-            if value not in (None, ""):
-                try:
-                    query = f.apply(query, value)
-                except Exception:
-                    pass
+            try:
+                if isinstance(f, DateRangeFilter):
+                    slug = f.slug()
+                    from_val = request.query(f"filter_{slug}_from", None) or None
+                    to_val = request.query(f"filter_{slug}_to", None) or None
+                    if from_val or to_val:
+                        query = f.apply(query, {"from": from_val, "to": to_val})
+                else:
+                    value = request.query(f"filter_{f.slug()}", None)
+                    if value not in (None, ""):
+                        query = f.apply(query, value)
+            except Exception:
+                pass
         return query

@@ -80,6 +80,17 @@ def run(request: Request, resource_key: str, action_slug: str) -> Response:
             url = f"{Admin.prefix}/resources/{resource_key}"
         return RedirectResponse(url)
 
+    if result.type == "download":
+        resp = Response(
+            content=result.download_content,
+            status=200,
+            headers={
+                "Content-Type": result.download_content_type,
+                "Content-Disposition": f'attachment; filename="{result.download_filename}"',
+            },
+        )
+        return resp
+
     if store is not None:
         flash_key = "admin_success" if result.message_type == "success" else "admin_error"
         store.flash(flash_key, result.text)

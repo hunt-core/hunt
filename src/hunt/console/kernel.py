@@ -4,6 +4,7 @@ import click
 
 from hunt import __version__
 from hunt.admin.console.make_admin_resource import make_admin_resource_command
+from hunt.admin.console.publish import admin_publish_command
 from hunt.console.commands.cache import cache_group
 from hunt.console.commands.config_cache import config_cache_command, config_clear_command
 from hunt.console.commands.db.seed import db_seed_command
@@ -27,6 +28,7 @@ from hunt.console.commands.make.request import make_request_command
 from hunt.console.commands.make.resource import make_resource_command
 from hunt.console.commands.make.rule import make_rule_command
 from hunt.console.commands.make.seeder import make_seeder_command
+from hunt.console.commands.make.two_factor import make_two_factor_command
 from hunt.console.commands.migrate import migrate_fresh, migrate_group, migrate_rollback, migrate_run, migrate_status
 from hunt.console.commands.new import new_command
 from hunt.console.commands.queue_failed import (
@@ -116,11 +118,13 @@ cli.add_command(make_job_command, name="make:job")
 cli.add_command(make_mail_command, name="make:mail")
 cli.add_command(make_notification_command, name="make:notification")
 cli.add_command(make_admin_resource_command, name="make:admin-resource")
+cli.add_command(admin_publish_command, name="admin:publish")
 cli.add_command(make_command_command, name="make:command")
 cli.add_command(make_policy_command, name="make:policy")
 cli.add_command(make_observer_command, name="make:observer")
 cli.add_command(make_rule_command, name="make:rule")
 cli.add_command(make_resource_command, name="make:resource")
+cli.add_command(make_two_factor_command, name="make:2fa-controllers")
 
 # Config / view cache commands
 cli.add_command(config_cache_command, name="config:cache")

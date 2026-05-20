@@ -72,6 +72,20 @@
                    class="block w-full bg-transparent py-1.5 text-sm text-white placeholder:text-gray-500 focus:outline-none">
         </div>
         {% for f in filters %}
+        {% if f.filter_type == 'date_range' %}
+        <div class="flex items-center gap-1.5">
+            <label class="text-xs text-gray-500 shrink-0">{{ f.name }}</label>
+            <input type="date" name="filter_{{ f.slug() }}_from"
+                   value="{{ request.query('filter_' + f.slug() + '_from', '') }}"
+                   title="{{ f.name }} from"
+                   class="rounded-md bg-white/5 py-1.5 px-2.5 text-sm text-white inset-ring inset-ring-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 [color-scheme:dark]">
+            <span class="text-gray-500 text-xs">–</span>
+            <input type="date" name="filter_{{ f.slug() }}_to"
+                   value="{{ request.query('filter_' + f.slug() + '_to', '') }}"
+                   title="{{ f.name }} to"
+                   class="rounded-md bg-white/5 py-1.5 px-2.5 text-sm text-white inset-ring inset-ring-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 [color-scheme:dark]">
+        </div>
+        {% else %}
         <div class="grid grid-cols-1">
             <select name="filter_{{ f.slug() }}" onchange="this.form.submit()"
                     class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white/5 py-1.5 pr-8 pl-3 text-sm text-white inset-ring inset-ring-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 dark:*:bg-gray-800">
@@ -86,6 +100,7 @@
                 <path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/>
             </svg>
         </div>
+        {% endif %}
         {% endfor %}
         {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
         {% if dir  %}<input type="hidden" name="dir"  value="{{ dir  }}">{% endif %}

@@ -85,8 +85,20 @@ class _SessionGuard:
         hashed = user._attributes.get("password", "")
         if not verify_password(password, hashed):
             return False
+        if user._attributes.get("two_factor_enabled"):
+            session = _get_session()
+            if session is None:
+                raise RuntimeError("Session middleware is not active.")
+            session.regenerate()
+            session.put("_2fa_pending", user._attributes["id"])
+            return False
         self.login(user)
         return True
+
+    def two_factor_pending(self) -> bool:
+        """Return True if a 2FA challenge is awaiting completion."""
+        session = _get_session()
+        return session.get("_2fa_pending") is not None if session else False
 
     def login(self, user: Any) -> None:
         session = _get_session()

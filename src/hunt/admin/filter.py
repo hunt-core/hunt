@@ -64,6 +64,30 @@ class BooleanFilter(Filter):
         return query
 
 
+class DateRangeFilter(Filter):
+    """A filter that presents from/to date inputs.
+
+    Query params: ``filter_<slug>_from`` and ``filter_<slug>_to``.
+    ``apply()`` receives ``{"from": str | None, "to": str | None}``.
+    """
+
+    filter_type: str = "date_range"
+
+    def apply(self, query: Any, value: Any) -> Any:
+        if not self.attribute:
+            return query
+        if isinstance(value, dict):
+            from_val = value.get("from")
+            to_val = value.get("to")
+        else:
+            return query
+        if from_val:
+            query = query.where(self.attribute, ">=", from_val)
+        if to_val:
+            query = query.where(self.attribute, "<=", to_val)
+        return query
+
+
 class TrashedFilter(Filter):
     """Filter to show, hide, or exclusively show soft-deleted records."""
 

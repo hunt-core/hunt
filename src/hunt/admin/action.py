@@ -13,10 +13,14 @@ class ActionResponse:
         url: str = "",
         message_type: str = "success",
     ) -> None:
-        self.type = type  # "message" | "redirect"
+        self.type = type  # "message" | "redirect" | "download"
         self.text = text
         self.url = url
         self.message_type = message_type  # "success" | "error" | "warning" | "info"
+        # download-specific fields
+        self.download_content: str = ""
+        self.download_filename: str = "export.csv"
+        self.download_content_type: str = "text/csv"
 
     @classmethod
     def success(cls, text: str) -> ActionResponse:
@@ -33,6 +37,19 @@ class ActionResponse:
     @classmethod
     def redirect(cls, url: str) -> ActionResponse:
         return cls(type="redirect", url=url)
+
+    @classmethod
+    def download(
+        cls,
+        content: str,
+        filename: str = "export.csv",
+        content_type: str = "text/csv; charset=utf-8",
+    ) -> ActionResponse:
+        r = cls(type="download")
+        r.download_content = content
+        r.download_filename = filename
+        r.download_content_type = content_type
+        return r
 
     def to_dict(self) -> dict:
         return {
@@ -74,3 +91,46 @@ class BulkDeleteAction(Action):
             except Exception:
                 pass
         return ActionResponse.success(f"{deleted} record(s) deleted successfully.")
+
+
+class RestoreAction(Action):
+    """Built-in action that restores soft-deleted records."""
+
+    name: str = "Restore Selected"
+    destructive: bool = False
+    confirmation_text: str = ""
+
+    def handle(self, request: object, models: list) -> ActionResponse:
+        restored = 0
+        for instance in models:
+            try:
+                instance.restore()
+                restored += 1
+            except Exception:
+                pass
+        if restored == 0:
+            return ActionResponse.error("No records could be restored.")
+        return ActionResponse.success(f"{restored} record(s) restored successfully.")
+
+
+class ExportCsvAction(Action):
+    """Built-in action that downloads selected records as a CSV file."""
+
+    name: str = "Export CSV"
+    destructive: bool = False
+    filename: str = "export.csv"
+
+    def handle(self, request: object, models: list) -> ActionResponse:
+        import csv
+        import io
+
+        if not models:
+            return ActionResponse.error("No records selected for export.")
+
+        headers = list(models[0]._attributes.keys())
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=headers, extrasaction="ignore")
+        writer.writeheader()
+        for instance in models:
+            writer.writerow({k: (v if v is not None else "") for k, v in instance._attributes.items()})
+        return ActionResponse.download(buf.getvalue(), filename=self.filename)
