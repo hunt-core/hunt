@@ -57,6 +57,26 @@ def _run_with_timeout(fn, timeout_seconds: int) -> None:
 _DOTTED_PATH_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$")
 
 
+def _record_history(job_class: str, queue: str, duration_ms: int, status: str) -> None:
+    """Write a completed/failed record to jobs_history if the table exists."""
+    try:
+        from hunt.database.connection import raw as db_raw
+
+        db_raw(
+            "INSERT INTO jobs_history (job_class, queue, duration_ms, finished_at, status)"
+            " VALUES (:job_class, :queue, :duration_ms, :finished_at, :status)",
+            {
+                "job_class": job_class,
+                "queue": queue,
+                "duration_ms": duration_ms,
+                "finished_at": int(time.time()),
+                "status": status,
+            },
+        )
+    except Exception:
+        pass  # Table may not exist; don't crash the worker
+
+
 def _safe_import(dotted_path: str, job_cls: type) -> type:
     """Import a dotted class path, validating format and Job subclass constraint."""
     if not _DOTTED_PATH_RE.match(dotted_path):
@@ -124,6 +144,8 @@ def queue_work_command(queue: str, sleep: int, tries: int, once: bool) -> None:
             attempts = job_data["attempts"]
             payload_str = job_data["payload"]
             payload: dict = {}
+            job_queue = job_data.get("queue", queue)
+            t0_job = time.monotonic()
 
             try:
                 envelope = json.loads(payload_str)
@@ -141,7 +163,9 @@ def queue_work_command(queue: str, sleep: int, tries: int, once: bool) -> None:
                 instance = cls(**payload.get("data", {}))
                 job_timeout = int(payload.get("timeout", getattr(instance, "timeout", 60)))
                 _run_with_timeout(instance.handle, job_timeout)
+                duration_ms = int((time.monotonic() - t0_job) * 1000)
                 driver.delete(job_id)
+                _record_history(payload["class"], job_queue, duration_ms, "completed")
                 click.echo(f"  Processed: {payload['class']}")
 
                 # Dispatch chain continuation if present
@@ -153,6 +177,7 @@ def queue_work_command(queue: str, sleep: int, tries: int, once: bool) -> None:
 
             except Exception as exc:
                 job_class = payload.get("class", "unknown")
+                duration_ms = int((time.monotonic() - t0_job) * 1000)
                 click.echo(f"  Failed: {job_class} — {exc}", err=True)
 
                 job_tries = payload.get("tries", tries)
@@ -165,7 +190,8 @@ def queue_work_command(queue: str, sleep: int, tries: int, once: bool) -> None:
                         instance.failed(exc)
                     except Exception:
                         pass
-                    driver.fail(job_id, job_data.get("queue", queue), payload_str, str(exc))
+                    driver.fail(job_id, job_queue, payload_str, str(exc))
+                    _record_history(job_class, job_queue, duration_ms, "failed")
                     click.echo(f"  Moved to failed after {attempts} attempt(s): {job_class}", err=True)
                 else:
                     backoff = payload.get("backoff", 0)

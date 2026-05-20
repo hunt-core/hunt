@@ -36,7 +36,21 @@ class CreateJobsTables(Migration):
 
         Schema.create("jobs_failed", failed_blueprint)
 
+        def history_blueprint(table):
+            table.id()
+            table.string("job_class", 255)
+            table.string("queue", 255).default("default")
+            table.integer("duration_ms")
+            table.integer("finished_at")
+            table.string("status", 20)  # 'completed' or 'failed'
+            table.index("queue")
+            table.index("finished_at")
+            table.index("status")
+
+        Schema.create("jobs_history", history_blueprint)
+
     def down(self) -> None:
+        Schema.drop_if_exists("jobs_history")
         Schema.drop_if_exists("jobs_failed")
         Schema.drop_if_exists("jobs")
 """
