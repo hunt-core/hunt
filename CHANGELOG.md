@@ -11,6 +11,29 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.19] — 2026-05-20
+
+### Added
+
+**Query debug logging (11.1)**
+- All SQL queries (SELECT, INSERT, UPDATE, DELETE) are now logged at `DEBUG` level when `APP_DEBUG=true`, including the SQL text, bindings, and elapsed time in milliseconds.
+
+**N+1 detector (11.2)**
+- When `APP_DEBUG=true`, the same normalised query pattern is tracked per-request. After 10 executions of the same pattern, a `WARNING` is logged with the query text. The counter resets at the start of each HTTP request.
+
+**Connection pooling config (11.3)**
+- SQLAlchemy connection pool settings are now configurable via environment variables:
+  - `DB_POOL_SIZE` (default: 5)
+  - `DB_MAX_OVERFLOW` (default: 10)
+  - `DB_POOL_TIMEOUT` (default: 30)
+  - `DB_POOL_RECYCLE` (default: 3600)
+  - SQLite uses a single-connection pool and ignores these settings.
+
+**Job timeout enforcement (11.4)**
+- `Job.timeout` is now serialized into the queue payload and enforced by the worker. On Unix, `SIGALRM` interrupts the job at the deadline; on Windows, a daemon thread is used. A timed-out job is treated as a failure and goes through the normal retry/fail flow.
+
+---
+
 ## [0.2.18] — 2026-05-19
 
 ### Added

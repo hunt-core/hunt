@@ -24,10 +24,23 @@ def connection(name: str | None = None) -> Engine:
     return _connections[name]
 
 
+def _pool_kwargs() -> dict:
+    """Read pool configuration from environment variables."""
+    return {
+        "pool_size": int(os.environ.get("DB_POOL_SIZE", "5")),
+        "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "10")),
+        "pool_timeout": int(os.environ.get("DB_POOL_TIMEOUT", "30")),
+        "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE", "3600")),
+    }
+
+
 def _make_engine(name: str) -> Engine:
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
-        return create_engine(db_url)
+        # SQLite URLs must not use pooling kwargs
+        if db_url.startswith("sqlite"):
+            return create_engine(db_url, connect_args={"check_same_thread": False})
+        return create_engine(db_url, **_pool_kwargs())
 
     driver = os.environ.get("DB_CONNECTION", "sqlite")
     if driver == "sqlite":
@@ -45,14 +58,14 @@ def _make_engine(name: str) -> Engine:
         host = os.environ.get("DB_HOST", "127.0.0.1")
         port = os.environ.get("DB_PORT", "3306")
         db = os.environ.get("DB_DATABASE", "hunt")
-        return create_engine(f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}")
+        return create_engine(f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}", **_pool_kwargs())
     if driver == "postgresql" or driver == "pgsql":
         user = quote_plus(os.environ.get("DB_USERNAME", "postgres"))
         password = quote_plus(os.environ.get("DB_PASSWORD", ""))
         host = os.environ.get("DB_HOST", "127.0.0.1")
         port = os.environ.get("DB_PORT", "5432")
         db = os.environ.get("DB_DATABASE", "hunt")
-        return create_engine(f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}")
+        return create_engine(f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}", **_pool_kwargs())
 
     raise ValueError(f"Unsupported DB driver: {driver}")
 

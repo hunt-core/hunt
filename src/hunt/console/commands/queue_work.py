@@ -3,11 +3,56 @@ from __future__ import annotations
 import importlib
 import json
 import re
+import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
 import click
+
+_HAS_SIGALRM = hasattr(signal, "SIGALRM")
+
+
+class _JobTimeout(Exception):
+    pass
+
+
+def _run_with_timeout(fn, timeout_seconds: int) -> None:
+    """Run *fn()* and raise _JobTimeout if it takes longer than *timeout_seconds*."""
+    if timeout_seconds <= 0:
+        fn()
+        return
+
+    if _HAS_SIGALRM:
+
+        def _handler(signum, frame):
+            raise _JobTimeout(f"Job timed out after {timeout_seconds}s")
+
+        old = signal.signal(signal.SIGALRM, _handler)
+        signal.alarm(timeout_seconds)
+        try:
+            fn()
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old)
+    else:
+        exc_box: list[BaseException | None] = [None]
+
+        def _target():
+            try:
+                fn()
+            except BaseException as e:
+                exc_box[0] = e
+
+        t = threading.Thread(target=_target, daemon=True)
+        t.start()
+        t.join(timeout_seconds)
+        if t.is_alive():
+            raise _JobTimeout(f"Job timed out after {timeout_seconds}s")
+        if exc_box[0] is not None:
+            raise exc_box[0]
+
 
 _DOTTED_PATH_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)+$")
 
@@ -94,7 +139,8 @@ def queue_work_command(queue: str, sleep: int, tries: int, once: bool) -> None:
 
                 cls = _safe_import(payload["class"], _Job)
                 instance = cls(**payload.get("data", {}))
-                instance.handle()
+                job_timeout = int(payload.get("timeout", getattr(instance, "timeout", 60)))
+                _run_with_timeout(instance.handle, job_timeout)
                 driver.delete(job_id)
                 click.echo(f"  Processed: {payload['class']}")
 

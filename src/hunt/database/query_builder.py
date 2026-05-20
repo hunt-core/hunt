@@ -458,13 +458,15 @@ class QueryBuilder:
         return True
 
     def insert(self, data: dict) -> Any:
+        from hunt.database.debug import timed_execute
+
         cols = [_ident(k) for k in data.keys()]
         columns = ", ".join(cols)
         placeholders = ", ".join(f":{k}" for k in data.keys())
         sql = f"INSERT INTO {self._table} ({columns}) VALUES ({placeholders})"
         engine = connection(self._conn_name)
         with engine.connect() as conn:
-            result = conn.execute(text(sql), data)
+            result = timed_execute(conn, text(sql), data)
             conn.commit()
             return result.lastrowid
 
@@ -487,7 +489,9 @@ class QueryBuilder:
         sql = f"INSERT INTO {self._table} ({columns}) VALUES {', '.join(placeholders_list)}"
         engine = connection(self._conn_name)
         with engine.connect() as conn:
-            conn.execute(text(sql), bindings)
+            from hunt.database.debug import timed_execute
+
+            timed_execute(conn, text(sql), bindings)
             conn.commit()
 
     def update(self, data: dict) -> int:
@@ -500,7 +504,9 @@ class QueryBuilder:
             sql += f" WHERE {where_clause}"
         engine = connection(self._conn_name)
         with engine.connect() as conn:
-            result = conn.execute(text(sql), bindings)
+            from hunt.database.debug import timed_execute
+
+            result = timed_execute(conn, text(sql), bindings)
             conn.commit()
             return result.rowcount
 
@@ -518,7 +524,9 @@ class QueryBuilder:
             sql += f" WHERE {where_clause}"
         engine = connection(self._conn_name)
         with engine.connect() as conn:
-            result = conn.execute(text(sql), bindings)
+            from hunt.database.debug import timed_execute
+
+            result = timed_execute(conn, text(sql), bindings)
             conn.commit()
             return result.rowcount
 
@@ -536,7 +544,9 @@ class QueryBuilder:
             sql += f" WHERE {where_clause}"
         engine = connection(self._conn_name)
         with engine.connect() as conn:
-            result = conn.execute(text(sql), bindings)
+            from hunt.database.debug import timed_execute
+
+            result = timed_execute(conn, text(sql), bindings)
             conn.commit()
             return result.rowcount
 
@@ -547,7 +557,9 @@ class QueryBuilder:
             sql += f" WHERE {where_clause}"
         engine = connection(self._conn_name)
         with engine.connect() as conn:
-            result = conn.execute(text(sql), bindings)
+            from hunt.database.debug import timed_execute
+
+            result = timed_execute(conn, text(sql), bindings)
             conn.commit()
             return result.rowcount
 
@@ -654,9 +666,11 @@ class QueryBuilder:
         return and_clause, bindings
 
     def _execute(self, sql: str, bindings: dict) -> list[dict]:
+        from hunt.database.debug import timed_execute
+
         engine = connection(self._conn_name)
         with engine.connect() as conn:
-            result = conn.execute(text(sql), bindings)
+            result = timed_execute(conn, text(sql), bindings)
             keys = list(result.keys())
             return [dict(zip(keys, row, strict=False)) for row in result.fetchall()]
 

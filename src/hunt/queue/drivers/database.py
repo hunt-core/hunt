@@ -24,6 +24,7 @@ def _serialize_job(job: Job) -> dict:
         "queue": job.queue,
         "tries": getattr(job, "tries", 3),
         "backoff": getattr(job, "backoff", 0),
+        "timeout": getattr(job, "timeout", 60),
     }
 
 

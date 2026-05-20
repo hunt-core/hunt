@@ -89,8 +89,10 @@ class HttpKernel:
 
     async def _handle(self, request: Request) -> Response:
         from hunt.auth.manager import _set_request
+        from hunt.database.debug import reset_query_tracker
 
         _set_request(request)
+        reset_query_tracker()
 
         try:
             route, params = self._router.dispatch(request.method, request.path)
