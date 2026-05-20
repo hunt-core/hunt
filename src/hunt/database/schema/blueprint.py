@@ -112,6 +112,7 @@ class Blueprint:
         self.indexes: list[IndexDef] = []
         self._foreign_keys: list[ForeignKeyDef] = []
         self._drop_columns: list[str] = []
+        self._drop_columns_if_exists: list[str] = []
         self._rename_columns: list[tuple[str, str]] = []  # [(old, new), ...]
         self._rename_to: str | None = None
 
@@ -327,6 +328,9 @@ class Blueprint:
     def drop_column(self, *names: str) -> None:
         self._drop_columns.extend(names)
 
+    def drop_column_if_exists(self, *names: str) -> None:
+        self._drop_columns_if_exists.extend(names)
+
     # ------------------------------------------------------------------
     # SQL generation
     # ------------------------------------------------------------------
@@ -394,7 +398,7 @@ class Blueprint:
         if col.default_value is not None:
             from hunt.database.schema.builder import _safe_default
 
-            sql += f" DEFAULT {_safe_default(col.default_value)}"
+            sql += f" DEFAULT {_safe_default(col.default_value, dialect)}"
         if col.is_unique and not col.primary:
             sql += " UNIQUE"
         if col.enum_values:

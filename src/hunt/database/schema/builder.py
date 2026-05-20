@@ -18,9 +18,11 @@ def _ident(name: str) -> str:
     return name
 
 
-def _safe_default(value: object) -> str:
+def _safe_default(value: object, dialect: str = "sqlite") -> str:
     """Render a column default value as a safe SQL literal."""
     if isinstance(value, bool):
+        if dialect == "postgresql":
+            return "true" if value else "false"
         return "1" if value else "0"
     if isinstance(value, (int, float)):
         return str(value)
@@ -75,6 +77,8 @@ class Schema:
             # 3. Drop columns
             for col_name in bp._drop_columns:
                 conn.execute(text(f"ALTER TABLE {t} DROP COLUMN {_ident(col_name)}"))
+            for col_name in bp._drop_columns_if_exists:
+                _drop_column_if_exists(conn, t, col_name, dialect)
 
             # 4. Rename columns
             for old_name, new_name in bp._rename_columns:
@@ -245,7 +249,21 @@ def _pg_alter_column(conn, table: str, col: ColumnDef) -> None:
 
     # Default
     if col.default_value is not None:
-        default_val = _safe_default(col.default_value)
+        default_val = _safe_default(col.default_value, "postgresql")
         conn.execute(text(f"ALTER TABLE {t} ALTER COLUMN {c} SET DEFAULT {default_val}"))
     else:
         conn.execute(text(f"ALTER TABLE {t} ALTER COLUMN {c} DROP DEFAULT"))
+
+
+def _drop_column_if_exists(conn, table: str, col_name: str, dialect: str) -> None:
+    """Drop a column only if it exists; handles SQLite's lack of IF EXISTS syntax."""
+    t = _ident(table)
+    c = _ident(col_name)
+    if dialect == "sqlite":
+        result = conn.execute(text(f"PRAGMA table_info({t})"))
+        existing = {row[1] for row in result.fetchall()}
+        if col_name not in existing:
+            return
+        conn.execute(text(f"ALTER TABLE {t} DROP COLUMN {c}"))
+    else:
+        conn.execute(text(f"ALTER TABLE {t} DROP COLUMN IF EXISTS {c}"))

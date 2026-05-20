@@ -11,9 +11,12 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.2.28] — 2026-05-20
+## [0.2.30] — 2026-05-20
 
 ### Added
+
+**Schema builder**
+- **`Blueprint.drop_column_if_exists(*names)`** — drops a column only when it exists, making migration `down()` methods idempotent after partial failures. On PostgreSQL and MySQL emits `DROP COLUMN IF EXISTS`; on SQLite (which has no such syntax) checks `PRAGMA table_info` first and skips the statement if the column is absent.
 
 **Admin panel**
 - **`DateRangeFilter`** (`hunt.admin.filter`) — renders two `<input type="date">` fields in the index toolbar (`filter_<slug>_from` / `filter_<slug>_to` query params). `AdminResource.apply_filters()` handles the two-param convention automatically.
@@ -75,6 +78,7 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`_safe_default()` now emits `true`/`false` for PostgreSQL boolean defaults** — previously always emitted `1`/`0` regardless of dialect, which PostgreSQL rejects for boolean columns. The fix is applied in both `Blueprint._column_sql()` (table creation and `ADD COLUMN`) and `_pg_alter_column()` (ALTER COLUMN SET DEFAULT). SQLite and MySQL continue to use `1`/`0`.
 - `RedisDriver.pop()` — was always returning `attempts: 1`. Attempt counts now tracked in a Redis hash using `HINCRBY`.
 - `RedisDriver.fail()` — was writing failed jobs to a Redis sorted set the admin panel could not read. Failed jobs now go to the `jobs_failed` database table, consistent with the database driver.
 - `RedisDriver.delete()` — now cleans up the attempt hash entry on successful job completion.
@@ -255,8 +259,8 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.28...HEAD
-[0.2.28]: https://github.com/hunt-core/hunt/compare/v0.2.19...v0.2.28
+[Unreleased]: https://github.com/hunt-core/hunt/compare/v0.2.30...HEAD
+[0.2.30]: https://github.com/hunt-core/hunt/compare/v0.2.19...v0.2.30
 [0.2.19]: https://github.com/hunt-core/hunt/compare/v0.2.3...v0.2.19
 [0.2.3]: https://github.com/hunt-core/hunt/compare/v0.2.0...v0.2.3
 [0.2.0]: https://github.com/hunt-core/hunt/releases/tag/v0.2.0

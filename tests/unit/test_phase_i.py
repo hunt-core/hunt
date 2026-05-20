@@ -1,16 +1,17 @@
 """Phase I tests: Schema & Migration Gaps."""
+
 from __future__ import annotations
 
 import pytest
 from sqlalchemy import create_engine, text
 
 from hunt.database.schema.blueprint import Blueprint, ColumnDef
-from hunt.database.schema.builder import Schema
-
+from hunt.database.schema.builder import Schema, _safe_default
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _in_memory_engine():
     return create_engine("sqlite:///:memory:")
@@ -25,14 +26,14 @@ def _columns_of(conn, table: str) -> dict[str, dict]:
     """Return {col_name: {type, notnull, pk, dflt_value}} from PRAGMA table_info."""
     result = conn.execute(text(f"PRAGMA table_info({table})"))
     return {
-        row[1]: {"type": row[2], "notnull": row[3], "dflt_value": row[4], "pk": row[5]}
-        for row in result.fetchall()
+        row[1]: {"type": row[2], "notnull": row[3], "dflt_value": row[4], "pk": row[5]} for row in result.fetchall()
     }
 
 
 # ===========================================================================
 # ColumnDef — new modifiers
 # ===========================================================================
+
 
 class TestColumnDefModifiers:
     def test_change_sets_flag(self):
@@ -64,6 +65,7 @@ class TestColumnDefModifiers:
 # ===========================================================================
 # enum() column type
 # ===========================================================================
+
 
 class TestEnumColumn:
     def test_blueprint_enum_adds_column(self):
@@ -105,7 +107,7 @@ class TestEnumColumn:
             conn.execute(text("INSERT INTO products (status) VALUES ('draft')"))
             conn.commit()
             # Invalid insert raises
-            with pytest.raises(Exception):
+            with pytest.raises(Exception):  # noqa: B017
                 conn.execute(text("INSERT INTO products (status) VALUES ('invalid')"))
                 conn.commit()
 
@@ -120,6 +122,7 @@ class TestEnumColumn:
 # ===========================================================================
 # morphs() / nullable_morphs()
 # ===========================================================================
+
 
 class TestMorphs:
     def test_morphs_adds_two_columns(self):
@@ -192,6 +195,7 @@ class TestMorphs:
 # change() — ALTER COLUMN (SQLite rebuild)
 # ===========================================================================
 
+
 class TestChangeColumn:
     def test_change_column_type_sqlite(self, monkeypatch):
         engine = _in_memory_engine()
@@ -251,6 +255,7 @@ class TestChangeColumn:
 # ===========================================================================
 # rename_column
 # ===========================================================================
+
 
 class TestRenameColumn:
     def test_rename_column_via_blueprint(self, monkeypatch):
@@ -322,6 +327,7 @@ class TestRenameColumn:
 # rename_table
 # ===========================================================================
 
+
 class TestRenameTable:
     def test_rename_table_via_blueprint(self, monkeypatch):
         engine = _in_memory_engine()
@@ -332,14 +338,10 @@ class TestRenameTable:
         Schema.table("old_name", lambda t: t.rename_table("new_name"))
 
         with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='new_name'")
-            )
+            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='new_name'"))
             assert result.fetchone() is not None
 
-            result2 = conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='old_name'")
-            )
+            result2 = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='old_name'"))
             assert result2.fetchone() is None
 
     def test_rename_table_via_schema_rename(self, monkeypatch):
@@ -350,9 +352,7 @@ class TestRenameTable:
         Schema.rename("tbl_a", "tbl_b")
 
         with engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='tbl_b'")
-            )
+            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='tbl_b'"))
             assert result.fetchone() is not None
 
     def test_rename_table_preserves_data(self, monkeypatch):
@@ -376,6 +376,7 @@ class TestRenameTable:
 # after() modifier (no-op)
 # ===========================================================================
 
+
 class TestAfterModifier:
     def test_after_is_a_noop_fluent(self):
         bp = Blueprint("posts")
@@ -394,6 +395,7 @@ class TestAfterModifier:
 # Combined operations in one Schema.table() call
 # ===========================================================================
 
+
 class TestCombinedAlterOperations:
     def test_add_and_rename_in_one_call(self, monkeypatch):
         engine = _in_memory_engine()
@@ -402,7 +404,7 @@ class TestCombinedAlterOperations:
         Schema.create("things", lambda t: (t.id(), t.string("old_field")))
 
         def alter(t):
-            t.integer("new_count")           # ADD
+            t.integer("new_count")  # ADD
             t.rename_column("old_field", "field")  # RENAME
 
         Schema.table("things", alter)
@@ -424,8 +426,8 @@ class TestCombinedAlterOperations:
             conn.commit()
 
         def alter(t):
-            t.string("name", 255).change()           # CHANGE
-            t.boolean("is_active").default(0)        # ADD (must have default for existing rows)
+            t.string("name", 255).change()  # CHANGE
+            t.boolean("is_active").default(0)  # ADD (must have default for existing rows)
 
         Schema.table("events", alter)
 
@@ -434,3 +436,107 @@ class TestCombinedAlterOperations:
             row = conn.execute(text("SELECT name FROM events")).fetchone()
         assert "is_active" in cols
         assert row[0] == "test"
+
+
+# ===========================================================================
+# drop_column_if_exists
+# ===========================================================================
+
+
+class TestDropColumnIfExists:
+    def test_method_exists_on_blueprint(self):
+        bp = Blueprint("t")
+        bp.drop_column_if_exists("col_a", "col_b")
+        assert bp._drop_columns_if_exists == ["col_a", "col_b"]
+        assert bp._drop_columns == []
+
+    def test_drop_column_if_exists_removes_column(self, monkeypatch):
+        engine = _in_memory_engine()
+        _patch_connection(engine, monkeypatch)
+        Schema.create("articles", lambda t: (t.id(), t.string("title"), t.string("summary")))
+
+        Schema.table("articles", lambda t: t.drop_column_if_exists("summary"))
+
+        with engine.connect() as conn:
+            cols = _columns_of(conn, "articles")
+        assert "summary" not in cols
+        assert "title" in cols
+
+    def test_drop_column_if_exists_is_idempotent(self, monkeypatch):
+        engine = _in_memory_engine()
+        _patch_connection(engine, monkeypatch)
+        Schema.create("notes", lambda t: (t.id(), t.string("body")))
+
+        # First call drops the column
+        Schema.table("notes", lambda t: t.drop_column_if_exists("body"))
+        # Second call on already-absent column must not raise
+        Schema.table("notes", lambda t: t.drop_column_if_exists("body"))
+
+        with engine.connect() as conn:
+            cols = _columns_of(conn, "notes")
+        assert "body" not in cols
+
+    def test_drop_column_still_raises_on_missing(self, monkeypatch):
+        engine = _in_memory_engine()
+        _patch_connection(engine, monkeypatch)
+        Schema.create("logs", lambda t: (t.id(), t.string("msg")))
+
+        with pytest.raises(Exception):  # noqa: B017
+            Schema.table("logs", lambda t: t.drop_column("nonexistent"))
+
+
+# ===========================================================================
+# _safe_default — dialect-aware boolean rendering
+# ===========================================================================
+
+
+class TestSafeDefault:
+    def test_bool_true_sqlite(self):
+        assert _safe_default(True, "sqlite") == "1"
+
+    def test_bool_false_sqlite(self):
+        assert _safe_default(False, "sqlite") == "0"
+
+    def test_bool_true_mysql(self):
+        assert _safe_default(True, "mysql") == "1"
+
+    def test_bool_false_mysql(self):
+        assert _safe_default(False, "mysql") == "0"
+
+    def test_bool_true_postgresql(self):
+        assert _safe_default(True, "postgresql") == "true"
+
+    def test_bool_false_postgresql(self):
+        assert _safe_default(False, "postgresql") == "false"
+
+    def test_int_value(self):
+        assert _safe_default(42) == "42"
+
+    def test_float_value(self):
+        assert _safe_default(3.14) == "3.14"
+
+    def test_string_value(self):
+        assert _safe_default("hello") == "'hello'"
+
+    def test_string_with_single_quote(self):
+        assert _safe_default("it's") == "'it''s'"
+
+    def test_unsupported_type_raises(self):
+        with pytest.raises(TypeError):
+            _safe_default([1, 2, 3])
+
+    def test_blueprint_boolean_default_sqlite(self, monkeypatch):
+        engine = _in_memory_engine()
+        _patch_connection(engine, monkeypatch)
+        Schema.create("flags", lambda t: (t.id(), t.boolean("active").default(False)))
+        with engine.connect() as conn:
+            cols = _columns_of(conn, "flags")
+        assert cols["active"]["dflt_value"] == "0"
+
+    def test_blueprint_boolean_default_true_sqlite(self, monkeypatch):
+        engine = _in_memory_engine()
+        _patch_connection(engine, monkeypatch)
+        Schema.create("flags2", lambda t: (t.id(), t.boolean("active").default(True)))
+        with engine.connect() as conn:
+            cols = _columns_of(conn, "flags2")
+        assert cols["active"]["dflt_value"] == "1"
