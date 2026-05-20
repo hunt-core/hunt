@@ -10,15 +10,23 @@ from hunt.http.response import Response
 COOKIE_NAME = "hunt_session"
 
 
+def _make_session_store():
+    driver = os.environ.get("SESSION_DRIVER", "file").lower()
+    if driver == "redis":
+        from hunt.session.redis_store import RedisSessionStore
+
+        return RedisSessionStore()
+    from hunt.session.store import FileSessionStore
+    from hunt.support.helpers import storage_path
+
+    return FileSessionStore(Path(storage_path("framework", "sessions")))
+
+
 class StartSession(Middleware):
     async def handle(self, request: Request, next: Next) -> Response:
-        from hunt.session.store import FileSessionStore
-        from hunt.support.helpers import storage_path
-
-        sessions_dir = Path(storage_path("framework", "sessions"))
         session_id = _read_cookie(request, COOKIE_NAME) or os.urandom(32).hex()
 
-        store = FileSessionStore(sessions_dir)
+        store = _make_session_store()
         store.start(session_id)  # store validates/rejects malformed IDs internally
         store.age_flash()
 

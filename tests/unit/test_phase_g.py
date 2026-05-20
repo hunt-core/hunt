@@ -481,11 +481,11 @@ class TestRedisDriver:
         self.driver.release(_FAKE_PAYLOAD.encode(), delay=0)
         assert self._mock_client.lpush.called
 
-    def test_fail_zadd_to_failed_set(self):
+    def test_fail_writes_to_db_not_redis(self):
+        # fail() must NOT write to a Redis sorted set — it writes to the DB jobs_failed table.
+        # The DB call will silently fail in this unit test context (no real DB), which is fine.
         self.driver.fail("id", "default", "{}", "oops")
-        assert self._mock_client.zadd.called
-        key = self._mock_client.zadd.call_args[0][0]
-        assert "failed" in key
+        assert not self._mock_client.zadd.called
 
     def test_size_uses_llen(self):
         self._mock_client.llen.return_value = 3

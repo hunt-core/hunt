@@ -11,6 +11,22 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.23] — 2026-05-20
+
+### Added
+
+- `RedisSessionStore` — Redis-backed session store. Set `SESSION_DRIVER=redis` in `.env` to activate. Sessions are stored as `hunt:session:<id>` keys with TTL-based expiry — no garbage collection required. Suitable for multi-process deployments sharing session state.
+- `hunt.redis_connection.get_redis()` — shared Redis client factory configured via `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, and `REDIS_PASSWORD` env vars (`decode_responses=True`).
+- Session middleware (`StartSession`) now reads `SESSION_DRIVER` and instantiates the correct store automatically.
+
+### Fixed
+
+- `RedisDriver.pop()` — was always returning `"attempts": 1`. Attempt counts are now tracked in a Redis hash (`hunt_queue:attempts`) using `HINCRBY`, so the queue worker enforces `tries` correctly across retries.
+- `RedisDriver.fail()` — was writing failed jobs to a Redis sorted set that the admin panel and `queue:retry` command could not read. Failed jobs now go to the `jobs_failed` database table, consistent with the database driver.
+- `RedisDriver.delete()` — now cleans up the attempt hash entry when a job completes successfully.
+
+---
+
 ## [0.2.22] — 2026-05-20
 
 ### Added
