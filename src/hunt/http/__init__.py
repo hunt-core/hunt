@@ -2,6 +2,7 @@ from hunt.http.controller import Controller
 from hunt.http.kernel import HttpKernel
 from hunt.http.middleware import Middleware
 from hunt.http.request import Request
+from hunt.http.resources import ApiResource, ApiResourceCollection
 from hunt.http.response import (
     HttpException,
     JsonResponse,
@@ -15,6 +16,8 @@ from hunt.http.route import Route
 from hunt.http.router import RouteNotFoundException, Router
 
 __all__ = [
+    "ApiResource",
+    "ApiResourceCollection",
     "Controller",
     "HttpException",
     "HttpKernel",

@@ -11,6 +11,19 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.22] — 2026-05-20
+
+### Added
+
+- `ApiResource` — base class for transforming model instances into JSON responses. Subclass and implement `to_array(request)`. Return an `ApiResource` from any controller; the kernel calls `to_response()` automatically.
+- `ApiResource.when(condition, value, default=<omit>)` — includes a key only when `condition` is truthy; omits the key entirely when false and no default is given.
+- `ApiResource.merge_when(condition, data)` — conditionally spreads a dict of attributes using `**` unpacking; returns `{}` when false.
+- `ApiResource.collection(items)` — wraps a list or `PaginationResult` in an `ApiResourceCollection`, producing `{"data": [...]}`. When given a `PaginationResult`, appends a `"meta"` key with pagination fields.
+- `ApiResourceCollection` — standalone collection class; can also be instantiated directly.
+- Both are importable from `hunt.http`: `from hunt.http import ApiResource, ApiResourceCollection`.
+
+---
+
 ## [0.2.21] — 2026-05-20
 
 ### Added

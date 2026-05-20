@@ -169,6 +169,10 @@ class HttpKernel:
 
             if isinstance(result, Response):
                 return result
+            from hunt.http.resources import ApiResource, ApiResourceCollection
+
+            if isinstance(result, (ApiResource, ApiResourceCollection)):
+                return result.to_response(request)
             if isinstance(result, dict):
                 return JsonResponse(result)
             if isinstance(result, str):
