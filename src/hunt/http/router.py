@@ -17,6 +17,7 @@ class Router:
         self._named: dict[str, Route] = {}
         self._group_prefix: str = ""
         self._group_middleware: list[Any] = []
+        self._group_domain: str | None = None
 
     # ------------------------------------------------------------------
     # Registration helpers
@@ -63,16 +64,21 @@ class Router:
         self,
         prefix: str = "",
         middleware: list[Any] | None = None,
+        domain: str | None = None,
     ) -> Generator[None, None, None]:
         old_prefix = self._group_prefix
         old_mw = self._group_middleware[:]
+        old_domain = self._group_domain
         self._group_prefix = old_prefix + prefix
         self._group_middleware = old_mw + (middleware or [])
+        if domain is not None:
+            self._group_domain = domain
         try:
             yield
         finally:
             self._group_prefix = old_prefix
             self._group_middleware = old_mw
+            self._group_domain = old_domain
 
     def prefix(self, prefix: str) -> _PrefixGroup:
         return _PrefixGroup(self, prefix)
@@ -80,16 +86,34 @@ class Router:
     def middleware(self, *mw: Any) -> _MiddlewareGroup:
         return _MiddlewareGroup(self, list(mw))
 
+    def domain(self, pattern: str) -> _DomainGroup:
+        """Constrain a route group to requests matching the given host pattern.
+
+        The pattern is matched against the full Host header (without port).
+        Use ``{param}`` to capture a segment:
+
+        .. code-block:: python
+
+            Router.domain("api.example.com").group(lambda r:
+                r.get("/users", handler)
+            )
+
+            Router.domain("{account}.example.com").group(lambda r:
+                r.get("/dashboard", handler)
+            )
+        """
+        return _DomainGroup(self, pattern)
+
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------
 
-    def dispatch(self, method: str, path: str) -> tuple[Route, dict[str, str]]:
+    def dispatch(self, method: str, path: str, host: str | None = None) -> tuple[Route, dict[str, str]]:
         # Normalize trailing slash — /foo/ and /foo are the same route.
         if path != "/" and path.endswith("/"):
             path = path.rstrip("/")
         for route in self._routes:
-            matched, params = route.matches(method, path)
+            matched, params = route.matches(method, path, host)
             if matched:
                 return route, params
         raise RouteNotFoundException(f"No route found for {method} {path}")
@@ -120,7 +144,13 @@ class Router:
         full_uri = self._group_prefix + ("" if uri == "/" and self._group_prefix else uri)
         if not full_uri:
             full_uri = "/"
-        route = Route(methods, full_uri, action, middleware=list(self._group_middleware))
+        route = Route(
+            methods,
+            full_uri,
+            action,
+            middleware=list(self._group_middleware),
+            domain=self._group_domain,
+        )
         self._routes.append(route)
         return route
 
@@ -147,3 +177,13 @@ class _MiddlewareGroup:
     def group(self, callback: Callable[[], None]) -> None:
         with self._router.group(middleware=self._middleware):
             callback()
+
+
+class _DomainGroup:
+    def __init__(self, router: Router, domain: str) -> None:
+        self._router = router
+        self._domain = domain
+
+    def group(self, callback: Callable) -> None:
+        with self._router.group(domain=self._domain):
+            callback(self._router)

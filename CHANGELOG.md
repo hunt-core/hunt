@@ -11,6 +11,20 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.26] — 2026-05-20
+
+### Added
+
+- `Router.domain(pattern)` — constrains a route group to requests where the `Host` header matches the given pattern. Static (`"api.example.com"`) and parameterised (`"{account}.example.com"`) patterns are supported. Returns a `_DomainGroup` whose `.group(callback)` passes the router to the callback.
+- `Route._domain` — optional domain pattern field; `Route.matches()` now accepts an optional `host` argument and enforces the domain constraint when set. Domain and path parameters are merged into a single params dict so subdomain segments are available as normal route parameters.
+- `Route._compile_domain()` — compiles a domain pattern (using `.` as the segment separator, `{param}` → `(?P<param>[^.]+)`) into a case-insensitive regex.
+- `Request.host` — property that returns the lowercased `Host` header value with port stripped.
+- `Request.subdomain(root_domain)` — returns the subdomain prefix relative to a root domain (e.g. `"api.example.com"` with root `"example.com"` → `"api"`).
+- `Router.dispatch()` now accepts `host=` and passes it to `route.matches()`.
+- Kernel passes `request.host` to `router.dispatch()`.
+
+---
+
 ## [0.2.25] — 2026-05-20
 
 ### Added

@@ -84,6 +84,30 @@ class Request:
         return self._scope.get("path", "/")
 
     @property
+    def host(self) -> str:
+        """Return the request host without port (e.g. 'api.example.com')."""
+        raw = self.header("host", "") or ""
+        # Strip port if present
+        if ":" in raw:
+            raw = raw.rsplit(":", 1)[0]
+        return raw.lower()
+
+    def subdomain(self, root_domain: str) -> str:
+        """Return the subdomain relative to root_domain.
+
+        host='api.example.com', root_domain='example.com' → 'api'
+        Returns '' when the host equals root_domain or is not a suffix of it.
+        """
+        h = self.host
+        root = root_domain.lower().lstrip(".")
+        if h == root:
+            return ""
+        suffix = "." + root
+        if h.endswith(suffix):
+            return h[: -len(suffix)]
+        return ""
+
+    @property
     def full_url(self) -> str:
         scheme = self._scope.get("scheme", "http")
         server = self._scope.get("server", ("localhost", 80))

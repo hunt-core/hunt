@@ -95,7 +95,7 @@ class HttpKernel:
         reset_query_tracker()
 
         try:
-            route, params = self._router.dispatch(request.method, request.path)
+            route, params = self._router.dispatch(request.method, request.path, host=request.host)
         except RouteNotFoundException:
             if request.method == "OPTIONS":
                 return await self._handle_options(request)
