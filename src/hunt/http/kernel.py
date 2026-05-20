@@ -108,6 +108,8 @@ class HttpKernel:
             return self._render_error(request, HttpException(404, "Not Found"))
 
         request.set_route_params(params)
+        request._debug_route_name = route.name  # type: ignore[attr-defined]
+        request._debug_route_uri = route.uri  # type: ignore[attr-defined]
 
         all_middleware = [*self._global_middleware, *route._middleware]
         handler = self._make_handler(route.action, params)

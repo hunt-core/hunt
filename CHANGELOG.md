@@ -11,6 +11,17 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.24] — 2026-05-20
+
+### Added
+
+- `DebugPanel` middleware (`hunt.http.middleware.debug_panel`) — injects a fixed-position debug toolbar into every `text/html` response when `APP_DEBUG=true`. The toolbar shows method, path, status, response time, and query count in a collapsible bar. Expanding the panel reveals four tabs: **Request** (method, path, status, headers), **Route** (name, URI pattern, params), **Queries** (full SQL log with per-query timing), **Session** (non-private session data).
+- `debug.get_query_log()` — returns the per-request query log as a list of `(sql, elapsed_ms)` tuples; used by the debug panel but usable directly.
+- `reset_query_tracker()` now also resets the per-request query log alongside the N+1 counter.
+- Matched route info (`_debug_route_name`, `_debug_route_uri`) is stored on the `Request` object by the kernel before the middleware pipeline runs.
+
+---
+
 ## [0.2.23] — 2026-05-20
 
 ### Added
