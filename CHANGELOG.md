@@ -11,6 +11,19 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.21] — 2026-05-20
+
+### Added
+
+- `PaginationResult` — `paginate()` now returns a `PaginationResult` object instead of a plain dict. Fully backwards-compatible: attribute access (`result.total`), item access (`result["data"]`), and direct iteration (`for item in result`) all work as before.
+- `PaginationResult.links(base_url)` — returns windowed page-link descriptors (`type`, `url`, `label`, `active`, `disabled`) ready for template rendering.
+- `PaginationResult.prev_page_url(base_url)` / `next_page_url(base_url)` — URL helpers that preserve existing query parameters.
+- `QueryBuilder.simple_paginate(per_page, page)` — paginates without a `COUNT(*)` query; fetches `per_page + 1` rows to detect whether a next page exists. Returns a `PaginationResult` with `total=None` and `last_page=None`.
+- `pagination.html` Jinja2 macro — Tailwind-styled pagination bar importable from any template via `{% from "pagination.html" import render_links %}`.
+- `PaginationResult` exported from `hunt.database`.
+
+---
+
 ## [0.2.20] — 2026-05-20
 
 ### Added

@@ -420,16 +420,34 @@ class QueryBuilder:
         rows = qb._execute(*qb._build_select())
         return [row.get(col) for row in rows]
 
-    def paginate(self, per_page: int = 15, page: int = 1) -> dict:
+    def paginate(self, per_page: int = 15, page: int = 1):
+        from hunt.pagination import PaginationResult
+
         total = self.count()
         items = self.offset((page - 1) * per_page).limit(per_page).get()
-        return {
-            "data": items,
-            "total": total,
-            "per_page": per_page,
-            "current_page": page,
-            "last_page": max(1, (total + per_page - 1) // per_page),
-        }
+        last_page = max(1, (total + per_page - 1) // per_page)
+        return PaginationResult(
+            data=items,
+            total=total,
+            per_page=per_page,
+            current_page=page,
+            last_page=last_page,
+        )
+
+    def simple_paginate(self, per_page: int = 15, page: int = 1):
+        """Paginate without a COUNT query — fetches one extra row to detect next page."""
+        from hunt.pagination import PaginationResult
+
+        items = self.offset((page - 1) * per_page).limit(per_page + 1).get()
+        has_more = len(items) > per_page
+        return PaginationResult(
+            data=items[:per_page],
+            total=None,
+            per_page=per_page,
+            current_page=page,
+            last_page=None,
+            has_more_pages=has_more,
+        )
 
     def chunk(self, size: int, callback: Callable[[list[Any]], bool | None]) -> bool:
         """Iterate results in chunks. Callback receives each chunk.

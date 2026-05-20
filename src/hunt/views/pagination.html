@@ -1,0 +1,59 @@
+{# hunt pagination macro — Tailwind CSS
+   Usage:
+     {% from "pagination.html" import render_links %}
+     {{ render_links(result, request.path) }}
+
+   Or pass extra query params to preserve:
+     {{ render_links(result, "/posts", base_url=request.url) }}
+#}
+
+{% macro render_links(result, base_url="") %}
+{% set ls = result.links(base_url) %}
+{% set has_pages = not result.has_more_pages == False or result.current_page > 1 %}
+{% if has_pages %}
+<nav aria-label="Pagination" class="flex items-center justify-center flex-wrap gap-1 mt-6 select-none">
+  {% for link in ls %}
+    {% if link.type == "prev" %}
+      {% if link.disabled %}
+        <span class="inline-flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-400 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50" aria-disabled="true">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          <span class="ml-1">Prev</span>
+        </span>
+      {% else %}
+        <a href="{{ link.url }}" class="inline-flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          <span class="ml-1">Prev</span>
+        </a>
+      {% endif %}
+
+    {% elif link.type == "next" %}
+      {% if link.disabled %}
+        <span class="inline-flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-400 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 cursor-not-allowed opacity-50" aria-disabled="true">
+          <span class="mr-1">Next</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </span>
+      {% else %}
+        <a href="{{ link.url }}" class="inline-flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          <span class="mr-1">Next</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </a>
+      {% endif %}
+
+    {% elif link.type == "ellipsis" %}
+      <span class="inline-flex items-center px-3 py-2 text-sm text-gray-400 dark:text-gray-500">…</span>
+
+    {% else %}
+      {% if link.active %}
+        <span aria-current="page" class="inline-flex items-center justify-center w-10 py-2 rounded-md text-sm font-semibold bg-indigo-600 text-white border border-indigo-600">
+          {{ link.label }}
+        </span>
+      {% else %}
+        <a href="{{ link.url }}" class="inline-flex items-center justify-center w-10 py-2 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+          {{ link.label }}
+        </a>
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endif %}
+{% endmacro %}
