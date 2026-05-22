@@ -24,6 +24,7 @@ async def _run_sync(fn: Callable, /, *args: Any, **kwargs: Any) -> Any:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, functools.partial(fn, *args, **kwargs))
 
+
 # Allowlist for SQL identifiers (table/column names)
 _IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$")
 _VALID_DIRECTIONS = frozenset({"ASC", "DESC"})

@@ -146,8 +146,7 @@ class Application(Container):
             import warnings
 
             warnings.warn(
-                "SENTRY_DSN is set but sentry-sdk is not installed. "
-                "Install it with: pip install sentry-sdk",
+                "SENTRY_DSN is set but sentry-sdk is not installed. Install it with: pip install sentry-sdk",
                 RuntimeWarning,
                 stacklevel=2,
             )

@@ -9,6 +9,7 @@ import click
 def _default_workers() -> int:
     try:
         from multiprocessing import cpu_count
+
         return cpu_count() * 2 + 1
     except NotImplementedError:
         return 3

@@ -64,7 +64,9 @@ class HttpKernel:
         if os.environ.get("APP_ENV", "local") != "testing":
             from hunt.http.middleware.request_id import RequestId
 
-            if not any(m is RequestId or (isinstance(m, type) and issubclass(m, RequestId)) for m in self._global_middleware):
+            if not any(
+                m is RequestId or (isinstance(m, type) and issubclass(m, RequestId)) for m in self._global_middleware
+            ):
                 self._global_middleware.insert(0, RequestId)
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
