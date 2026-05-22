@@ -1,97 +1,59 @@
-{% extends "layouts/app.html" %}
+@extends('auth.layout')
 
-{% block content %}
-<div class="max-w-2xl mx-auto py-10 px-4 sm:px-6 lg:px-8 space-y-8">
-  <div>
-    <h2 class="text-2xl font-bold text-gray-900">Two-Factor Authentication</h2>
-    <p class="mt-1 text-sm text-gray-500">
-      {% if enabled %}
-        Two-factor authentication is <span class="font-semibold text-green-600">enabled</span> on your account.
-      {% else %}
-        Two-factor authentication is <span class="font-semibold text-red-600">disabled</span>.
-      {% endif %}
-    </p>
-  </div>
+@section('content')
+<h1>Two-Factor Authentication</h1>
+<p style="font-size:.875rem;color:#aaa;margin-bottom:1.25rem;">
+    {% if enabled %}
+    Status: <strong style="color:#4ade80;">Enabled</strong>
+    {% else %}
+    Status: <strong style="color:#f87171;">Disabled</strong>
+    {% endif %}
+</p>
 
-  {% if session_has("success") %}
-  <div class="rounded-md bg-green-50 p-4">
-    <p class="text-sm text-green-700">{{ session_get("success") }}</p>
-  </div>
-  {% endif %}
+{% if flash.get("success") %}
+<div class="alert-success">{{ flash.get("success") }}</div>
+{% endif %}
 
-  {% if session_has("error") %}
-  <div class="rounded-md bg-red-50 p-4">
-    <p class="text-sm text-red-700">{{ session_get("error") }}</p>
-  </div>
-  {% endif %}
+{% if flash.get("error") %}
+<div class="alert-error">{{ flash.get("error") }}</div>
+{% endif %}
 
-  {% if enabled %}
-  <!-- Recovery codes section -->
-  {% if recovery_codes %}
-  <div class="bg-white shadow sm:rounded-lg">
-    <div class="px-4 py-5 sm:p-6">
-      <h3 class="text-lg font-medium text-gray-900">Recovery Codes</h3>
-      <p class="mt-1 text-sm text-gray-500">
-        Store these codes safely. Each can only be used once if you lose your device.
-      </p>
-      <div class="mt-4 bg-gray-50 rounded-md p-4">
-        <ul class="grid grid-cols-2 gap-2">
-          {% for code in recovery_codes %}
-          <li class="font-mono text-sm text-gray-700">{{ code }}</li>
-          {% endfor %}
+{% if enabled %}
+
+{% if recovery_codes %}
+<div style="margin-bottom:1.5rem;">
+    <p style="font-size:.8rem;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.02em;margin-bottom:.75rem;">Recovery Codes</p>
+    <div style="background:#0f0f0f;border:1px solid #2e2e2e;border-radius:8px;padding:1rem;margin-bottom:.75rem;">
+        <ul style="list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:.4rem;">
+            {% for code in recovery_codes %}
+            <li style="font-family:monospace;font-size:.8rem;color:#aaa;">{{ code }}</li>
+            {% endfor %}
         </ul>
-      </div>
-      <form method="POST" action="/two-factor/regenerate" class="mt-4">
-        {{ csrf_field() | raw }}
-        <input name="password" type="password" required
-          placeholder="Confirm password to regenerate"
-          class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-        <button type="submit"
-          class="mt-3 inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-          Regenerate Recovery Codes
-        </button>
-      </form>
     </div>
-  </div>
-  {% endif %}
-
-  <!-- Disable 2FA -->
-  <div class="bg-white shadow sm:rounded-lg">
-    <div class="px-4 py-5 sm:p-6">
-      <h3 class="text-lg font-medium text-gray-900">Disable Two-Factor Authentication</h3>
-      <p class="mt-1 text-sm text-gray-500">
-        This will remove the extra layer of security from your account.
-      </p>
-      <form method="POST" action="/two-factor" class="mt-4 space-y-3">
-        {{ csrf_field() | raw }}
-        <input type="hidden" name="_method" value="DELETE">
-        <input name="password" type="password" required
-          placeholder="Confirm password"
-          class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-        <button type="submit"
-          class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700">
-          Disable Two-Factor Authentication
-        </button>
-      </form>
-    </div>
-  </div>
-
-  {% else %}
-  <!-- Enable 2FA -->
-  <div class="bg-white shadow sm:rounded-lg">
-    <div class="px-4 py-5 sm:p-6">
-      <h3 class="text-lg font-medium text-gray-900">Enable Two-Factor Authentication</h3>
-      <p class="mt-1 text-sm text-gray-500">
-        Use an authenticator app like Google Authenticator or Authy to generate time-based codes.
-      </p>
-      <div class="mt-4">
-        <a href="/two-factor/setup"
-          class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-          Enable Two-Factor Authentication
-        </a>
-      </div>
-    </div>
-  </div>
-  {% endif %}
+    <form method="POST" action="/two-factor/regenerate">
+        <input type="hidden" name="_token" value="{{ csrf_token }}">
+        <div class="field">
+            <input name="password" type="password" required placeholder="Confirm password to regenerate" autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-submit" style="background:#374151;">Regenerate Recovery Codes</button>
+    </form>
 </div>
-{% endblock %}
+{% endif %}
+
+<hr style="border:none;border-top:1px solid #2a2a3e;margin-bottom:1.5rem;">
+
+<p style="font-size:.8rem;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.02em;margin-bottom:.75rem;">Disable Two-Factor Authentication</p>
+<form method="POST" action="/two-factor/destroy">
+    <input type="hidden" name="_token" value="{{ csrf_token }}">
+    <div class="field">
+        <input name="password" type="password" required placeholder="Confirm password" autocomplete="current-password">
+    </div>
+    <button type="submit" class="btn-submit" style="background:#dc2626;">Disable Two-Factor Authentication</button>
+</form>
+
+{% else %}
+
+<a href="/two-factor/setup" class="btn-submit" style="display:block;text-align:center;text-decoration:none;">Enable Two-Factor Authentication</a>
+
+{% endif %}
+@endsection

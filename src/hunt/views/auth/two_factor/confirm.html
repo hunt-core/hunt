@@ -1,53 +1,35 @@
-{% extends "layouts/app.html" %}
+@extends('auth.layout')
 
-{% block content %}
-<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-  <div class="max-w-md w-full space-y-8">
-    <div>
-      <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-        Scan QR Code
-      </h2>
-      <p class="mt-2 text-center text-sm text-gray-600">
-        Scan this QR code with your authenticator app, then enter the six-digit code below.
-      </p>
-    </div>
+@section('content')
+<h1>Scan QR Code</h1>
+<p style="font-size:.875rem;color:#aaa;margin-bottom:1.25rem;">Scan this QR code with your authenticator app, then enter the six-digit code below.</p>
 
-    {% if session_has("error") %}
-    <div class="rounded-md bg-red-50 p-4">
-      <p class="text-sm text-red-700">{{ session_get("error") }}</p>
-    </div>
-    {% endif %}
+{% if flash.get("error") %}
+<div class="alert-error">{{ flash.get("error") }}</div>
+{% endif %}
 
-    <div class="flex flex-col items-center space-y-4">
-      <div id="qrcode" class="p-4 bg-white border border-gray-200 rounded-lg shadow"></div>
-      <p class="text-xs text-gray-500 break-all">Manual key: <code>{{ secret }}</code></p>
-    </div>
-
-    <form method="POST" action="/two-factor/confirm" class="mt-8 space-y-6">
-      {{ csrf_field() | raw }}
-      <div>
-        <label for="code" class="block text-sm font-medium text-gray-700">Verification code</label>
-        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code"
-          maxlength="6" pattern="[0-9]{6}" required
-          class="mt-1 appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-center text-2xl tracking-widest"
-          placeholder="000000">
-      </div>
-      <div>
-        <button type="submit"
-          class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-          Enable Two-Factor Authentication
-        </button>
-      </div>
-    </form>
-  </div>
+<div style="text-align:center;margin-bottom:1.25rem;">
+    <div id="qrcode" style="display:inline-block;background:#fff;padding:1rem;border-radius:8px;"></div>
+    <p style="font-size:.75rem;color:#aaa;margin-top:.75rem;word-break:break-all;">Manual key: <code>{{ secret }}</code></p>
 </div>
+
+<form method="POST" action="/two-factor/confirm">
+    <input type="hidden" name="_token" value="{{ csrf_token }}">
+    <div class="field">
+        <label for="code">Verification code</label>
+        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+            maxlength="6" pattern="[0-9]{6}" required autofocus
+            placeholder="000000" style="text-align:center;font-size:1.25rem;letter-spacing:.2em;">
+    </div>
+    <button type="submit" class="btn-submit">Enable Two-Factor Authentication</button>
+</form>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script>
   new QRCode(document.getElementById("qrcode"), {
     text: {{ qr_url | tojson }},
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
   });
 </script>
-{% endblock %}
+@endsection

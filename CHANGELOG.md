@@ -11,6 +11,16 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.42] — 2026-05-22
+
+### Fixed
+
+- **2FA views used non-existent Jinja2 globals** — All five built-in 2FA views (`setup`, `confirm`, `recovery`, `challenge`, `manage`) were calling `csrf_field()`, `session_has()`, and `session_get()` which are not registered in the Jinja2 environment. Views now use `{{ csrf_token }}` (injected by `ViewFactory._inject_csrf`) and `flash.get("key")` (injected by `ViewFactory._inject_flash`) consistent with all other framework auth views.
+- **2FA views used `| raw` filter** — Jinja2 has no `raw` filter; the correct filter is `safe`. Replaced by using the `{{ csrf_token }}` variable directly, eliminating the filter entirely.
+- **2FA disable form used `DELETE` method override** — HTML forms only support GET/POST; the disable form was submitting `POST /two-factor` with `_method=DELETE` but the framework has no method-override middleware. Added `POST /two-factor/destroy` route to the scaffold routes stub and updated the manage view to use it.
+- **`make:2fa-controllers` published stale templates** — The command now copies templates directly from the package's `src/hunt/views/auth/two_factor/` directory instead of maintaining a separate inline copy, so published templates are always in sync with the built-in views.
+- **2FA views extended wrong layout** — Views were extending `layouts/app.html` (a user-provided Tailwind layout) instead of the built-in `auth.layout`. Rewritten to use `@extends('auth.layout')` and the framework's auth CSS classes (`alert-error`, `alert-success`, `btn-submit`, `field`) matching all other built-in auth views.
+
 ## [0.2.41] — 2026-05-22
 
 ### Fixed
