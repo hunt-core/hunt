@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import mimetypes
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -57,8 +58,14 @@ class HttpKernel:
         exception_handler: Any | None = None,
     ) -> None:
         self._router = router
-        self._global_middleware: list[Any] = global_middleware or []
+        self._global_middleware: list[Any] = list(global_middleware or [])
         self._exception_handler = exception_handler
+
+        if os.environ.get("APP_ENV", "local") != "testing":
+            from hunt.http.middleware.request_id import RequestId
+
+            if not any(m is RequestId or (isinstance(m, type) and issubclass(m, RequestId)) for m in self._global_middleware):
+                self._global_middleware.insert(0, RequestId)
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if scope["type"] == "lifespan":
@@ -69,6 +76,13 @@ class HttpKernel:
             return
 
         if await self._try_static(scope.get("path", "/"), send):
+            return
+
+        if scope.get("path") == "/health" and os.environ.get("HEALTH_CHECK_ENABLED", "true").lower() != "false":
+            from hunt import __version__
+
+            resp = JsonResponse({"status": "ok", "version": __version__})
+            await resp(scope, receive, send)
             return
 
         body = await self._read_body(receive)
@@ -312,6 +326,19 @@ class HttpKernel:
         from hunt.log.manager import Log
 
         Log.exception(f"Unhandled exception on {request.method} {request.path}", exc=exc)
+
+        try:
+            from hunt.container.facade import _app
+
+            if _app is not None:
+                for hook in getattr(_app, "_error_handlers", []):
+                    try:
+                        hook(exc, request)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         if self._exception_handler:
             return self._exception_handler.render(request, exc)
         import html

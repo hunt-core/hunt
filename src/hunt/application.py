@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -23,10 +24,12 @@ class Application(Container):
         self.base_path = Path(base_path) if base_path else Path.cwd()
         self._providers: list[ServiceProvider] = []
         self._booted = False
+        self._error_handlers: list[Callable] = []
 
         self._load_env()
         self._bind_paths()
         self._load_config()
+        self._setup_observability()
 
         self.instance("app", self)
         set_facade_application(self)
@@ -113,10 +116,41 @@ class Application(Container):
         self.instance("path.resources", str(self.resource_path()))
         self.instance("path.storage", str(self.storage_path()))
 
+    def on_error(self, handler: Callable) -> None:
+        """Register a hook called whenever an unhandled exception reaches the kernel.
+
+        The hook receives ``(exc: Exception, request: Request)`` and should not
+        raise — any exception thrown by the hook is silently swallowed.
+        """
+        self._error_handlers.append(handler)
+
     def _load_config(self) -> None:
         raw = load_config_directory(self.config_path())
         config = ConfigRepository(raw)
         self.instance("config", config)
+
+    def _setup_observability(self) -> None:
+        dsn = os.environ.get("SENTRY_DSN", "")
+        if not dsn:
+            return
+        try:
+            import sentry_sdk
+
+            sentry_sdk.init(dsn=dsn)
+
+            def _sentry_hook(exc: Exception, request: Any = None) -> None:
+                sentry_sdk.capture_exception(exc)
+
+            self._error_handlers.append(_sentry_hook)
+        except ImportError:
+            import warnings
+
+            warnings.warn(
+                "SENTRY_DSN is set but sentry-sdk is not installed. "
+                "Install it with: pip install sentry-sdk",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     @property
     def config(self) -> ConfigRepository:

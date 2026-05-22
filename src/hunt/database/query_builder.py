@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import re
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
@@ -10,6 +11,18 @@ from hunt.database.connection import connection
 
 if TYPE_CHECKING:
     pass
+
+
+async def _run_sync(fn: Callable, /, *args: Any, **kwargs: Any) -> Any:
+    """Run a sync callable in the default thread-pool executor.
+
+    Yields control to the event loop while the blocking DB call executes in a
+    worker thread, keeping the ASGI worker non-blocking under concurrent load.
+    """
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(fn, *args, **kwargs))
 
 # Allowlist for SQL identifiers (table/column names)
 _IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$")
@@ -482,6 +495,60 @@ class QueryBuilder:
                 break
             page += 1
         return True
+
+    # ------------------------------------------------------------------
+    # Async execution — wraps every sync terminal method in run_in_executor
+    # so ASGI controller actions can `await` DB calls without blocking the
+    # event loop.  Sync callers (CLI, migrations, seeds) are unaffected.
+    # ------------------------------------------------------------------
+
+    async def async_get(self) -> list[Any]:
+        return await _run_sync(self.get)
+
+    async def async_first(self) -> Any | None:
+        return await _run_sync(self.first)
+
+    async def async_first_or_fail(self) -> Any:
+        return await _run_sync(self.first_or_fail)
+
+    async def async_find(self, id: Any) -> Any | None:
+        return await _run_sync(self.find, id)
+
+    async def async_count(self) -> int:
+        return await _run_sync(self.count)
+
+    async def async_exists(self) -> bool:
+        return await _run_sync(self.exists)
+
+    async def async_min(self, column: str) -> Any:
+        return await _run_sync(self.min, column)
+
+    async def async_max(self, column: str) -> Any:
+        return await _run_sync(self.max, column)
+
+    async def async_avg(self, column: str) -> float | None:
+        return await _run_sync(self.avg, column)
+
+    async def async_sum(self, column: str) -> Any:
+        return await _run_sync(self.sum, column)
+
+    async def async_pluck(self, column: str) -> list[Any]:
+        return await _run_sync(self.pluck, column)
+
+    async def async_paginate(self, per_page: int = 15, page: int = 1) -> Any:
+        return await _run_sync(self.paginate, per_page, page)
+
+    async def async_insert(self, data: dict) -> Any:
+        return await _run_sync(self.insert, data)
+
+    async def async_insert_many(self, rows: list[dict]) -> None:
+        return await _run_sync(self.insert_many, rows)
+
+    async def async_update(self, data: dict) -> int:
+        return await _run_sync(self.update, data)
+
+    async def async_delete(self) -> int:
+        return await _run_sync(self.delete)
 
     def insert(self, data: dict) -> Any:
         from hunt.database.debug import timed_execute

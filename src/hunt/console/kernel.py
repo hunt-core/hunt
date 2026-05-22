@@ -48,6 +48,7 @@ from hunt.console.commands.route_list import route_list_command
 from hunt.console.commands.schedule_list import schedule_list_command
 from hunt.console.commands.schedule_run import schedule_run_command
 from hunt.console.commands.serve import serve_command
+from hunt.console.commands.serve_production import serve_production_command
 from hunt.console.commands.storage_link import storage_link_command
 from hunt.console.commands.tinker import tinker_command
 from hunt.console.commands.upgrade import upgrade_command
@@ -85,6 +86,7 @@ def cli() -> None:
 
 # Top-level
 cli.add_command(serve_command, name="serve")
+cli.add_command(serve_production_command, name="serve:production")
 cli.add_command(tinker_command, name="tinker")
 cli.add_command(route_list_command, name="route:list")
 cli.add_command(new_command, name="new")

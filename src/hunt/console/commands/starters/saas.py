@@ -164,10 +164,36 @@ class BillingController(Controller):
         team.save()
         return RedirectResponse(f"/teams/{team_id}/billing")
 
-    def webhook(self, request: Request) -> dict:
-        # TODO: verify Stripe signature and handle events
-        # event = stripe.Webhook.construct_event(request.body(), sig, secret)
-        return {"received": True}
+    def webhook(self, request: Request) -> Response:
+        import os
+        secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+        if not secret:
+            return Response(
+                '{"error": "STRIPE_WEBHOOK_SECRET is not configured. Set it in your .env file."}',
+                status_code=500,
+                content_type="application/json",
+            )
+
+        sig = request.header("Stripe-Signature", "")
+        try:
+            import stripe
+            event = stripe.Webhook.construct_event(request.body(), sig, secret)
+        except Exception:
+            return Response(
+                '{"error": "Webhook signature verification failed"}',
+                status_code=400,
+                content_type="application/json",
+            )
+
+        # Handle Stripe events here — see https://stripe.com/docs/webhooks
+        # if event["type"] == "customer.subscription.updated":
+        #     subscription = event["data"]["object"]
+        #     team = Team.where("stripe_subscription_id", subscription["id"]).first()
+        #     if team:
+        #         team._attributes["plan"] = subscription["metadata"].get("plan", "free")
+        #         team.save()
+
+        return Response('{"received": true}', status_code=200, content_type="application/json")
 """
 
 # ---------------------------------------------------------------------------

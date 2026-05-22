@@ -4,7 +4,7 @@ import contextvars
 import time
 from typing import Any, ClassVar
 
-from hunt.database.query_builder import QueryBuilder
+from hunt.database.query_builder import QueryBuilder, _run_sync
 from hunt.support.str import Str
 
 # When True, relationship helper methods return the Relation object instead of
@@ -303,6 +303,40 @@ class Model(metaclass=ModelMeta):
         self.query().where(self.primary_key, self._attributes[self.primary_key]).decrement(column, amount)
         self._attributes[column] = (self._attributes.get(column) or 0) - amount
         return True
+
+    # ------------------------------------------------------------------
+    # Async persistence — run sync ORM calls in the thread-pool executor so
+    # async controller actions do not block the ASGI event loop.
+    # ------------------------------------------------------------------
+
+    async def async_save(self) -> bool:
+        return await _run_sync(self.save)
+
+    async def async_delete(self) -> bool:
+        return await _run_sync(self.delete)
+
+    async def async_restore(self) -> bool:
+        return await _run_sync(self.restore)
+
+    @classmethod
+    async def async_find(cls, id: Any) -> Model | None:
+        return await _run_sync(cls.find, id)
+
+    @classmethod
+    async def async_find_or_fail(cls, id: Any) -> Model:
+        return await _run_sync(cls.find_or_fail, id)
+
+    @classmethod
+    async def async_create(cls, data: dict | None = None, **kwargs: Any) -> Model:
+        return await _run_sync(cls.create, data, **kwargs)
+
+    @classmethod
+    async def async_first_or_create(cls, search: dict, attributes: dict | None = None) -> tuple[Model, bool]:
+        return await _run_sync(cls.first_or_create, search, attributes)
+
+    @classmethod
+    async def async_update_or_create(cls, search: dict, values: dict) -> Model:
+        return await _run_sync(cls.update_or_create, search, values)
 
     # ------------------------------------------------------------------
     # Relationships

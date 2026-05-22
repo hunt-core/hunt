@@ -166,13 +166,18 @@ class ApiAuth(Middleware):
         return await next(request)
 
     def _resolve_user(self, token: str):
-        # TODO: look up token in `personal_access_tokens` table
-        # from app.models.personal_access_token import PersonalAccessToken
-        # record = PersonalAccessToken.where("token", hash_token(token)).first()
-        # if record:
-        #     from app.models.user import User
-        #     return User.find(record._attributes["tokenable_id"])
-        return None
+        # Implement token lookup here. Example:
+        #
+        #   from app.models.personal_access_token import PersonalAccessToken
+        #   record = PersonalAccessToken.where("token", hash_token(token)).first()
+        #   if record:
+        #       from app.models.user import User
+        #       return User.find(record._attributes["tokenable_id"])
+        #   return None
+        raise NotImplementedError(
+            "ApiAuth._resolve_user() is not implemented. "
+            "Open app/middleware/api_auth.py and implement token lookup."
+        )
 """
 
 _API_RATE_LIMIT_MIDDLEWARE = """\

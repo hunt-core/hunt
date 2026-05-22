@@ -11,6 +11,79 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.40] — 2026-05-22
+
+### Added
+
+**Async-safe ORM (M26)**
+- **`_run_sync(fn, *args, **kwargs)`** — async helper in `hunt.database.query_builder` that runs any sync callable in the default thread-pool executor via `asyncio.get_running_loop().run_in_executor(None, ...)`. This is the single chokepoint that unblocks the ASGI event loop for all ORM calls.
+- **`QueryBuilder` async execution methods** — every terminal method now has an `async_*` twin that delegates to `_run_sync`: `async_get`, `async_first`, `async_first_or_fail`, `async_find`, `async_count`, `async_exists`, `async_min`, `async_max`, `async_avg`, `async_sum`, `async_pluck`, `async_paginate`, `async_insert`, `async_insert_many`, `async_update`, `async_delete`.
+- **`Model` async methods** — instance: `async_save`, `async_delete`, `async_restore`; class: `async_find`, `async_find_or_fail`, `async_create`, `async_first_or_create`, `async_update_or_create`.
+- Existing sync API (`User.all().get()`, `model.save()`, etc.) is fully preserved — CLI commands, migrations, seeders, and sync tests require no changes.
+- 8 new async unit tests covering create, find, save/update, delete, query_get, count/exists, first, update_query, and pluck via the async path.
+
+### Usage
+
+```python
+# In an async controller action — DB runs in a thread pool, event loop stays free
+class UserController(Controller):
+    async def index(self, request: Request) -> Response:
+        users = await User.query().async_get()
+        return self.json([u.to_dict() for u in users])
+
+    async def store(self, request: Request) -> Response:
+        user = await User.async_create(request.only("name", "email"))
+        return self.json(user.to_dict(), status=201)
+
+    async def destroy(self, request: Request, id: int) -> Response:
+        user = await User.async_find_or_fail(id)
+        await user.async_delete()
+        return self.json({}, status=204)
+```
+
+---
+
+## [0.2.39] — 2026-05-22
+
+### Added
+
+**Observability baseline (M29)**
+
+- **`GET /health`** — built-in health-check endpoint in `HttpKernel`. Returns `{"status":"ok","version":"<version>"}` with no auth, no middleware, and no body parsing overhead. Opt-out via `HEALTH_CHECK_ENABLED=false`.
+
+- **`RequestId` middleware** (`hunt.http.middleware.request_id`) — reads `X-Request-ID` from the incoming request (e.g. stamped by a gateway) or generates a UUID4. Stores the ID on `request.request_id` and in a `ContextVar` accessible via `current_request_id()`. Echoes the ID in the `X-Request-ID` response header. Auto-registered as the first global middleware when `APP_ENV != "testing"`.
+
+- **`hunt.ctx.request_id`** — shared `ContextVar[str]` for the current request ID, importable by any layer that needs it (logging, error reporters, background tasks).
+
+- **Structured JSON logging** — set `LOG_FORMAT=json` to switch all log channels (`file`, `daily`, `stderr`) to single-line JSON output: `{"ts":"…","level":"…","message":"…","request_id":"…"}`. `request_id` is populated from the context var automatically. Default remains `LOG_FORMAT=text`.
+
+- **`Application.on_error(handler)`** — register a callable `(exc, request)` that is invoked after every unhandled exception reaches the kernel. Errors in the hook are silently swallowed so the original 500 response is always sent.
+
+- **Sentry auto-init** — if `SENTRY_DSN` is set in the environment, `Application.__init__` initialises the Sentry SDK and registers `sentry_sdk.capture_exception` as an error hook automatically. A `RuntimeWarning` is emitted if `SENTRY_DSN` is set but `sentry-sdk` is not installed.
+
+---
+
+## [0.2.38] — 2026-05-22
+
+### Added
+
+**Production server command (M28)**
+- **`hunt serve:production`** — new CLI command that starts a production-grade Uvicorn server: `reload=False`, `access_log=True`, workers default to `(2 × CPU cores) + 1`, host defaults to `0.0.0.0`. Accepts `--host`, `--port`, and `--workers N` options.
+- On startup, the command inspects the environment and prints stderr warnings for common misconfigurations: `APP_ENV` not set to `production`, `APP_DEBUG=true`, missing `APP_KEY`, and no database configured.
+- Deployment docs updated: added section 7 "Start the server" documenting `hunt serve:production` with usage examples and a callout about running behind a reverse proxy; existing sections renumbered 8–13.
+
+---
+
+## [0.2.37] — 2026-05-22
+
+### Changed
+
+**Starter kits — stub hardening (M27)**
+- **`ApiAuth._resolve_user()`** now raises `NotImplementedError` instead of returning `None`. Previously the stub silently rejected every token with a 401; now it raises with a message pointing developers to `app/middleware/api_auth.py`, making unimplemented auth immediately visible rather than silently blocking all traffic.
+- **`BillingController.webhook()`** now enforces Stripe signature verification. The method checks for `STRIPE_WEBHOOK_SECRET` in the environment (returns 500 with a config error if absent), calls `stripe.Webhook.construct_event()` to verify the `Stripe-Signature` header (returns 400 on failure), and returns 200 only for verified events. Previously the stub accepted all webhook payloads without any verification.
+
+---
+
 ## [0.2.36] — 2026-05-22
 
 ### Added

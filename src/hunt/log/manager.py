@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import json
 import logging
 import logging.handlers
 import os
@@ -9,6 +11,29 @@ from typing import Any
 
 def _make_formatter(fmt: str = "[%(asctime)s] %(levelname)-8s %(message)s") -> logging.Formatter:
     return logging.Formatter(fmt, datefmt="%Y-%m-%d %H:%M:%S")
+
+
+class _JsonFormatter(logging.Formatter):
+    """Emit each log record as a single JSON object (one per line)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        try:
+            from hunt.ctx import request_id as _request_id_var
+
+            rid = _request_id_var.get() or None
+        except Exception:
+            rid = None
+
+        ts = datetime.datetime.utcfromtimestamp(record.created).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        payload: dict[str, Any] = {
+            "ts": ts,
+            "level": record.levelname.lower(),
+            "message": record.getMessage(),
+            "request_id": rid,
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, default=str)
 
 
 def _build_channel(name: str, config: dict, base_path: Path | None = None) -> logging.Logger:
@@ -21,6 +46,8 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
     level_str = config.get("level", os.environ.get("LOG_LEVEL", "debug"))
     level = getattr(logging, level_str.upper(), logging.DEBUG)
     logger.setLevel(level)
+
+    use_json = os.environ.get("LOG_FORMAT", "text").lower() == "json"
 
     if driver == "file":
         log_path = config.get("path")
@@ -35,7 +62,7 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
         handler: logging.Handler = logging.handlers.RotatingFileHandler(
             log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
         )
-        handler.setFormatter(_make_formatter())
+        handler.setFormatter(_JsonFormatter() if use_json else _make_formatter())
         logger.addHandler(handler)
 
     elif driver == "daily":
@@ -50,12 +77,13 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
         handler = logging.handlers.TimedRotatingFileHandler(
             log_path, when="midnight", backupCount=days, encoding="utf-8"
         )
-        handler.setFormatter(_make_formatter())
+        handler.setFormatter(_JsonFormatter() if use_json else _make_formatter())
         logger.addHandler(handler)
 
     elif driver == "stderr":
         handler = logging.StreamHandler()
-        handler.setFormatter(_make_formatter("%(levelname)-8s %(message)s"))
+        stderr_fmt = _JsonFormatter() if use_json else _make_formatter("%(levelname)-8s %(message)s")
+        handler.setFormatter(stderr_fmt)
         logger.addHandler(handler)
 
     elif driver == "stack":
@@ -71,7 +99,7 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
     else:
         # Unknown driver — fall back to stderr
         handler = logging.StreamHandler()
-        handler.setFormatter(_make_formatter("%(levelname)-8s %(message)s"))
+        handler.setFormatter(_JsonFormatter() if use_json else _make_formatter("%(levelname)-8s %(message)s"))
         logger.addHandler(handler)
 
     return logger
