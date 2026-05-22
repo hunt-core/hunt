@@ -21,10 +21,7 @@ class {class_name}(FormRequest):
 """
 
 
-@click.command("make:request")
-@click.argument("name")
-def make_request_command(name: str) -> None:
-    """Create a new Form Request class."""
+def _create_form_request(name: str) -> None:
     from hunt.console.commands.make import load_stub
     from hunt.support.str import Str
 
@@ -36,3 +33,17 @@ def make_request_command(name: str) -> None:
         return
     out.write_text(load_stub("request", _STUB).format(class_name=class_name))
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")
+
+
+@click.command("make:request")
+@click.argument("name")
+def make_request_command(name: str) -> None:
+    """Create a new Form Request class."""
+    _create_form_request(name)
+
+
+@click.command("make:form")
+@click.argument("name")
+def make_form_command(name: str) -> None:
+    """Create a new Form Request class (alias for make:request)."""
+    _create_form_request(name)

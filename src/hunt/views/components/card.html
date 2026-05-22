@@ -1,0 +1,16 @@
+<div class="bg-white rounded-lg shadow {{ class|default('') }}">
+    {%- if title is defined %}
+    <div class="px-6 py-4 border-b">
+        <h3 class="text-lg font-semibold text-gray-900">{{ title }}</h3>
+        {%- if subtitle is defined %}<p class="text-sm text-gray-500 mt-0.5">{{ subtitle }}</p>{% endif %}
+    </div>
+    {%- endif %}
+    <div class="px-6 py-4">
+        {{- body|default(_slot_default|default(''))|safe }}
+    </div>
+    {%- if _slot_footer is defined and _slot_footer %}
+    <div class="px-6 py-4 border-t bg-gray-50 rounded-b-lg flex items-center justify-end gap-2">
+        {{ _slot_footer|safe }}
+    </div>
+    {%- endif %}
+</div>

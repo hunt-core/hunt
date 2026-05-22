@@ -5,9 +5,12 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from hunt.console.commands.make.api_scaffold import make_api_command
 from hunt.console.commands.make.controller import make_controller_command
+from hunt.console.commands.make.crud import make_crud_command
 from hunt.console.commands.make.event import make_event_command
 from hunt.console.commands.make.factory import make_factory_command
+from hunt.console.commands.make.field_types import fillable_list, migration_columns, parse_fields
 from hunt.console.commands.make.job import make_job_command
 from hunt.console.commands.make.listener import make_listener_command
 from hunt.console.commands.make.middleware import make_middleware_command
@@ -331,3 +334,212 @@ class TestMakeSeeder:
         result = CliRunner().invoke(make_seeder_command, ["User"])
         assert "Already exists" in result.output
         assert (project / "database" / "seeders" / "UserSeeder.py").read_text() == "# original\n"
+
+
+# ---------------------------------------------------------------------------
+# field_types helpers
+# ---------------------------------------------------------------------------
+
+class TestFieldTypes:
+    def test_parse_empty(self):
+        assert parse_fields("") == []
+
+    def test_parse_known_types(self):
+        result = parse_fields("title:string body:text published:bool count:int")
+        assert result == [
+            ("title", "string"),
+            ("body", "text"),
+            ("published", "boolean"),
+            ("count", "integer"),
+        ]
+
+    def test_parse_unknown_type_defaults_to_string(self):
+        result = parse_fields("data:blob")
+        assert result == [("data", "string")]
+
+    def test_parse_field_without_type_defaults_to_string(self):
+        result = parse_fields("title")
+        assert result == [("title", "string")]
+
+    def test_fillable_list_empty(self):
+        assert fillable_list([]) == "[]"
+
+    def test_fillable_list(self):
+        fields = [("title", "string"), ("body", "text")]
+        assert fillable_list(fields) == '["title", "body"]'
+
+    def test_migration_columns_empty(self):
+        assert migration_columns([]) == ""
+
+    def test_migration_columns(self):
+        fields = [("title", "string"), ("published", "boolean")]
+        lines = migration_columns(fields)
+        assert 'bp.string("title")' in lines
+        assert 'bp.boolean("published")' in lines
+
+
+# ---------------------------------------------------------------------------
+# make:crud
+# ---------------------------------------------------------------------------
+
+class TestMakeCrud:
+    def _setup_routes(self, project):
+        (project / "routes").mkdir(parents=True, exist_ok=True)
+        (project / "routes" / "web.py").write_text(
+            "from hunt.http.router import Router\n\ndef register(router: Router) -> None:\n    pass\n"
+        )
+
+    def test_creates_model(self, project):
+        self._setup_routes(project)
+        result = CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string"])
+        assert result.exit_code == 0, result.output
+        assert (project / "app" / "models" / "post.py").exists()
+
+    def test_model_has_fillable(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string body:text"])
+        source = (project / "app" / "models" / "post.py").read_text()
+        assert '"title"' in source
+        assert '"body"' in source
+
+    def test_creates_migration_with_columns(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string published:bool"])
+        migs = list((project / "database" / "migrations").glob("*_create_posts_table.py"))
+        assert len(migs) == 1
+        src = migs[0].read_text()
+        assert 'bp.string("title")' in src
+        assert 'bp.boolean("published")' in src
+
+    def test_creates_controller(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string"])
+        assert (project / "app" / "controllers" / "post_controller.py").exists()
+
+    def test_controller_has_all_actions(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string"])
+        src = (project / "app" / "controllers" / "post_controller.py").read_text()
+        for action in ("index", "create", "store", "show", "edit", "update", "destroy"):
+            assert f"def {action}" in src
+
+    def test_creates_four_views(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string"])
+        base = project / "resources" / "views" / "posts"
+        for view in ("index.html", "create.html", "edit.html", "show.html"):
+            assert (base / view).exists(), f"{view} missing"
+
+    def test_views_contain_field_names(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string body:text"])
+        for view in ("create.html", "edit.html"):
+            src = (project / "resources" / "views" / "posts" / view).read_text()
+            assert 'name="title"' in src
+            assert 'name="body"' in src
+
+    def test_appends_routes_to_web(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string"])
+        src = (project / "routes" / "web.py").read_text()
+        assert "/posts" in src
+        assert "posts.index" in src
+        assert "posts.store" in src
+
+    def test_no_duplicate_routes(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string"])
+        CliRunner().invoke(make_crud_command, ["Post", "--fields", "title:string"])
+        src = (project / "routes" / "web.py").read_text()
+        assert src.count("posts.index") == 1
+
+    def test_no_fields_still_works(self, project):
+        self._setup_routes(project)
+        result = CliRunner().invoke(make_crud_command, ["Tag"])
+        assert result.exit_code == 0
+        assert (project / "app" / "models" / "tag.py").exists()
+
+    def test_pascal_name(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_crud_command, ["blog_post", "--fields", "title:string"])
+        assert (project / "app" / "models" / "blog_post.py").exists()
+        src = (project / "app" / "models" / "blog_post.py").read_text()
+        assert "class BlogPost" in src
+
+
+# ---------------------------------------------------------------------------
+# make:api
+# ---------------------------------------------------------------------------
+
+class TestMakeApi:
+    def _setup_routes(self, project):
+        (project / "routes").mkdir(parents=True, exist_ok=True)
+        (project / "routes" / "api.py").write_text(
+            "from hunt.http.router import Router\n\ndef register(router: Router) -> None:\n    pass\n"
+        )
+
+    def test_creates_model(self, project):
+        self._setup_routes(project)
+        result = CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        assert result.exit_code == 0, result.output
+        assert (project / "app" / "models" / "post.py").exists()
+
+    def test_creates_migration_with_columns(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string count:int"])
+        migs = list((project / "database" / "migrations").glob("*_create_posts_table.py"))
+        assert len(migs) == 1
+        src = migs[0].read_text()
+        assert 'bp.string("title")' in src
+        assert 'bp.integer("count")' in src
+
+    def test_creates_resource_class(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        assert (project / "app" / "resources" / "post_resource.py").exists()
+
+    def test_resource_to_array_has_fields(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string body:text"])
+        src = (project / "app" / "resources" / "post_resource.py").read_text()
+        assert '"title": self.model.title' in src
+        assert '"body": self.model.body' in src
+
+    def test_creates_api_controller(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        assert (project / "app" / "controllers" / "post_controller.py").exists()
+
+    def test_controller_returns_json(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        src = (project / "app" / "controllers" / "post_controller.py").read_text()
+        assert "JsonResponse" in src
+        assert "self.json(" in src
+
+    def test_controller_has_all_api_actions(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        src = (project / "app" / "controllers" / "post_controller.py").read_text()
+        for action in ("index", "store", "show", "update", "destroy"):
+            assert f"def {action}" in src
+
+    def test_appends_routes_to_api(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        src = (project / "routes" / "api.py").read_text()
+        assert "/api/posts" in src
+        assert "api.posts.index" in src
+
+    def test_no_duplicate_routes(self, project):
+        self._setup_routes(project)
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        CliRunner().invoke(make_api_command, ["Post", "--fields", "title:string"])
+        src = (project / "routes" / "api.py").read_text()
+        assert src.count("api.posts.index") == 1
+
+    def test_no_fields_still_works(self, project):
+        self._setup_routes(project)
+        result = CliRunner().invoke(make_api_command, ["Comment"])
+        assert result.exit_code == 0
+        assert (project / "app" / "models" / "comment.py").exists()

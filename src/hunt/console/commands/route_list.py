@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -7,7 +8,8 @@ import click
 
 
 @click.command("route:list")
-def route_list_command() -> None:
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON array.")
+def route_list_command(as_json: bool) -> None:
     """List all registered routes."""
     sys.path.insert(0, os.getcwd())
     try:
@@ -20,7 +22,26 @@ def route_list_command() -> None:
 
     routes = router.routes()
     if not routes:
-        click.echo("No routes registered.")
+        if as_json:
+            click.echo("[]")
+        else:
+            click.echo("No routes registered.")
+        return
+
+    if as_json:
+        rows = []
+        for route in routes:
+            action = route.action
+            action_name = getattr(action, "__qualname__", None) or str(action)
+            mw = [m.__name__ if isinstance(m, type) else str(m) for m in route._middleware]
+            rows.append({
+                "method": "|".join(route.methods),
+                "uri": route.uri,
+                "name": route.name or "",
+                "action": action_name,
+                "middleware": mw,
+            })
+        click.echo(json.dumps(rows, indent=2))
         return
 
     click.echo(f"{'Method':<10} {'URI':<40} {'Name':<25} {'Middleware'}")

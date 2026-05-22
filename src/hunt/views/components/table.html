@@ -1,0 +1,33 @@
+<div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+    <table class="min-w-full bg-white divide-y divide-gray-200">
+        {%- if headers is defined %}
+        <thead class="bg-gray-50">
+            <tr>
+                {%- for h in headers %}
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ h }}</th>
+                {%- endfor %}
+            </tr>
+        </thead>
+        {%- endif %}
+        <tbody class="divide-y divide-gray-200">
+            {%- for row in rows|default([]) %}
+            <tr class="hover:bg-gray-50 transition-colors">
+                {%- if row is mapping %}
+                    {%- for h in headers|default([]) %}
+                    <td class="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{{ row[h]|default('') }}</td>
+                    {%- endfor %}
+                {%- else %}
+                    {%- for cell in row %}
+                    <td class="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{{ cell }}</td>
+                    {%- endfor %}
+                {%- endif %}
+            </tr>
+            {%- else %}
+            <tr>
+                <td class="px-4 py-8 text-sm text-gray-400 text-center"
+                    colspan="{{ (headers|default([]))|length or 1 }}">No records found.</td>
+            </tr>
+            {%- endfor %}
+        </tbody>
+    </table>
+</div>

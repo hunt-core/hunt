@@ -1,0 +1,14 @@
+<div class="text-center py-16 px-4">
+    <div class="text-5xl mb-4 select-none">{{ icon|default('○') }}</div>
+    <h3 class="text-base font-semibold text-gray-900 mb-2">{{ title|default('Nothing here yet') }}</h3>
+    {%- if description is defined %}
+    <p class="text-sm text-gray-500 mb-6 max-w-sm mx-auto">{{ description }}</p>
+    {%- endif %}
+    {%- if action_url is defined %}
+    <a href="{{ action_url }}"
+       class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">
+        {{ action_label|default('Get started') }}
+    </a>
+    {%- endif %}
+    {{- _slot_default|default('')|safe }}
+</div>

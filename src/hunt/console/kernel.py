@@ -5,14 +5,20 @@ import click
 from hunt import __version__
 from hunt.admin.console.make_admin_resource import make_admin_resource_command
 from hunt.admin.console.publish import admin_publish_command
+from hunt.console.commands.app_info import app_info_command
 from hunt.console.commands.cache import cache_group
 from hunt.console.commands.config_cache import config_cache_command, config_clear_command
+from hunt.console.commands.config_show import config_show_command
 from hunt.console.commands.db.seed import db_seed_command
+from hunt.console.commands.db.status import db_status_command
 from hunt.console.commands.job_list import job_list_command
 from hunt.console.commands.job_run import job_run_command
 from hunt.console.commands.key_generate import key_generate_command
+from hunt.console.commands.make.api_scaffold import make_api_command
 from hunt.console.commands.make.command import make_command_command
+from hunt.console.commands.make.component import make_component_command
 from hunt.console.commands.make.controller import make_controller_command
+from hunt.console.commands.make.crud import make_crud_command
 from hunt.console.commands.make.event import make_event_command
 from hunt.console.commands.make.factory import make_factory_command
 from hunt.console.commands.make.job import make_job_command
@@ -24,7 +30,7 @@ from hunt.console.commands.make.model import make_model_command
 from hunt.console.commands.make.notification import make_notification_command
 from hunt.console.commands.make.observer import make_observer_command
 from hunt.console.commands.make.policy import make_policy_command
-from hunt.console.commands.make.request import make_request_command
+from hunt.console.commands.make.request import make_form_command, make_request_command
 from hunt.console.commands.make.resource import make_resource_command
 from hunt.console.commands.make.rule import make_rule_command
 from hunt.console.commands.make.seeder import make_seeder_command
@@ -45,6 +51,7 @@ from hunt.console.commands.serve import serve_command
 from hunt.console.commands.storage_link import storage_link_command
 from hunt.console.commands.tinker import tinker_command
 from hunt.console.commands.upgrade import upgrade_command
+from hunt.console.commands.vendor_publish import vendor_publish_command
 from hunt.console.commands.view_cache import view_cache_command, view_clear_command
 
 
@@ -91,6 +98,9 @@ cli.add_command(queue_table_command, name="queue:table")
 cli.add_command(job_list_command, name="job:list")
 cli.add_command(job_run_command, name="job:run")
 cli.add_command(db_seed_command, name="db:seed")
+cli.add_command(db_status_command, name="db:status")
+cli.add_command(app_info_command, name="app:info")
+cli.add_command(config_show_command, name="config:show")
 
 # Cache group
 cli.add_command(cache_group, name="cache")
@@ -110,6 +120,7 @@ cli.add_command(make_controller_command, name="make:controller")
 cli.add_command(make_migration_command, name="make:migration")
 cli.add_command(make_middleware_command, name="make:middleware")
 cli.add_command(make_request_command, name="make:request")
+cli.add_command(make_form_command, name="make:form")
 cli.add_command(make_event_command, name="make:event")
 cli.add_command(make_listener_command, name="make:listener")
 cli.add_command(make_seeder_command, name="make:seeder")
@@ -125,6 +136,10 @@ cli.add_command(make_observer_command, name="make:observer")
 cli.add_command(make_rule_command, name="make:rule")
 cli.add_command(make_resource_command, name="make:resource")
 cli.add_command(make_two_factor_command, name="make:2fa-controllers")
+cli.add_command(make_crud_command, name="make:crud")
+cli.add_command(make_api_command, name="make:api")
+cli.add_command(make_component_command, name="make:component")
+cli.add_command(vendor_publish_command, name="vendor:publish")
 
 # Config / view cache commands
 cli.add_command(config_cache_command, name="config:cache")

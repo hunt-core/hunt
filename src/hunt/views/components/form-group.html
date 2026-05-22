@@ -1,0 +1,32 @@
+{%- set _has_error = errors is defined and name is defined and name in errors -%}
+{%- set _border = 'border-red-400 focus:ring-red-500' if _has_error else 'border-gray-300 focus:ring-blue-500' -%}
+<div class="mb-4">
+    {%- if label is defined or name is defined %}
+    <label for="{{ name|default('') }}" class="block text-sm font-medium text-gray-700 mb-1">
+        {{- label|default(name|default(''))|replace('_', ' ')|title -}}
+        {%- if required is defined and required %}<span class="text-red-500 ml-0.5">*</span>{% endif %}
+    </label>
+    {%- endif %}
+    {%- if (type|default('text')) == 'textarea' %}
+    <textarea id="{{ name|default('') }}" name="{{ name|default('') }}" rows="{{ rows|default(4) }}"
+              class="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 {{ _border }}">{{ value|default('') }}</textarea>
+    {%- elif (type|default('text')) == 'select' %}
+    <select id="{{ name|default('') }}" name="{{ name|default('') }}"
+            class="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 {{ _border }}">
+        {%- for opt in options|default([]) %}
+        <option value="{{ opt.value|default(opt) }}"
+                {% if (value|default('')) == (opt.value|default(opt))|string %}selected{% endif %}>
+            {{- opt.label|default(opt) -}}
+        </option>
+        {%- endfor %}
+    </select>
+    {%- else %}
+    <input type="{{ type|default('text') }}" id="{{ name|default('') }}" name="{{ name|default('') }}"
+           value="{{ value|default('') }}"
+           {% if placeholder is defined %}placeholder="{{ placeholder }}"{% endif %}
+           class="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 {{ _border }}">
+    {%- endif %}
+    {%- if _has_error %}
+    <p class="text-red-600 text-xs mt-1">{{ errors[name] }}</p>
+    {%- endif %}
+</div>

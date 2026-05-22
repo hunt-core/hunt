@@ -14,10 +14,19 @@ def _generate_app_key() -> str:
     return "base64:" + base64.urlsafe_b64encode(os.urandom(32)).decode()
 
 
+_STARTERS = ("blog", "api", "saas")
+
+
 @click.command("new")
 @click.argument("name")
 @click.option("--force", is_flag=True, help="Overwrite existing directory")
-def new_command(name: str, force: bool) -> None:
+@click.option(
+    "--starter",
+    default=None,
+    type=click.Choice(_STARTERS, case_sensitive=False),
+    help="Overlay a starter kit: blog, api, or saas.",
+)
+def new_command(name: str, force: bool, starter: str | None) -> None:
     """Create a new hunt application skeleton."""
     target = Path.cwd() / name
     if target.exists():
@@ -104,7 +113,13 @@ def new_command(name: str, force: bool) -> None:
 
     _write_lock(target, _SCAFFOLD_FILES)
 
+    if starter:
+        _apply_starter(target, starter)
+
     click.echo(f"\n  Application [{name}] created successfully.\n")
+    if starter:
+        click.echo(f"  Starter kit applied: {starter}")
+        click.echo(f"  See {name}/README.md for what was created.\n")
     click.echo("  Get started:")
     click.echo(f"    cd {name}")
     click.echo("    uv venv && uv pip install -e .")
@@ -124,6 +139,17 @@ def _write_secret(path: Path, content: str) -> None:
 
 def _file_hash(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
+
+
+def _apply_starter(target: Path, starter: str) -> None:
+    """Overlay a named starter kit on top of the base skeleton."""
+    if starter == "blog":
+        from hunt.console.commands.starters.blog import apply
+    elif starter == "api":
+        from hunt.console.commands.starters.api import apply
+    else:
+        from hunt.console.commands.starters.saas import apply
+    apply(target)
 
 
 def _write_lock(root: Path, files: dict[str, str]) -> None:

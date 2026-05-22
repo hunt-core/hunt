@@ -1,0 +1,18 @@
+<aside class="w-64 bg-white border-r border-gray-200 min-h-screen px-3 py-6 flex flex-col">
+    {%- if brand is defined %}
+    <div class="px-3 mb-6 text-lg font-bold text-gray-900">{{ brand }}</div>
+    {%- endif %}
+    <nav class="space-y-1 flex-1">
+        {%- for link in links|default([]) %}
+        <a href="{{ link.url }}"
+           class="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                  {% if link.get('active', false) %}bg-blue-50 text-blue-700{% else %}text-gray-700 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+            {%- if link.get('icon') %}<span class="shrink-0">{{ link.icon }}</span>{% endif %}
+            {{- link.label -}}
+        </a>
+        {%- endfor %}
+    </nav>
+    {%- if _slot_footer is defined and _slot_footer %}
+    <div class="mt-4 pt-4 border-t">{{ _slot_footer|safe }}</div>
+    {%- endif %}
+</aside>

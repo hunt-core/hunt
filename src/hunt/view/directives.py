@@ -69,6 +69,8 @@ def preprocess(source: str) -> str:
     source = _conditionals(source)
     source = _csrf(source)
     source = _errors(source)
+    source = _old(source)
+    source = _error_summary(source)
     source = _comments(source)
     source = _auth(source)
     source = _guest(source)
@@ -427,6 +429,39 @@ def _errors(source: str) -> str:
 
 
 # ------------------------------------------------------------------
+# @old('field') / @old('field', 'default')
+# ------------------------------------------------------------------
+
+
+def _old(source: str) -> str:
+    """@old('field') → {{ old('field') }}  (restores previous input after failed submit)."""
+
+    def repl(inner: str) -> str:
+        return f"{{{{ old({inner}) }}}}"
+
+    return _replace_paren_directive(source, "old", repl)
+
+
+# ------------------------------------------------------------------
+# @errors — display all validation errors as a summary block
+# ------------------------------------------------------------------
+
+_ERRORS_HTML = (
+    "{% if errors is defined and errors %}"
+    '<div class="rounded-md bg-red-50 border border-red-200 p-4 mb-4">'
+    '<ul class="list-disc list-inside text-sm text-red-800 space-y-0.5">'
+    "{% for _ef, _ems in errors.items() %}{% for _em in _ems %}<li>{{ _em }}</li>{% endfor %}{% endfor %}"
+    "</ul></div>"
+    "{% endif %}"
+)
+
+
+def _error_summary(source: str) -> str:
+    """@errors → Tailwind error-summary <div> listing all field messages."""
+    return source.replace("@errors", _ERRORS_HTML)
+
+
+# ------------------------------------------------------------------
 # {{-- comments --}}
 # ------------------------------------------------------------------
 
@@ -556,13 +591,218 @@ def _prepend(source: str) -> str:
 # ------------------------------------------------------------------
 
 
-def _component(source: str) -> str:
-    def repl(m: re.Match) -> str:
-        tmpl = m.group(1).strip("'\"").replace(".", "/") + ".html"
-        return f"{{% include '{tmpl}' %}}"
+def _split_by_sep(s: str, sep: str, maxsplit: int = -1) -> list[str]:
+    """Split *s* on *sep* at bracket/string depth 0."""
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_string: str | None = None
+    splits = 0
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if in_string:
+            if ch == "\\" and i + 1 < len(s):
+                current.append(s[i : i + 2])
+                i += 2
+                continue
+            if ch == in_string:
+                in_string = None
+            current.append(ch)
+        elif ch in ('"', "'"):
+            in_string = ch
+            current.append(ch)
+        elif ch in ("(", "[", "{"):
+            depth += 1
+            current.append(ch)
+        elif ch in (")", "]", "}"):
+            depth -= 1
+            current.append(ch)
+        elif depth == 0 and s[i : i + len(sep)] == sep:
+            if maxsplit < 0 or splits < maxsplit:
+                parts.append("".join(current))
+                current = []
+                splits += 1
+                i += len(sep)
+                continue
+            else:
+                current.append(ch)
+        else:
+            current.append(ch)
+        i += 1
+    parts.append("".join(current))
+    return parts
 
-    source = re.sub(r"@component\(\s*(['\"][\w./]+['\"])[^)]*\)", repl, source)
-    source = source.replace("@endcomponent", "")
-    source = re.sub(r"@slot\([^)]*\)", "", source)
-    source = source.replace("@endslot", "")
-    return source
+
+def _normalize_php_array(s: str) -> str:
+    """Convert PHP-style ['key' => val] to {'key': val}."""
+    s = s.strip()
+    if not s.startswith("["):
+        return s
+    inner = s[1:-1]
+    # Replace => with : outside of quoted strings
+    result: list[str] = []
+    in_string: str | None = None
+    j = 0
+    while j < len(inner):
+        ch = inner[j]
+        if in_string:
+            if ch == "\\" and j + 1 < len(inner):
+                result.append(inner[j : j + 2])
+                j += 2
+                continue
+            if ch == in_string:
+                in_string = None
+            result.append(ch)
+        elif ch in ('"', "'"):
+            in_string = ch
+            result.append(ch)
+        elif inner[j : j + 2] == "=>":
+            result.append(":")
+            j += 2
+            continue
+        else:
+            result.append(ch)
+        j += 1
+    return "{" + "".join(result) + "}"
+
+
+def _props_to_with_args(props_str: str) -> str:
+    """
+    Convert a dict/array literal to Jinja2 ``{% with %}`` keyword arguments.
+
+    ``{'title': 'Hello', 'rows': items}`` → ``title='Hello', rows=items``
+    """
+    s = _normalize_php_array(props_str.strip())
+    if not s:
+        return ""
+    # Strip outer braces
+    if s.startswith("{") and s.endswith("}"):
+        s = s[1:-1].strip()
+    if not s:
+        return ""
+    pairs = _split_by_sep(s, ",")
+    assignments: list[str] = []
+    for pair in pairs:
+        pair = pair.strip()
+        if not pair:
+            continue
+        parts = _split_by_sep(pair, ":", maxsplit=1)
+        if len(parts) != 2:
+            continue
+        key = parts[0].strip().strip("'\"")
+        val = parts[1].strip()
+        if not key:
+            continue
+        assignments.append(f"{key}={val}")
+    return ", ".join(assignments)
+
+
+def _parse_component_open(inner: str) -> tuple[str, str]:
+    """
+    Parse the inside of ``@component(...)`` → (name, with_args).
+
+    *inner* is the raw string between the outer parentheses, e.g.
+    ``'card', {'title': 'Hello'}`` or just ``'card'``.
+    """
+    name_match = re.match(r"\s*['\"]([^'\"]+)['\"]\s*", inner)
+    if not name_match:
+        return "unknown", ""
+    name = name_match.group(1)
+    rest = inner[name_match.end():].lstrip().lstrip(",").lstrip()
+    with_args = _props_to_with_args(rest) if rest else ""
+    return name, with_args
+
+
+def _extract_slots(content: str) -> tuple[dict[str, str], str]:
+    """
+    Extract ``@slot('name')…@endslot`` blocks from *content*.
+
+    Returns ``(slots_dict, remaining_content)`` where *remaining_content*
+    has all slot blocks removed.
+    """
+    slots: dict[str, str] = {}
+
+    def slot_repl(m: re.Match) -> str:
+        slots[m.group(1)] = m.group(2)
+        return ""
+
+    remaining = re.sub(
+        r"@slot\(\s*['\"](\w+)['\"]\s*\)(.*?)@endslot",
+        slot_repl,
+        content,
+        flags=re.DOTALL,
+    )
+    return slots, remaining
+
+
+def _component(source: str) -> str:
+    """
+    Transform ``@component`` directives into Jinja2 includes with props.
+
+    Self-closing::
+
+        @component('alert', {'type': 'success', 'message': msg})
+        →
+        {% with type='success', message=msg %}
+        {% include 'components/alert.html' %}
+        {% endwith %}
+
+    Block form with slots::
+
+        @component('modal', {'title': 'Confirm'})
+            @slot('footer')<button>OK</button>@endslot
+            Body text
+        @endcomponent
+        →
+        {% set _slot_footer %}<button>OK</button>{% endset %}
+        {% set _slot_default %}Body text{% endset %}
+        {% with title='Confirm' %}{% include 'components/modal.html' %}{% endwith %}
+    """
+    result: list[str] = []
+    i = 0
+    pattern = "@component("
+
+    while i < len(source):
+        idx = source.find(pattern, i)
+        if idx == -1:
+            result.append(source[i:])
+            break
+
+        result.append(source[i:idx])
+        paren_start = idx + len(pattern) - 1
+        paren_end = _find_matching_paren(source, paren_start)
+        inner = source[paren_start + 1 : paren_end - 1]
+        name, with_args = _parse_component_open(inner)
+
+        # Determine if this is a block form (@endcomponent present)
+        rest = source[paren_end:]
+        end_tag = "@endcomponent"
+        end_idx = rest.find(end_tag)
+
+        if end_idx != -1:
+            block_content = rest[:end_idx]
+            slots, default_content = _extract_slots(block_content)
+
+            lines: list[str] = []
+            for slot_name, slot_html in slots.items():
+                lines.append(f"{{% set _slot_{slot_name} %}}{slot_html}{{% endset %}}")
+            stripped_default = default_content.strip()
+            if stripped_default:
+                lines.append(f"{{% set _slot_default %}}{stripped_default}{{% endset %}}")
+            tmpl = f"components/{name}.html"
+            if with_args:
+                lines.append(f"{{% with {with_args} %}}{{% include '{tmpl}' %}}{{% endwith %}}")
+            else:
+                lines.append(f"{{% include '{tmpl}' %}}")
+            result.append("".join(lines))
+            i = paren_end + end_idx + len(end_tag)
+        else:
+            tmpl = f"components/{name}.html"
+            if with_args:
+                result.append(f"{{% with {with_args} %}}{{% include '{tmpl}' %}}{{% endwith %}}")
+            else:
+                result.append(f"{{% include '{tmpl}' %}}")
+            i = paren_end
+
+    return "".join(result)

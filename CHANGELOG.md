@@ -11,6 +11,62 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.36] — 2026-05-22
+
+### Added
+
+**Scaffolding (M20)**
+- **`hunt make:crud <Name> --fields="col:type ..."`** — single command that generates a model, timestamped migration (with typed columns), resourceful controller (index/create/store/show/edit/update/destroy), four Tailwind-styled Blade views (index, create, edit, show), and appends CRUD routes to `routes/web.py`. Running the command a second time for the same name skips route appending rather than duplicating.
+- **`hunt make:api <Name> --fields="col:type ..."`** — generates a model, migration, API controller (JSON responses, no views), an `ApiResource`-style transformer class, and appends REST routes to `routes/api.py`.
+- **`hunt.console.commands.make.field_types`** — shared utility used by both scaffold commands: `parse_fields()` parses `"col:type ..."` strings; `migration_columns()` renders Blueprint column lines; `fillable_list()` renders a Python list literal. Supported short-hands: `string`/`str`, `text`, `int`/`integer`, `bigint`, `smallint`, `float`, `decimal`, `bool`/`boolean`, `timestamp`, `date`, `json`, `uuid` — unknown types default to `string`.
+
+**UI Component Library (M21)**
+- **`@component('name', {props})`** — self-closing directive that renders `resources/views/components/<name>.html` (app override) or `hunt/views/components/<name>.html` (built-in), passing all props as scoped variables via a Jinja2 `{% with %}` block. Supports both Python dict syntax (`{'key': val}`) and PHP-style array syntax (`['key' => val]`). Nested list/dict values work as props (e.g. `{'headers': ['A', 'B']}`).
+- **Block form** — `@component('modal', {props})` … `@endcomponent` captures body content as `_slot_default` and named `@slot('name')` … `@endslot` blocks as `_slot_<name>` variables, all accessible inside the component template.
+- **10 built-in Tailwind components** in `hunt/views/components/`:
+  - `alert` — success / error / warning / info variants with optional `title`
+  - `badge` — pill badge with red / green / blue / yellow / purple / gray colors
+  - `button` — primary / secondary / danger / ghost variants, `disabled` support
+  - `card` — white card with optional `title`, `subtitle`, body, and `footer` slot
+  - `table` — responsive table from `headers` (list) + `rows` (list of lists or dicts); graceful empty state
+  - `modal` — `<dialog>` element with `id`, `title`, body, and `footer` slot
+  - `navbar` — responsive top bar with `brand`, `links` list, and default slot for extra actions
+  - `sidebar` — fixed-width sidebar with `links` list (supports `active`, `icon`), `brand`, and footer slot
+  - `empty-state` — centered empty-state with optional icon, `description`, and CTA link
+  - `form-group` — label + input/textarea/select combo with inline validation errors; supports `required`, `placeholder`, `options`
+- **`hunt make:component <Name>`** — creates `resources/views/components/<name>.html` stub; uses PascalCase → kebab-case naming (e.g. `UserCard` → `user-card.html`).
+- **`hunt vendor:publish --tag=components`** — copies all 10 built-in components into `resources/views/components/` for customisation; respects `--force` to overwrite existing files.
+
+**Form Requests (M22)**
+- **`FormRequest.validated()` now returns only declared fields** — previously returned all raw request data; now filters to the top-level keys present in `rules()`, providing mass-assignment safety. Nested rules (`'address.city'`) retain the full top-level key (`address`).
+- **`FormRequest.after_validation(validator)`** — hook called after validation passes; override in subclasses to add cross-field checks or secondary validation without writing a `try/except` in the controller.
+- **`FormRequest.input(key, default=None)`** — delegates to the underlying `Request.input()` for reading individual values without calling `validated()`.
+- **`FormRequest.all()`** — returns all raw request input (unvalidated); delegates to `Request.all()`.
+- **`FormRequest.file(key)`** — delegates to `Request.file()` for uploaded files.
+- **`hunt make:form <Name>`** — alias for `make:request`; produces the same `FormRequest` subclass stub in `app/requests/`.
+- **`@old('field')` directive** — expands to `{{ old('field') }}`; restores previous input after a failed form submit. Accepts an optional default: `@old('email', '')`.
+- **`@errors` directive** — expands to a Tailwind-styled error-summary `<div>` that lists all validation messages; resolves as a no-op when `errors` is empty or undefined.
+
+**App Introspection CLI (M23)**
+- **`hunt route:list --json`** — new `--json` flag outputs all registered routes as a JSON array with `method`, `uri`, `name`, `action`, and `middleware` fields; plain output unchanged.
+- **`hunt db:status [--json]`** — lists every migration file with its run/pending status; `--json` outputs a JSON array of `{"migration": str, "ran": bool}` objects.
+- **`hunt config:show [key] [--json] [--no-redact]`** — displays resolved config values from `config/`; sensitive keys (`password`, `secret`, `key`, `token`, etc.) are redacted by default; `--no-redact` shows raw values; optional `key` argument filters to a specific key or namespace (e.g. `app` or `app.name`).
+- **`hunt app:info [--json]`** — shows a full application summary: framework version, Python version, env/debug/URL settings, counts of routes/models/controllers/middleware/providers/jobs/migrations (ran vs pending), and active driver names for database/session/queue/cache/mail.
+
+**Starter Kits (M24)**
+- **`hunt new <name> --starter=<kit>`** — new `--starter` flag overlays a pre-built kit on the base skeleton after creation; accepts `blog`, `api`, or `saas`.
+- **`blog` starter** — generates `Post` / `Category` / `Tag` models + migrations + factories; `PostController` with full CRUD; 4 Tailwind views (index, show, create, edit); `PostResource` and `CategoryResource` admin resources with dashboard metrics; blog-aware `layout.html` (nav with Posts / Login / Register); routes for all post actions wired by name.
+- **`api` starter** — versioned `UserController` at `app/controllers/api/v1/`; `UserResource` JSON transformer with `to_array()` + `collection()`; `ApiAuth` Bearer-token middleware stub; `ApiRateLimit` (60 req/min); `/api/v1` route group with OpenAPI-style route docstring.
+- **`saas` starter** — `Team` + `Membership` models; `BillingController` stub (plan selector, Stripe placeholders, webhook endpoint); `TenantMiddleware` for subdomain-based tenancy; `TeamResource` admin with plan metrics (Pro / Enterprise counts); `teams` migration with `plan`, `stripe_customer_id`, `stripe_subscription_id` columns.
+- Each starter ships a **`README.md`** inside the generated app explaining what was created and how to run it.
+
+**Live Reload Dev Server (M25)**
+- **`hunt serve --reload`** now passes targeted `--reload-dirs` to Uvicorn covering only `app/`, `config/`, `resources/`, and `routes/` (directories that exist in the project); previously passed reload to Uvicorn without any directory scoping.
+- **`hunt serve --open`** — opens `http://{host}:{port}` in the default browser 1.5 seconds after the server starts (non-blocking; uses a daemon thread).
+- **Debug watch message** — when `APP_DEBUG=true` and `--reload` is active, the startup output now prints `Watching for changes in: <dirs>` so agents and developers can confirm which directories are being watched.
+
+---
+
 ## [0.2.30] — 2026-05-20
 
 ### Added
