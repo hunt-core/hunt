@@ -28,7 +28,7 @@ def _write_controllers(cwd: Path) -> None:
 
 
 def _write_templates(cwd: Path) -> None:
-    templates_dir = cwd / "templates" / "auth" / "two_factor"
+    templates_dir = cwd / "resources" / "views" / "auth" / "two_factor"
     templates_dir.mkdir(parents=True, exist_ok=True)
     for name, content in _TEMPLATES.items():
         dest = templates_dir / name

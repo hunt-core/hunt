@@ -11,6 +11,15 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.41] — 2026-05-22
+
+### Fixed
+
+- **2FA views missing from package** — Added all five two-factor authentication views (`setup`, `confirm`, `recovery`, `challenge`, `manage`) to `src/hunt/views/auth/two_factor/`. The `ViewFactory` falls back to built-in package views when no app override exists, so 2FA routes now render correctly after running `hunt make:2fa-controllers` without any additional steps.
+- **`make:2fa-controllers` wrote views to wrong path** — `_write_templates` was writing to `templates/auth/two_factor/` instead of `resources/views/auth/two_factor/`. Views written by the command now land in the correct app views directory and can override the built-in package views.
+
+---
+
 ## [0.2.40] — 2026-05-22
 
 ### Added
