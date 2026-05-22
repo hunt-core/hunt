@@ -709,7 +709,7 @@ def _parse_component_open(inner: str) -> tuple[str, str]:
     if not name_match:
         return "unknown", ""
     name = name_match.group(1)
-    rest = inner[name_match.end():].lstrip().lstrip(",").lstrip()
+    rest = inner[name_match.end() :].lstrip().lstrip(",").lstrip()
     with_args = _props_to_with_args(rest) if rest else ""
     return name, with_args
 

@@ -30,6 +30,7 @@ def make_api_command(name: str, fields: str) -> None:
 
 # ---------------------------------------------------------------------------
 
+
 def _make_model(class_name: str, table: str, fields: list[tuple[str, str]]) -> None:
     from hunt.console.commands.make.field_types import fillable_list
 
@@ -47,7 +48,7 @@ def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) 
     timestamp = time.strftime("%Y_%m_%d_%H%M%S")
     mig_class = Str.pascal(f"create_{table}_table")
     col_lines = migration_columns(fields) if fields else ""
-    body = (f"\n{col_lines}\n" if col_lines else "")
+    body = f"\n{col_lines}\n" if col_lines else ""
     content = _MIGRATION_STUB.replace("{{class}}", mig_class).replace("{{table}}", table).replace("{{columns}}", body)
     filename = f"{timestamp}_create_{table}_table"
     out = Path.cwd() / "database" / "migrations" / f"{filename}.py"
@@ -59,8 +60,7 @@ def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) 
 def _make_resource_class(class_name: str, snake: str, fields: list[tuple[str, str]]) -> None:
     col_lines = _resource_to_array(fields)
     content = (
-        _RESOURCE_STUB
-        .replace("{{class}}", f"{class_name}Resource")
+        _RESOURCE_STUB.replace("{{class}}", f"{class_name}Resource")
         .replace("{{model_class}}", class_name)
         .replace("{{model_snake}}", snake)
         .replace("{{model_import}}", f"app.models.{snake}")
@@ -72,15 +72,12 @@ def _make_resource_class(class_name: str, snake: str, fields: list[tuple[str, st
     click.echo(f"  Created Resource:   {out.relative_to(Path.cwd())}")
 
 
-def _make_controller(
-    class_name: str, snake: str, route_prefix: str, fields: list[tuple[str, str]]
-) -> None:
+def _make_controller(class_name: str, snake: str, route_prefix: str, fields: list[tuple[str, str]]) -> None:
     col_names = [col for col, _ in fields]
     store_lines = _store_lines(col_names, class_name)
     update_lines = _update_lines(col_names)
     content = (
-        _CONTROLLER_STUB
-        .replace("{{class}}", f"{class_name}Controller")
+        _CONTROLLER_STUB.replace("{{class}}", f"{class_name}Controller")
         .replace("{{model_class}}", class_name)
         .replace("{{model_snake}}", snake)
         .replace("{{model_import}}", f"app.models.{snake}")
@@ -102,7 +99,9 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
         click.echo("  Warning: routes/api.py not found — routes not appended.", err=True)
         return
 
-    block = _ROUTES_BLOCK.replace("{{class}}", class_name).replace("{{snake}}", snake).replace("{{prefix}}", route_prefix)
+    block = (
+        _ROUTES_BLOCK.replace("{{class}}", class_name).replace("{{snake}}", snake).replace("{{prefix}}", route_prefix)
+    )
     existing = routes_file.read_text()
     if f"/{route_prefix}" in existing:
         click.echo(f"  Skipped Routes:     /api/{route_prefix} already in routes/api.py")
@@ -113,6 +112,7 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
 
 # ---------------------------------------------------------------------------
 # helpers
+
 
 def _resource_to_array(fields: list[tuple[str, str]]) -> str:
     if not fields:

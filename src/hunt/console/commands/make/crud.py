@@ -31,6 +31,7 @@ def make_crud_command(name: str, fields: str) -> None:
 
 # ---------------------------------------------------------------------------
 
+
 def _make_model(class_name: str, table: str, fields: list[tuple[str, str]]) -> None:
     from hunt.console.commands.make.field_types import fillable_list
 
@@ -48,7 +49,7 @@ def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) 
     timestamp = time.strftime("%Y_%m_%d_%H%M%S")
     mig_class = Str.pascal(f"create_{table}_table")
     col_lines = migration_columns(fields) if fields else ""
-    body = (f"\n{col_lines}\n" if col_lines else "")
+    body = f"\n{col_lines}\n" if col_lines else ""
     content = _MIGRATION_STUB.replace("{{class}}", mig_class).replace("{{table}}", table).replace("{{columns}}", body)
     filename = f"{timestamp}_create_{table}_table"
     out = Path.cwd() / "database" / "migrations" / f"{filename}.py"
@@ -58,15 +59,18 @@ def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) 
 
 
 def _make_controller(
-    class_name: str, snake: str, table: str, route_prefix: str,
-    view_dir: str, fields: list[tuple[str, str]],
+    class_name: str,
+    snake: str,
+    table: str,
+    route_prefix: str,
+    view_dir: str,
+    fields: list[tuple[str, str]],
 ) -> None:
     col_names = [col for col, _ in fields]
     store_lines = _store_lines(col_names, class_name)
     update_lines = _update_lines(col_names)
     content = (
-        _CONTROLLER_STUB
-        .replace("{{class}}", f"{class_name}Controller")
+        _CONTROLLER_STUB.replace("{{class}}", f"{class_name}Controller")
         .replace("{{model_class}}", class_name)
         .replace("{{model_snake}}", snake)
         .replace("{{model_import}}", f"app.models.{snake}")
@@ -91,14 +95,19 @@ def _make_views(view_dir: str, class_name: str, route_prefix: str, fields: list[
     table_cells = "".join(f"                    <td>{{{{ item.{col} }}}}</td>\n" for col in col_names)
 
     views = {
-        "index.html": _VIEW_INDEX.replace("{{class}}", class_name).replace("{{route_prefix}}", route_prefix)
-                                 .replace("{{table_headers}}", table_headers).replace("{{table_cells}}", table_cells),
-        "create.html": _VIEW_CREATE.replace("{{class}}", class_name).replace("{{route_prefix}}", route_prefix)
-                                    .replace("{{form_fields}}", form_fields_html),
-        "edit.html": _VIEW_EDIT.replace("{{class}}", class_name).replace("{{route_prefix}}", route_prefix)
-                                 .replace("{{form_fields}}", form_fields_html),
-        "show.html": _VIEW_SHOW.replace("{{class}}", class_name).replace("{{route_prefix}}", route_prefix)
-                                 .replace("{{field_rows}}", _show_fields_html(col_names)),
+        "index.html": _VIEW_INDEX.replace("{{class}}", class_name)
+        .replace("{{route_prefix}}", route_prefix)
+        .replace("{{table_headers}}", table_headers)
+        .replace("{{table_cells}}", table_cells),
+        "create.html": _VIEW_CREATE.replace("{{class}}", class_name)
+        .replace("{{route_prefix}}", route_prefix)
+        .replace("{{form_fields}}", form_fields_html),
+        "edit.html": _VIEW_EDIT.replace("{{class}}", class_name)
+        .replace("{{route_prefix}}", route_prefix)
+        .replace("{{form_fields}}", form_fields_html),
+        "show.html": _VIEW_SHOW.replace("{{class}}", class_name)
+        .replace("{{route_prefix}}", route_prefix)
+        .replace("{{field_rows}}", _show_fields_html(col_names)),
     }
     for filename, content in views.items():
         f = base / filename
@@ -112,7 +121,9 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
         click.echo("  Warning: routes/web.py not found — routes not appended.", err=True)
         return
 
-    block = _ROUTES_BLOCK.replace("{{class}}", class_name).replace("{{snake}}", snake).replace("{{prefix}}", route_prefix)
+    block = (
+        _ROUTES_BLOCK.replace("{{class}}", class_name).replace("{{snake}}", snake).replace("{{prefix}}", route_prefix)
+    )
     existing = routes_file.read_text()
     if f"/{route_prefix}" in existing:
         click.echo(f"  Skipped Routes:     /{route_prefix} already in routes/web.py")
@@ -123,6 +134,7 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
 
 # ---------------------------------------------------------------------------
 # helpers
+
 
 def _store_lines(cols: list[str], class_name: str) -> str:
     if not cols:
@@ -147,8 +159,8 @@ def _form_fields_html(cols: list[str]) -> str:
             f'                <label class="block text-sm font-medium text-gray-700 mb-1">{label}</label>\n'
             f'                <input type="text" name="{col}" value="{{{{ old(\'{col}\') }}}}" '
             f'class="w-full border border-gray-300 rounded px-3 py-2">\n'
-            f'                @error(\'{col}\')<p class="text-red-600 text-sm mt-1">{{{{ message }}}}</p>@enderror\n'
-            f'            </div>'
+            f"                @error('{col}')<p class=\"text-red-600 text-sm mt-1\">{{{{ message }}}}</p>@enderror\n"
+            f"            </div>"
         )
     return "\n".join(parts)
 
@@ -161,7 +173,7 @@ def _show_fields_html(cols: list[str]) -> str:
             f'            <div class="py-2 border-b">\n'
             f'                <span class="font-medium text-gray-600">{label}:</span>\n'
             f'                <span class="ml-2">{{{{ item.{col} }}}}</span>\n'
-            f'            </div>'
+            f"            </div>"
         )
     return "\n".join(parts)
 

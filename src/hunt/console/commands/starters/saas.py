@@ -1,4 +1,5 @@
 """SaaS starter kit — teams, memberships, billing stub, subdomain routing."""
+
 from __future__ import annotations
 
 from pathlib import Path

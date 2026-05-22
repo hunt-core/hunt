@@ -1,4 +1,5 @@
 """API starter kit — versioned routes, resources, token auth stub, rate limiting."""
+
 from __future__ import annotations
 
 from pathlib import Path

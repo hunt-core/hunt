@@ -34,13 +34,15 @@ def route_list_command(as_json: bool) -> None:
             action = route.action
             action_name = getattr(action, "__qualname__", None) or str(action)
             mw = [m.__name__ if isinstance(m, type) else str(m) for m in route._middleware]
-            rows.append({
-                "method": "|".join(route.methods),
-                "uri": route.uri,
-                "name": route.name or "",
-                "action": action_name,
-                "middleware": mw,
-            })
+            rows.append(
+                {
+                    "method": "|".join(route.methods),
+                    "uri": route.uri,
+                    "name": route.name or "",
+                    "action": action_name,
+                    "middleware": mw,
+                }
+            )
         click.echo(json.dumps(rows, indent=2))
         return
 

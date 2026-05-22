@@ -28,9 +28,7 @@ def serve_command(host: str, port: int, reload: bool, open_browser: bool) -> Non
 
     reload_dirs: list[str] | None = None
     if reload:
-        reload_dirs = [
-            str(cwd / d) for d in _WATCH_DIRS if (cwd / d).is_dir()
-        ]
+        reload_dirs = [str(cwd / d) for d in _WATCH_DIRS if (cwd / d).is_dir()]
         debug = os.environ.get("APP_DEBUG", "false").lower() == "true"
         if debug and reload_dirs:
             watching = ", ".join(f"{d}/" for d in _WATCH_DIRS if (cwd / d).is_dir())

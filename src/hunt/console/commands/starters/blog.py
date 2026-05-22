@@ -1,4 +1,5 @@
 """Blog starter kit — Post / Category / Tag models, CRUD controller, views, routes."""
+
 from __future__ import annotations
 
 from pathlib import Path
