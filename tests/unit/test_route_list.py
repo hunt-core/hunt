@@ -1,4 +1,6 @@
 """Tests for the route:list command."""
+import sys
+
 import pytest
 from click.testing import CliRunner
 from unittest.mock import MagicMock, patch
@@ -9,11 +11,15 @@ from hunt.console.commands.route_list import route_list_command
 @pytest.fixture()
 def project(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delitem(sys.modules, "bootstrap", raising=False)
+    monkeypatch.delitem(sys.modules, "bootstrap.app", raising=False)
     return tmp_path
 
 
 def test_error_when_bootstrap_cannot_be_loaded(project):
-    result = CliRunner().invoke(route_list_command, [])
+    # Force an import failure regardless of sys.path state from other tests.
+    with patch.dict("sys.modules", {"bootstrap": None, "bootstrap.app": None}):
+        result = CliRunner().invoke(route_list_command, [])
 
     assert result.exit_code == 0
     assert "Could not load routes" in result.output
