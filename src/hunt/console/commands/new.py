@@ -110,6 +110,8 @@ def new_command(name: str, force: bool, starter: str | None) -> None:
     _write(target / "resources" / "views" / "layout.html", _LAYOUT_VIEW)
     _write(target / "public" / "index.py", _PUBLIC_INDEX)
     _write(target / "tests" / "__init__.py", "")
+    _write(target / "Dockerfile", _DOCKERFILE.replace("{{name}}", name))
+    _write(target / ".dockerignore", _DOCKERIGNORE)
 
     _write_lock(target, _SCAFFOLD_FILES)
 
@@ -200,6 +202,41 @@ dist/
 .pytest_cache/
 """
 
+_DOCKERFILE = """\
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e .
+
+COPY . .
+
+ENV APP_ENV=production \\
+    APP_DEBUG=false \\
+    PORT=8000
+
+EXPOSE 8000
+
+CMD hunt serve:production --host 0.0.0.0 --port 8000
+"""
+
+_DOCKERIGNORE = """\
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.git/
+.pytest_cache/
+storage/framework/views/
+storage/logs/
+database/*.sqlite
+*.egg-info/
+dist/
+"""
+
 _ENV_EXAMPLE = """\
 APP_NAME=hunt
 APP_ENV=local
@@ -217,6 +254,8 @@ QUEUE_DRIVER=sync
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_PASSWORD=
+
+# MAX_BODY_SIZE=10485760
 
 CACHE_DRIVER=file
 SESSION_LIFETIME=7200

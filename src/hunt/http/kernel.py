@@ -218,15 +218,26 @@ class HttpKernel:
             pipeline = make_layer(instance, current_next)
         return pipeline
 
-    _MAX_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+    _DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+
+    @classmethod
+    def _max_body_bytes(cls) -> int:
+        raw = os.environ.get("MAX_BODY_SIZE", "")
+        if raw:
+            try:
+                return int(raw)
+            except ValueError:
+                pass
+        return cls._DEFAULT_MAX_BODY_BYTES
 
     @classmethod
     async def _read_body(cls, receive: Any) -> bytes:
+        limit = cls._max_body_bytes()
         body = b""
         while True:
             message = await receive()
             body += message.get("body", b"")
-            if len(body) > cls._MAX_BODY_BYTES:
+            if len(body) > limit:
                 raise HttpException(413, "Request body too large.")
             if not message.get("more_body", False):
                 break

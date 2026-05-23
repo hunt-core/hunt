@@ -11,6 +11,29 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.44] — 2026-05-23
+
+### Added
+
+**M34 — TrustProxies middleware**
+- **`TrustProxies`** middleware (`hunt.http.middleware.trust_proxies`) — when a request arrives from a configured trusted proxy, rewrites `request.ip` from `X-Forwarded-For` and `request.scheme` from `X-Forwarded-Proto`. Without this, all requests behind nginx/ALB appear to come from the proxy IP, breaking rate limiting, session `Secure` detection, and IP logging. Configure via `TRUSTED_PROXIES` env var (comma-separated IPs/CIDRs) or subclass `proxies` class attribute. Set `TRUSTED_PROXIES=*` to trust all (development only).
+
+**M35 — Configurable body size limit**
+- `MAX_BODY_SIZE` env var overrides the default 10 MB limit on request bodies. Set to bytes (e.g. `MAX_BODY_SIZE=52428800` for 50 MB). Requests exceeding the limit still return 413 immediately. The `.env.example` scaffold includes a commented-out example.
+
+**M36 — Docker scaffold**
+- `hunt new` now writes a `Dockerfile` and `.dockerignore` to every new project. The Dockerfile uses `python:3.12-slim`, installs dependencies, and runs `hunt serve:production` on port 8000.
+
+**M37 — Maintenance mode**
+- **`hunt down [--message "..."] [--retry 60]`** — writes a `.maintenance` sentinel file and puts the app into maintenance mode. All visitors receive a 503 with `Retry-After` header.
+- **`hunt up`** — removes `.maintenance` and restores normal service.
+- **`MaintenanceMode`** middleware (`hunt.http.middleware.maintenance`) — checks for the sentinel file on every request. Subclass and set `bypass_ips` to allow specific IPs through during maintenance (e.g. your own IP for smoke-testing before going live).
+
+**M38 — `migrate:status --pending` exit code**
+- `hunt migrate:status --pending` exits with code 1 if any migrations have not been run. Use in CI/CD pipelines to gate deployments: `hunt migrate:status --pending && hunt serve:production`.
+
+---
+
 ## [0.2.43] — 2026-05-22
 
 ### Added

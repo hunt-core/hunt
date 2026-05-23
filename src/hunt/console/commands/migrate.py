@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
@@ -70,7 +71,8 @@ def migrate_fresh() -> None:
 
 
 @migrate_group.command("status")
-def migrate_status() -> None:
+@click.option("--pending", is_flag=True, default=False, help="Exit 1 if any migrations are pending (for CI/CD).")
+def migrate_status(pending: bool) -> None:
     """Show status of all migrations."""
     migrator = _get_migrator()
     statuses = migrator.status()
@@ -79,6 +81,11 @@ def migrate_status() -> None:
         return
     click.echo(f"{'Migration':<50} {'Status'}")
     click.echo("-" * 60)
+    has_pending = False
     for s in statuses:
+        if not s["ran"]:
+            has_pending = True
         status = click.style("Ran", fg="green") if s["ran"] else click.style("Pending", fg="yellow")
         click.echo(f"{s['migration']:<50} {status}")
+    if pending and has_pending:
+        sys.exit(1)
