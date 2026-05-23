@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qs
@@ -259,8 +260,10 @@ class Request:
 
             if filename is not None:
                 ct = headers.get("content-type", "application/octet-stream")
-                # Strip null bytes and CRLF to prevent header-injection / path traversal
+                # Strip null bytes, CRLF, and path components so callers that use
+                # the filename directly cannot escape a storage root via ../
                 safe_filename = filename.replace("\x00", "").replace("\r", "").replace("\n", "")
+                safe_filename = os.path.basename(safe_filename) or "upload"
                 files[name] = UploadedFile(filename=safe_filename, content_type=ct, _data=body_data)
             else:
                 fields[name] = body_data.decode("utf-8", errors="replace")

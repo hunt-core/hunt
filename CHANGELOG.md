@@ -11,6 +11,15 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.45] — 2026-05-23
+
+### Fixed
+
+- **`TrustProxies` — `trust_all` returned wrong IP** (`trust_proxies.py`): when `TRUSTED_PROXIES=*`, the loop broke on the first (rightmost) IP in `X-Forwarded-For`, returning the last proxy's address instead of the real client IP. The loop is now skipped entirely when `trust_all` is set and `ips[0]` (the leftmost, real client IP) is used directly.
+- **Uploaded filename path traversal** (`request.py`): `UploadedFile.filename` could contain `../` sequences, which would surprise code that consumed the filename directly before calling `store()`. The filename is now reduced to its basename via `os.path.basename()` at parse time, so the stored value is always a plain filename with no directory components. The storage layer's own root-confinement check remains as a second line of defence.
+
+---
+
 ## [0.2.44] — 2026-05-23
 
 ### Added

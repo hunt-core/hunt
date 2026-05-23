@@ -92,10 +92,11 @@ class TrustProxies(Middleware):
         ips = [ip.strip() for ip in xff.split(",")]
         # Walk right-to-left; the real client IP is the leftmost one not from a trusted proxy
         real_ip = ips[0]
-        for ip in reversed(ips):
-            if trust_all or not _ip_in_networks(ip, networks):
-                real_ip = ip
-                break
+        if not trust_all:
+            for ip in reversed(ips):
+                if not _ip_in_networks(ip, networks):
+                    real_ip = ip
+                    break
         client = request._scope.get("client", ("127.0.0.1", 0))
         request._scope["client"] = (real_ip, client[1] if client else 0)
 
