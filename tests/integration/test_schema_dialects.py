@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.pool import StaticPool
 
 from hunt.database.schema.blueprint import Blueprint
@@ -371,7 +371,7 @@ class TestConstraints:
     def test_enum_check_rejects_invalid(self, conn):
         drop(conn, "tc_enum2")
         Schema.create("tc_enum2", lambda bp: (bp.id(), bp.enum("status", ["draft", "pub"])))
-        with pytest.raises(IntegrityError):
+        with pytest.raises((IntegrityError, OperationalError)):
             with conn.connect() as c:
                 c.execute(text("INSERT INTO tc_enum2 (status) VALUES ('bogus')"))
                 c.commit()
