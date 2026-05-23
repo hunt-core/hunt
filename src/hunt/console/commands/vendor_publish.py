@@ -19,7 +19,9 @@ def _components_src() -> Path:
 
 
 @click.command("vendor:publish")
-@click.option("--tag", default=None, metavar="TAG", help="Publish a specific asset group (e.g. views, views:auth, components).")
+@click.option(
+    "--tag", default=None, metavar="TAG", help="Publish a specific asset group (e.g. views, views:auth, components)."
+)
 @click.option("--force", is_flag=True, help="Overwrite existing files.")
 def vendor_publish_command(tag: str | None, force: bool) -> None:
     """Publish framework assets into the application for customisation."""
