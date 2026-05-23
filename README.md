@@ -312,6 +312,19 @@ Templates live in `resources/views/` and use hunt-style syntax. Files use the `.
 | `@guest` / `@endguest` | Guest user block |
 | `{{-- comment --}}` | Template comment (not rendered) |
 
+### Overriding framework views
+
+Publish the built-in auth and component templates into your project to customise them:
+
+```bash
+hunt vendor:publish                        # all framework views
+hunt vendor:publish --tag views:auth       # auth views only
+hunt vendor:publish --tag views:components # UI components only
+hunt vendor:publish --force                # overwrite existing files
+```
+
+Files are copied to `resources/views/`. Any file present there takes priority over the framework's built-in copy. If a file already exists when publishing, the framework copy is placed in `resources/views/framework/` so you can reference it without losing your changes.
+
 ---
 
 ## Authentication
@@ -447,6 +460,9 @@ Built-in actions: `BulkDeleteAction`, `RestoreAction` (soft deletes), `ExportCsv
 ```bash
 hunt admin:publish          # copy all admin templates to resources/views/admin/
 hunt admin:publish --force  # overwrite existing
+
+hunt vendor:publish --tag views:auth       # customise login, register, password reset
+hunt vendor:publish --tag views:components # customise alert, button, card, etc.
 ```
 
 ---
@@ -490,6 +506,16 @@ class AuthMiddleware(Middleware):
         return await next(request)
 ```
 
+### Built-in middleware
+
+| Middleware | Import | Purpose |
+|---|---|---|
+| `Authenticate` | `hunt.http.middleware.authenticate` | Redirect unauthenticated requests to `/login` |
+| `SecureHeaders` | `hunt.http.middleware.secure_headers` | Add `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, opt-in HSTS and CSP |
+| `TrustProxies` | `hunt.http.middleware.trust_proxies` | Rewrite `request.ip` and `request.scheme` from `X-Forwarded-For` / `X-Forwarded-Proto` when behind a proxy or load balancer |
+| `MaintenanceMode` | `hunt.http.middleware.maintenance` | Return 503 with `Retry-After` when `.maintenance` sentinel file is present |
+| `EnsureTwoFactorAuthenticated` | `hunt.http.middleware.two_factor` | Redirect users who have 2FA enabled but haven't completed the challenge |
+
 ---
 
 ## CLI reference
@@ -499,8 +525,11 @@ class AuthMiddleware(Middleware):
 hunt new <name>                      # scaffold a new application
 hunt upgrade                         # pull in new scaffold files to existing app
 hunt serve                           # start the dev server (auto-reload)
+hunt serve:production                # start a production-grade uvicorn server
 hunt tinker                          # interactive REPL with app bootstrapped
 hunt key:generate                    # generate and write a new APP_KEY
+hunt down [--message "..."] [--retry 60]  # enable maintenance mode (503)
+hunt up                              # disable maintenance mode
 
 # Routes
 hunt route:list                      # print all registered routes
@@ -510,6 +539,7 @@ hunt migrate                         # run pending migrations
 hunt migrate:rollback                # rollback last batch
 hunt migrate:fresh                   # drop all tables and re-run
 hunt migrate:status                  # show migration status
+hunt migrate:status --pending        # exit 1 if any migrations are pending (CI/CD gate)
 
 # Database
 hunt db:seed                         # run database seeders
@@ -557,6 +587,12 @@ hunt make:2fa-controllers            # 2FA routes, controllers, templates, migra
 
 # Admin
 hunt admin:publish                   # copy admin templates to resources/views/admin/
+
+# Views
+hunt vendor:publish                        # all framework views → resources/views/
+hunt vendor:publish --tag views:auth       # auth views only
+hunt vendor:publish --tag views:components # UI components only
+hunt vendor:publish --force                # overwrite existing files
 ```
 
 ---
@@ -576,6 +612,10 @@ hunt admin:publish                   # copy admin templates to resources/views/a
 | `DB_DATABASE` | — | Database name / SQLite file path |
 | `DB_USERNAME` | — | Database username |
 | `DB_PASSWORD` | — | Database password |
+| `TRUSTED_PROXIES` | — | Comma-separated IPs/CIDRs to trust for `X-Forwarded-*` headers; `*` to trust all (dev only) |
+| `MAX_BODY_SIZE` | `10485760` | Max request body in bytes (default 10 MB); requests over the limit return 413 |
+| `SECURE_HSTS_SECONDS` | `0` | Enable `Strict-Transport-Security` with this max-age; `0` disables |
+| `SECURE_CONTENT_SECURITY_POLICY` | — | Value for the `Content-Security-Policy` header |
 
 ---
 
