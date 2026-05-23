@@ -3,15 +3,12 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hunt.scheduling.scheduler import Scheduler, ScheduledTask
-
+from hunt.scheduling.scheduler import ScheduledTask, Scheduler
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -426,8 +423,6 @@ class TestPings:
         task.then_ping("http://healthcheck.example/after")
 
         ping_calls = []
-        orig_ping = task._ping
-
         def _tracked_ping(urls):
             ping_calls.append(("ping", list(urls)))
 

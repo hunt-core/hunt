@@ -1,9 +1,9 @@
 """Tests for Phase A feature implementations."""
 from __future__ import annotations
 
-import pytest
-from datetime import datetime
+from typing import ClassVar
 
+import pytest
 
 # ===========================================================================
 # A1 — Database Transactions
@@ -11,14 +11,16 @@ from datetime import datetime
 
 class TestDbTransactions:
     def test_transaction_exported(self):
-        from hunt.database import transaction, begin
+        from hunt.database import begin, transaction
         assert callable(transaction)
         assert callable(begin)
 
     def test_transaction_commits(self):
-        from sqlalchemy import text
-        from hunt.database.connection import connection, _connections
         import os
+
+        from sqlalchemy import text
+
+        from hunt.database.connection import _connections, connection
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
@@ -36,9 +38,11 @@ class TestDbTransactions:
         assert rows[0][0] == "hello"
 
     def test_begin_context_manager_commits(self):
-        from sqlalchemy import text
-        from hunt.database.connection import connection, _connections
         import os
+
+        from sqlalchemy import text
+
+        from hunt.database.connection import _connections, connection
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
@@ -57,9 +61,11 @@ class TestDbTransactions:
         assert rows[0][0] == "world"
 
     def test_begin_context_manager_rolls_back_on_exception(self):
-        from sqlalchemy import text
-        from hunt.database.connection import connection, _connections
         import os
+
+        from sqlalchemy import text
+
+        from hunt.database.connection import _connections, connection
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
@@ -88,11 +94,13 @@ class TestEagerLoading:
     @pytest.fixture(autouse=True)
     def setup_db(self):
         import os
+
         from hunt.database.connection import _connections
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
         from sqlalchemy import text
+
         from hunt.database.connection import connection
         eng = connection()
         with eng.connect() as c:
@@ -205,7 +213,7 @@ class TestEagerLoading:
         class Post(Model):
             table = "posts"
             timestamps = False
-            fillable = ["title"]
+            fillable: ClassVar[list] = ["title"]
 
         post = Post.__new__(Post)
         post._attributes = {"id": 1, "title": "Hello"}
@@ -224,7 +232,7 @@ class TestEagerLoading:
         class Post(Model):
             table = "posts"
             timestamps = False
-            appends = ["title_upper"]
+            appends: ClassVar[list] = ["title_upper"]
 
             def get_title_upper_attribute(self):
                 return (self._attributes.get("title") or "").upper()
@@ -286,14 +294,13 @@ class TestUploadedFile:
     def test_file_parsed_from_multipart(self):
         from hunt.http.request import Request
 
-        boundary = "----WebKitFormBoundary"
         body = (
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="test.txt"\r\n'
-            f"Content-Type: text/plain\r\n\r\n"
-            f"hello world\r\n"
-            f"------WebKitFormBoundary--\r\n"
-        ).encode()
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="test.txt"\r\n'
+            b"Content-Type: text/plain\r\n\r\n"
+            b"hello world\r\n"
+            b"------WebKitFormBoundary--\r\n"
+        )
 
         scope = {
             "type": "http",
@@ -301,7 +308,7 @@ class TestUploadedFile:
             "path": "/",
             "query_string": b"",
             "headers": [
-                (b"content-type", f"multipart/form-data; boundary=----WebKitFormBoundary".encode()),
+                (b"content-type", b"multipart/form-data; boundary=----WebKitFormBoundary"),
             ],
         }
         req = Request(scope, body)
@@ -315,16 +322,15 @@ class TestUploadedFile:
     def test_form_fields_alongside_files(self):
         from hunt.http.request import Request
 
-        boundary = "myboundary"
         body = (
-            f"--myboundary\r\n"
-            f'Content-Disposition: form-data; name="name"\r\n\r\n'
-            f"Alice\r\n"
-            f"--myboundary\r\n"
-            f'Content-Disposition: form-data; name="avatar"; filename="pic.png"\r\n'
-            f"Content-Type: image/png\r\n\r\n"
-            f"\x89PNG\r\n"
-            f"--myboundary--\r\n"
+            "--myboundary\r\n"
+            'Content-Disposition: form-data; name="name"\r\n\r\n'
+            "Alice\r\n"
+            "--myboundary\r\n"
+            'Content-Disposition: form-data; name="avatar"; filename="pic.png"\r\n'
+            "Content-Type: image/png\r\n\r\n"
+            "\x89PNG\r\n"
+            "--myboundary--\r\n"
         ).encode()
 
         scope = {
@@ -358,7 +364,7 @@ class TestUploadedFile:
 
 class TestFluentRedirect:
     def test_redirect_returns_fluent_redirect(self):
-        from hunt.http.response import redirect, FluentRedirect
+        from hunt.http.response import FluentRedirect, redirect
         r = redirect("/foo")
         assert isinstance(r, FluentRedirect)
         assert r._headers["Location"] == "/foo"
@@ -369,29 +375,32 @@ class TestFluentRedirect:
         assert r._headers["Location"] == "/new"
 
     def test_back_falls_back_to_default_without_session(self):
-        from hunt.http.response import FluentRedirect
         from unittest.mock import patch
+
+        from hunt.http.response import FluentRedirect
         with patch("hunt.auth.manager._get_current_request", return_value=None):
             r = FluentRedirect().back(default="/home")
         assert r._headers["Location"] == "/home"
 
     def test_with_flashes_to_session(self):
-        from hunt.http.response import FluentRedirect
         from unittest.mock import MagicMock, patch
+
+        from hunt.http.response import FluentRedirect
 
         mock_req = MagicMock()
         mock_store = MagicMock()
         mock_req._session = mock_store
 
         with patch("hunt.auth.manager._get_current_request", return_value=mock_req):
-            r = FluentRedirect("/done").with_("status", "Saved!")
+            FluentRedirect("/done").with_("status", "Saved!")
 
         mock_store.flash.assert_called_once_with("status", "Saved!")
 
     def test_with_errors_flashes_validation_exception(self):
+        from unittest.mock import MagicMock, patch
+
         from hunt.http.response import FluentRedirect
         from hunt.validation.validator import ValidationException
-        from unittest.mock import MagicMock, patch
 
         mock_req = MagicMock()
         mock_store = MagicMock()
@@ -404,8 +413,8 @@ class TestFluentRedirect:
         mock_store.flash.assert_called_once_with("_errors", {"email": ["required"]})
 
     def test_helpers_redirect_returns_fluent(self):
-        from hunt.support.helpers import redirect
         from hunt.http.response import FluentRedirect
+        from hunt.support.helpers import redirect
         assert isinstance(redirect("/x"), FluentRedirect)
 
 
@@ -417,11 +426,13 @@ class TestQueryBuilderGaps:
     @pytest.fixture(autouse=True)
     def setup_db(self):
         import os
+
         from hunt.database.connection import _connections
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
         from sqlalchemy import text
+
         from hunt.database.connection import connection
         eng = connection()
         with eng.connect() as c:
@@ -447,6 +458,7 @@ class TestQueryBuilderGaps:
 
     def test_group_by_and_having(self):
         from sqlalchemy import text
+
         from hunt.database.connection import connection
         eng = connection()
         with eng.connect() as c:
@@ -468,6 +480,7 @@ class TestQueryBuilderGaps:
 
     def test_distinct(self):
         from sqlalchemy import text
+
         from hunt.database.connection import connection
         eng = connection()
         with eng.connect() as c:
@@ -512,6 +525,7 @@ class TestQueryBuilderGaps:
 
     def test_left_join(self):
         from sqlalchemy import text
+
         from hunt.database.connection import connection
         eng = connection()
         with eng.connect() as c:
@@ -731,6 +745,7 @@ class TestStrGaps:
 
     def test_uuid_is_valid_uuid4(self):
         import uuid
+
         from hunt.support.str import Str
         val = Str.uuid()
         parsed = uuid.UUID(val)

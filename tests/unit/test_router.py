@@ -1,18 +1,19 @@
 import pytest
-from hunt.http.router import Router, RouteNotFoundException
+
+from hunt.http.router import RouteNotFoundException, Router
 
 
 def test_basic_route_match():
     r = Router()
     r.get("/hello", lambda req: "world")
-    route, params = r.dispatch("GET", "/hello")
+    _route, params = r.dispatch("GET", "/hello")
     assert params == {}
 
 
 def test_path_params():
     r = Router()
     r.get("/users/{id}", lambda req, id: id)
-    route, params = r.dispatch("GET", "/users/42")
+    _route, params = r.dispatch("GET", "/users/42")
     assert params == {"id": "42"}
 
 

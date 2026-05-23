@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Route domain matching
 # ---------------------------------------------------------------------------
@@ -121,7 +120,7 @@ class TestRouterDomainGroup:
             r.get("/data", lambda req: None)
 
         router.domain("api.example.com").group(register)
-        route, params = router.dispatch("GET", "/data", host="api.example.com")
+        route, _params = router.dispatch("GET", "/data", host="api.example.com")
         assert route is not None
 
     def test_domain_group_dispatch_rejects_wrong_host(self):

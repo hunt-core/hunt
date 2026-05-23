@@ -7,7 +7,6 @@ from click.testing import CliRunner
 from hunt.validation.form_request import FormRequest
 from hunt.validation.validator import ValidationException, Validator
 
-
 # ---------------------------------------------------------------------------
 # Minimal Request stub — avoids the ASGI machinery
 # ---------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 """Tests for EventServiceProvider."""
+from typing import ClassVar
+
 import pytest
 
 from hunt.events.dispatcher import Dispatcher, Event
@@ -48,7 +50,7 @@ def app():
 
 def test_listener_registered_on_boot(app):
     class AppEventServiceProvider(EventServiceProvider):
-        listen = {OrderPlaced: [SendConfirmation]}
+        listen: ClassVar[dict] = {OrderPlaced: [SendConfirmation]}
 
     provider = AppEventServiceProvider(app)
     provider.boot()
@@ -58,7 +60,7 @@ def test_listener_registered_on_boot(app):
 
 def test_listener_handle_called_on_dispatch(app):
     class AppEventServiceProvider(EventServiceProvider):
-        listen = {OrderPlaced: [SendConfirmation]}
+        listen: ClassVar[dict] = {OrderPlaced: [SendConfirmation]}
 
     provider = AppEventServiceProvider(app)
     provider.boot()
@@ -73,7 +75,7 @@ def test_listener_handle_called_on_dispatch(app):
 
 def test_multiple_listeners_for_same_event(app):
     class AppEventServiceProvider(EventServiceProvider):
-        listen = {OrderPlaced: [SendConfirmation, NotifyWarehouse]}
+        listen: ClassVar[dict] = {OrderPlaced: [SendConfirmation, NotifyWarehouse]}
 
     provider = AppEventServiceProvider(app)
     provider.boot()
@@ -84,7 +86,7 @@ def test_multiple_listeners_for_same_event(app):
 
 def test_multiple_events_wired_independently(app):
     class AppEventServiceProvider(EventServiceProvider):
-        listen = {
+        listen: ClassVar[dict] = {
             OrderPlaced: [SendConfirmation],
             AnotherEvent: [NotifyWarehouse],
         }
@@ -102,7 +104,7 @@ def test_multiple_events_wired_independently(app):
 
 def test_empty_listen_dict_boots_without_error(app):
     class AppEventServiceProvider(EventServiceProvider):
-        listen = {}
+        listen: ClassVar[dict] = {}
 
     provider = AppEventServiceProvider(app)
     provider.boot()  # must not raise
@@ -125,7 +127,7 @@ def test_listener_instantiated_per_boot(app):
             pass
 
     class AppEventServiceProvider(EventServiceProvider):
-        listen = {OrderPlaced: [TrackingListener]}
+        listen: ClassVar[dict] = {OrderPlaced: [TrackingListener]}
 
     AppEventServiceProvider(app).boot()
     assert len(instances) == 1
@@ -141,10 +143,10 @@ def test_listener_instantiated_per_boot(app):
 
 def test_subclass_can_extend_listen(app):
     class BaseProvider(EventServiceProvider):
-        listen = {OrderPlaced: [SendConfirmation]}
+        listen: ClassVar[dict] = {OrderPlaced: [SendConfirmation]}
 
     class ExtendedProvider(BaseProvider):
-        listen = {
+        listen: ClassVar[dict] = {
             OrderPlaced: [SendConfirmation],
             AnotherEvent: [NotifyWarehouse],
         }

@@ -4,9 +4,8 @@ import json
 import pytest
 from click.testing import CliRunner
 
-from hunt.console.commands.upgrade import upgrade_command
 from hunt.console.commands.new import _file_hash
-
+from hunt.console.commands.upgrade import upgrade_command
 
 _BOOTSTRAP = """\
 from routes.web import register as web_routes

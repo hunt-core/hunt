@@ -6,8 +6,7 @@ from datetime import datetime
 import pytest
 
 from hunt.scheduling.cron import matches
-from hunt.scheduling.scheduler import Scheduler, ScheduledTask
-
+from hunt.scheduling.scheduler import ScheduledTask, Scheduler
 
 # ---------------------------------------------------------------------------
 # cron.matches
@@ -190,12 +189,12 @@ class TestScheduler:
 class TestScheduleRunCommand:
     def test_runs_due_tasks(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.schedule_run import schedule_run_command
 
         monkeypatch.chdir(tmp_path)
         console_dir = tmp_path / "app" / "console"
         console_dir.mkdir(parents=True)
-        called = []
         # Write a schedule.py that registers a task
         (console_dir / "schedule.py").write_text(
             "from hunt.scheduling import Scheduler\n"
@@ -209,6 +208,7 @@ class TestScheduleRunCommand:
 
     def test_no_tasks_due_prints_nothing(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.schedule_run import schedule_run_command
 
         monkeypatch.chdir(tmp_path)
@@ -226,6 +226,7 @@ class TestScheduleRunCommand:
 
     def test_missing_schedule_file_is_ok(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.schedule_run import schedule_run_command
 
         monkeypatch.chdir(tmp_path)
@@ -235,6 +236,7 @@ class TestScheduleRunCommand:
 
     def test_verbose_shows_task_label(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.schedule_run import schedule_run_command
 
         monkeypatch.chdir(tmp_path)
@@ -259,6 +261,7 @@ class TestScheduleRunCommand:
 class TestScheduleListCommand:
     def test_lists_tasks(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.schedule_list import schedule_list_command
 
         monkeypatch.chdir(tmp_path)
@@ -278,6 +281,7 @@ class TestScheduleListCommand:
 
     def test_no_tasks_message(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.schedule_list import schedule_list_command
 
         monkeypatch.chdir(tmp_path)
@@ -288,6 +292,7 @@ class TestScheduleListCommand:
 
     def test_multiple_tasks_listed(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.schedule_list import schedule_list_command
 
         monkeypatch.chdir(tmp_path)

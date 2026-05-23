@@ -1,4 +1,9 @@
-from hunt.view.directives import preprocess
+from hunt.view.directives import (
+    _parse_component_open,
+    _props_to_with_args,
+    _split_by_sep,
+    preprocess,
+)
 
 
 def test_extends():
@@ -51,12 +56,6 @@ def test_include():
 # ---------------------------------------------------------------------------
 # @component directive (M21)
 # ---------------------------------------------------------------------------
-
-from hunt.view.directives import (
-    _parse_component_open,
-    _props_to_with_args,
-    _split_by_sep,
-)
 
 
 class TestSplitBySep:
@@ -158,6 +157,7 @@ class TestComponentDirective:
 class TestMakeComponent:
     def test_creates_file(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.make.component import make_component_command
 
         monkeypatch.chdir(tmp_path)
@@ -167,6 +167,7 @@ class TestMakeComponent:
 
     def test_slug_name(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.make.component import make_component_command
 
         monkeypatch.chdir(tmp_path)
@@ -175,6 +176,7 @@ class TestMakeComponent:
 
     def test_no_overwrite(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.make.component import make_component_command
 
         monkeypatch.chdir(tmp_path)
@@ -189,6 +191,7 @@ class TestMakeComponent:
 class TestVendorPublish:
     def test_publishes_components(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.vendor_publish import vendor_publish_command
 
         monkeypatch.chdir(tmp_path)
@@ -200,6 +203,7 @@ class TestVendorPublish:
 
     def test_publishes_all_builtin_components(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.vendor_publish import vendor_publish_command
 
         monkeypatch.chdir(tmp_path)
@@ -213,6 +217,7 @@ class TestVendorPublish:
 
     def test_skips_existing_without_force(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.vendor_publish import vendor_publish_command
 
         monkeypatch.chdir(tmp_path)
@@ -224,6 +229,7 @@ class TestVendorPublish:
 
     def test_force_overwrites_existing(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.vendor_publish import vendor_publish_command
 
         monkeypatch.chdir(tmp_path)
@@ -235,6 +241,7 @@ class TestVendorPublish:
 
     def test_unknown_tag_exits(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.vendor_publish import vendor_publish_command
 
         monkeypatch.chdir(tmp_path)

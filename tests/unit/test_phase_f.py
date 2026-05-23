@@ -3,11 +3,8 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
-
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -47,7 +44,7 @@ class OrderPlaced:
 
 
 class _Collector:
-    events: list = []
+    events: ClassVar[list] = []
 
     @classmethod
     def reset(cls):
@@ -61,7 +58,7 @@ class _Collector:
 class TestQueuedEventListener:
     def setup_method(self):
         # Register test classes in the allowlist so handle() can execute them
-        from hunt.events.queued import allow_listener, allow_event
+        from hunt.events.queued import allow_event, allow_listener
         allow_listener(f"{__name__}._RecordingListener")
         allow_listener(f"{__name__}._NoArgListener")
         allow_event(f"{__name__}.UserRegistered")
@@ -96,7 +93,7 @@ class TestQueuedEventListener:
                 received["user_id"] = event.user_id
                 received["email"] = event.email
 
-        job = QueuedEventListener(
+        QueuedEventListener(
             listener_class=f"{__name__}.UserRegistered",  # uses module-level class as event
             event_class=f"{__name__}.UserRegistered",
             event_data={"user_id": 7, "email": "a@b.com"},
@@ -135,7 +132,6 @@ class TestQueuedEventListener:
 
     def test_event_data_private_attrs_excluded(self):
         """Private attributes (_x) must not appear in event_data."""
-        from hunt.events.queued import QueuedEventListener
 
         class EventWithPrivate:
             def __init__(self):
@@ -190,15 +186,14 @@ class TestQueuedListeners:
         from hunt.events.dispatcher import Dispatcher
         from hunt.events.provider import EventServiceProvider
         from hunt.events.queued import QueuedEventListener
-        from hunt.testing.fakes import QueueFake
-
         from hunt.queue.job import Job
+        from hunt.testing.fakes import QueueFake
 
         class EmailJob(Job):
             def handle(self, event=None): pass
 
         class AppProvider(EventServiceProvider):
-            listen = {UserRegistered: [EmailJob]}
+            listen: ClassVar[dict] = {UserRegistered: [EmailJob]}
 
         provider = AppProvider(_app())
         provider.boot()
@@ -219,7 +214,7 @@ class TestQueuedListeners:
             def handle(self, event=None): pass
 
         class AppProvider(EventServiceProvider):
-            listen = {UserRegistered: [FlaggedListener]}
+            listen: ClassVar[dict] = {UserRegistered: [FlaggedListener]}
 
         provider = AppProvider(_app())
         provider.boot()
@@ -239,7 +234,7 @@ class TestQueuedListeners:
             def handle(self, event=None): pass
 
         class AppProvider(EventServiceProvider):
-            listen = {OrderPlaced: [OrderJob]}
+            listen: ClassVar[dict] = {OrderPlaced: [OrderJob]}
 
         provider = AppProvider(_app())
         provider.boot()
@@ -264,7 +259,7 @@ class TestQueuedListeners:
             def handle(self, event=None): pass
 
         class AppProvider(EventServiceProvider):
-            listen = {UserRegistered: [MyJob]}
+            listen: ClassVar[dict] = {UserRegistered: [MyJob]}
 
         provider = AppProvider(_app())
         provider.boot()
@@ -287,7 +282,7 @@ class TestQueuedListeners:
             def handle(self, event): calls.append(event)
 
         class AppProvider(EventServiceProvider):
-            listen = {UserRegistered: [InlineListener]}
+            listen: ClassVar[dict] = {UserRegistered: [InlineListener]}
 
         provider = AppProvider(_app())
         provider.boot()
@@ -316,7 +311,7 @@ class TestQueuedListeners:
             def handle(self, event): inline_calls.append(event)
 
         class AppProvider(EventServiceProvider):
-            listen = {UserRegistered: [QueuedJob, InlineListener]}
+            listen: ClassVar[dict] = {UserRegistered: [QueuedJob, InlineListener]}
 
         provider = AppProvider(_app())
         provider.boot()
@@ -339,7 +334,7 @@ class TestQueuedListeners:
             def handle(self, event=None): pass
 
         class AppProvider(EventServiceProvider):
-            listen = {UserRegistered: [AsyncQueued]}
+            listen: ClassVar[dict] = {UserRegistered: [AsyncQueued]}
 
         provider = AppProvider(_app())
         provider.boot()
@@ -375,7 +370,7 @@ class TestEventSubscribers:
                 subscribe_calls.append(dispatcher)
 
         class AppProvider(EventServiceProvider):
-            subscribe = [MySubscriber]
+            subscribe: ClassVar[list] = [MySubscriber]
 
         provider = AppProvider(_app())
         provider.boot()
@@ -396,7 +391,7 @@ class TestEventSubscribers:
             def on_ordered(self, event): calls.append(("ordered", event.order_id))
 
         class AppProvider(EventServiceProvider):
-            subscribe = [UserSubscriber]
+            subscribe: ClassVar[list] = [UserSubscriber]
 
         provider = AppProvider(_app())
         provider.boot()
@@ -408,7 +403,6 @@ class TestEventSubscribers:
         assert ("ordered", 42) in calls
 
     def test_multiple_subscribers_all_booted(self):
-        from hunt.events.dispatcher import Dispatcher
         from hunt.events.provider import EventServiceProvider
 
         booted = []
@@ -424,7 +418,7 @@ class TestEventSubscribers:
                 dispatcher.listen(OrderPlaced, lambda e: None)
 
         class AppProvider(EventServiceProvider):
-            subscribe = [Sub1, Sub2]
+            subscribe: ClassVar[list] = [Sub1, Sub2]
 
         AppProvider(_app()).boot()
         assert "sub1" in booted
@@ -447,8 +441,8 @@ class TestEventSubscribers:
             def on_order(self, event): subscriber_calls.append(event)
 
         class AppProvider(EventServiceProvider):
-            listen = {UserRegistered: [InlineListener]}
-            subscribe = [MySub]
+            listen: ClassVar[dict] = {UserRegistered: [InlineListener]}
+            subscribe: ClassVar[list] = [MySub]
 
         AppProvider(_app()).boot()
         Dispatcher.dispatch_sync(UserRegistered())
@@ -461,7 +455,7 @@ class TestEventSubscribers:
         from hunt.events.provider import EventServiceProvider
 
         class AppProvider(EventServiceProvider):
-            subscribe = []
+            subscribe: ClassVar[list] = []
 
         AppProvider(_app()).boot()  # must not raise
 
@@ -477,7 +471,7 @@ class TestEventSubscribers:
             def on_event(self, event): self.count += 1
 
         class AppProvider(EventServiceProvider):
-            subscribe = [StatefulSubscriber]
+            subscribe: ClassVar[list] = [StatefulSubscriber]
 
         AppProvider(_app()).boot()
         Dispatcher.dispatch_sync(UserRegistered())
@@ -544,8 +538,9 @@ class TestShouldQueue:
 
 class TestMakeListenerQueued:
     def test_queued_flag_generates_job_based_stub(self, tmp_path):
-        from hunt.console.commands.make.listener import make_listener_command
         from click.testing import CliRunner
+
+        from hunt.console.commands.make.listener import make_listener_command
 
         r = CliRunner()
         with r.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -557,8 +552,9 @@ class TestMakeListenerQueued:
         assert "class SendWelcomeEmail(Job)" in content
 
     def test_no_flag_generates_plain_stub(self, tmp_path):
-        from hunt.console.commands.make.listener import make_listener_command
         from click.testing import CliRunner
+
+        from hunt.console.commands.make.listener import make_listener_command
 
         r = CliRunner()
         with r.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -569,8 +565,9 @@ class TestMakeListenerQueued:
         assert "Job" not in content
 
     def test_short_flag_works(self, tmp_path):
-        from hunt.console.commands.make.listener import make_listener_command
         from click.testing import CliRunner
+
+        from hunt.console.commands.make.listener import make_listener_command
 
         r = CliRunner()
         with r.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -580,8 +577,9 @@ class TestMakeListenerQueued:
         assert "implements_queued_listener = True" in content
 
     def test_queued_handle_accepts_event_param(self, tmp_path):
-        from hunt.console.commands.make.listener import make_listener_command
         from click.testing import CliRunner
+
+        from hunt.console.commands.make.listener import make_listener_command
 
         r = CliRunner()
         with r.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -612,7 +610,7 @@ class TestExistingProviderRegression:
             def handle(self, event): called.append(event)
 
         class Provider(EventServiceProvider):
-            listen = {UserRegistered: [Listener]}
+            listen: ClassVar[dict] = {UserRegistered: [Listener]}
 
         Provider(_app()).boot()
         Dispatcher.dispatch_sync(UserRegistered(user_id=99))
@@ -632,7 +630,7 @@ class TestExistingProviderRegression:
             def handle(self, event): calls_b.append(1)
 
         class Provider(EventServiceProvider):
-            listen = {UserRegistered: [A, B]}
+            listen: ClassVar[dict] = {UserRegistered: [A, B]}
 
         Provider(_app()).boot()
         Dispatcher.dispatch_sync(UserRegistered())
@@ -643,7 +641,7 @@ class TestExistingProviderRegression:
         from hunt.events.provider import EventServiceProvider
 
         class Provider(EventServiceProvider):
-            listen = {}
-            subscribe = []
+            listen: ClassVar[dict] = {}
+            subscribe: ClassVar[list] = []
 
         Provider(_app()).boot()  # must not raise

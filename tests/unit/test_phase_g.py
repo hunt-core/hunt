@@ -1,12 +1,11 @@
 """Phase G — Queue Improvements tests."""
 from __future__ import annotations
 
-import json
 import time
-from unittest.mock import MagicMock, call, patch
+from typing import ClassVar
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -203,7 +202,7 @@ class TestDatabaseDriverSerialize:
         from hunt.queue.drivers.database import _serialize_job
         from hunt.queue.job import Job
         class MyJob(Job):
-            backoff = [5, 10, 20]
+            backoff: ClassVar[list] = [5, 10, 20]
             def handle(self): pass
         body = _serialize_job(MyJob())
         assert body["backoff"] == [5, 10, 20]
@@ -344,29 +343,29 @@ class TestDatabaseDriverLifecycle:
 
 class TestQueueManager:
     def test_configure_database(self):
-        from hunt.queue.manager import _QueueManager
         from hunt.queue.drivers.database import DatabaseDriver
+        from hunt.queue.manager import _QueueManager
         mgr = _QueueManager()
         mgr.configure("database")
         assert isinstance(mgr._driver, DatabaseDriver)
 
     def test_configure_sync(self):
-        from hunt.queue.manager import _QueueManager
         from hunt.queue.drivers.sync import SyncDriver
+        from hunt.queue.manager import _QueueManager
         mgr = _QueueManager()
         mgr.configure("sync")
         assert isinstance(mgr._driver, SyncDriver)
 
     def test_configure_default_is_sync(self):
-        from hunt.queue.manager import _QueueManager
         from hunt.queue.drivers.sync import SyncDriver
+        from hunt.queue.manager import _QueueManager
         mgr = _QueueManager()
         mgr._get_driver()
         assert isinstance(mgr._driver, SyncDriver)
 
     def test_push_delegates_to_driver(self):
-        from hunt.queue.manager import _QueueManager
         from hunt.queue.job import Job
+        from hunt.queue.manager import _QueueManager
         class MyJob(Job):
             def handle(self): pass
         mgr = _QueueManager()
@@ -377,8 +376,8 @@ class TestQueueManager:
         mock_driver.push.assert_called_once_with(job)
 
     def test_later_delegates_to_driver(self):
-        from hunt.queue.manager import _QueueManager
         from hunt.queue.job import Job
+        from hunt.queue.manager import _QueueManager
         class MyJob(Job):
             def handle(self): pass
         mgr = _QueueManager()
@@ -397,8 +396,8 @@ class TestQueueManager:
         assert mgr.size() == 7
 
     def test_configure_redis(self):
-        from hunt.queue.manager import _QueueManager
         from hunt.queue.drivers.redis import RedisDriver
+        from hunt.queue.manager import _QueueManager
         mgr = _QueueManager()
         mgr.configure("redis", host="localhost", port=6379)
         assert isinstance(mgr._driver, RedisDriver)
@@ -500,6 +499,7 @@ class TestRedisDriver:
 
     def test_redis_missing_raises(self):
         import sys
+
         from hunt.queue.drivers.redis import RedisDriver
         driver = RedisDriver()
         with patch.dict(sys.modules, {"redis": None}):
@@ -547,11 +547,7 @@ class TestBackoffHelper:
 class TestQueueWorkChain:
     def test_successful_job_pushes_chain_next(self):
         """After a job succeeds, the next chain job is pushed."""
-        import importlib
-        import sys
-        import json
-        from pathlib import Path
-        from hunt.queue.drivers.database import _serialize_job, _make_payload
+        from hunt.queue.drivers.database import _serialize_job
         from hunt.queue.job import Job
 
         class First(Job):
@@ -585,9 +581,11 @@ class TestQueueWorkChain:
 
 class TestQueueTableCommand:
     def test_creates_migration_file(self, tmp_path):
-        from click.testing import CliRunner
-        from hunt.console.commands.queue_table import queue_table_command
         import os
+
+        from click.testing import CliRunner
+
+        from hunt.console.commands.queue_table import queue_table_command
 
         (tmp_path / "database" / "migrations").mkdir(parents=True)
         runner = CliRunner()
@@ -603,9 +601,11 @@ class TestQueueTableCommand:
         assert "jobs" in content
 
     def test_migration_contains_both_tables(self, tmp_path):
-        from click.testing import CliRunner
-        from hunt.console.commands.queue_table import queue_table_command
         import os
+
+        from click.testing import CliRunner
+
+        from hunt.console.commands.queue_table import queue_table_command
 
         (tmp_path / "database" / "migrations").mkdir(parents=True)
         runner = CliRunner()
@@ -613,7 +613,7 @@ class TestQueueTableCommand:
             os.chdir(tmp_path)
             runner.invoke(queue_table_command, catch_exceptions=False)
 
-        migration = list((tmp_path / "database" / "migrations").glob("*.py"))[0]
+        migration = next((tmp_path / "database" / "migrations").glob("*.py"))
         content = migration.read_text()
         assert "Schema.create(\"jobs\"" in content
         assert "Schema.create(\"jobs_failed\"" in content

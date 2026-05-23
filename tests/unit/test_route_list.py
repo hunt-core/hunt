@@ -1,9 +1,9 @@
 """Tests for the route:list command."""
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
-from unittest.mock import MagicMock, patch
 
 from hunt.console.commands.route_list import route_list_command
 

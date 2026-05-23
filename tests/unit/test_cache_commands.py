@@ -1,7 +1,8 @@
 """Tests for the cache CLI commands."""
+from unittest.mock import patch
+
 import pytest
 from click.testing import CliRunner
-from unittest.mock import patch
 
 from hunt.console.commands.cache import cache_clear, cache_forget
 

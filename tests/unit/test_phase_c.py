@@ -1,16 +1,13 @@
 """Phase C tests: Mail & Notifications."""
 from __future__ import annotations
 
-import time
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from hunt.mail.mailable import Mailable
+from hunt.mail.manager import _ArrayDriver, _build_mime, _LogDriver, _MailManager
 from hunt.mail.message import MailMessage
-from hunt.mail.manager import _MailManager, _ArrayDriver, _LogDriver, _MailFake, _build_mime
-
 
 # ===========================================================================
 # Mailable — fluent builder
@@ -443,8 +440,8 @@ class TestNotifiable:
 
 class TestNotificationFake:
     def test_fake_intercepts_notify(self):
-        from hunt.notifications.notification import Notification
         from hunt.notifications.fake import NotificationFake
+        from hunt.notifications.notification import Notification
 
         class Ping(Notification):
             def via(self, n):
@@ -460,8 +457,8 @@ class TestNotificationFake:
         assert len(fake.sent_to(user, Ping)) == 1
 
     def test_assert_sent_to_passes(self):
-        from hunt.notifications.notification import Notification
         from hunt.notifications.fake import NotificationFake
+        from hunt.notifications.notification import Notification
 
         class Ping(Notification):
             def via(self, n):
@@ -476,8 +473,8 @@ class TestNotificationFake:
             fake.assert_sent_to(user, Ping)
 
     def test_assert_not_sent_to(self):
-        from hunt.notifications.notification import Notification
         from hunt.notifications.fake import NotificationFake
+        from hunt.notifications.notification import Notification
 
         class Ping(Notification):
             pass
@@ -494,8 +491,8 @@ class TestNotificationFake:
             fake.assert_nothing_sent()
 
     def test_assert_count(self):
-        from hunt.notifications.notification import Notification
         from hunt.notifications.fake import NotificationFake
+        from hunt.notifications.notification import Notification
 
         class Ping(Notification):
             def via(self, n):
@@ -511,8 +508,8 @@ class TestNotificationFake:
             fake.assert_count(Ping, 2)
 
     def test_assert_sent_to_with_callback(self):
-        from hunt.notifications.notification import Notification
         from hunt.notifications.fake import NotificationFake
+        from hunt.notifications.notification import Notification
 
         class Tagged(Notification):
             def __init__(self, tag):
@@ -578,6 +575,7 @@ class TestMailChannel:
 class TestMakeMailCommand:
     def test_make_mail_creates_file(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.make.mail import make_mail_command
 
         monkeypatch.chdir(tmp_path)
@@ -590,6 +588,7 @@ class TestMakeMailCommand:
 
     def test_make_notification_creates_file(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
+
         from hunt.console.commands.make.notification import make_notification_command
 
         monkeypatch.chdir(tmp_path)

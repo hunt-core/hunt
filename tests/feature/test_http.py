@@ -1,7 +1,8 @@
 import pytest
-from hunt.http.router import Router
+
 from hunt.http.kernel import HttpKernel
-from hunt.http.response import Response, JsonResponse
+from hunt.http.response import JsonResponse, Response
+from hunt.http.router import Router
 from hunt.testing.test_case import HuntTestCase
 
 

@@ -4,11 +4,10 @@ from __future__ import annotations
 import asyncio
 import datetime
 import time
-from typing import Any
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -160,8 +159,6 @@ class TestEventFake:
     def test_dispatcher_restored_after_context_exit(self):
         from hunt.events.dispatcher import Dispatcher
         from hunt.testing.fakes import EventFake
-
-        original_sync = Dispatcher.__class__.dispatch_sync
 
         with EventFake():
             pass
@@ -413,7 +410,7 @@ class TestFactoryState:
 
         class UserFactory(Factory):
             model = FakeModel
-            states = {
+            states: ClassVar[dict] = {
                 "admin": lambda: {"role": "admin"},
                 "banned": lambda: {"banned_at": "2025-01-01", "active": False},
             }
@@ -479,7 +476,7 @@ class TestFactoryState:
 
         class TF(Factory):
             model = FakeModel
-            states = {"vip": lambda: {"vip": True}}
+            states: ClassVar[dict] = {"vip": lambda: {"vip": True}}
             def definition(self): return {"vip": False}
 
         f1 = TF().state("vip")
@@ -571,9 +568,9 @@ class TestActingAs:
         assert captured["id"] == 99
 
     def test_acting_as_returns_self_for_chaining(self):
-        from hunt.testing.test_case import HuntTestCase
         from hunt.http.kernel import HttpKernel
         from hunt.http.router import Router
+        from hunt.testing.test_case import HuntTestCase
 
         tc = HuntTestCase()
         tc.kernel = HttpKernel(Router())
@@ -676,9 +673,9 @@ class TestWithoutMiddleware:
         assert "skipped" not in calls
 
     def test_without_middleware_returns_self_for_chaining(self):
-        from hunt.testing.test_case import HuntTestCase
         from hunt.http.kernel import HttpKernel
         from hunt.http.router import Router
+        from hunt.testing.test_case import HuntTestCase
 
         tc = HuntTestCase()
         tc.kernel = HttpKernel(Router())
@@ -733,15 +730,16 @@ class TestRefreshDatabase:
         from hunt.testing.test_case import RefreshDatabase
 
         class MyTest(RefreshDatabase):
-            refresh_tables = ["users", "posts"]
+            refresh_tables: ClassVar[list] = ["users", "posts"]
 
         assert MyTest.refresh_tables == ["users", "posts"]
 
     def test_teardown_cleans_specified_tables(self):
         """DELETE is called for each configured table."""
-        from hunt.testing.test_case import RefreshDatabase
-        from sqlalchemy import create_engine, inspect, text
+        from sqlalchemy import create_engine, text
         from sqlalchemy.pool import StaticPool
+
+        from hunt.testing.test_case import RefreshDatabase
 
         engine = create_engine(
             "sqlite:///:memory:",
@@ -754,7 +752,7 @@ class TestRefreshDatabase:
             conn.commit()
 
         class MyTest(RefreshDatabase):
-            refresh_tables = ["users"]
+            refresh_tables: ClassVar[list] = ["users"]
 
         rd = MyTest()
         with patch("hunt.database.connection.connection", return_value=engine):
@@ -766,9 +764,10 @@ class TestRefreshDatabase:
 
     def test_teardown_auto_detects_tables_via_inspect(self):
         """When refresh_tables is empty, all tables are discovered and cleaned."""
-        from hunt.testing.test_case import RefreshDatabase
         from sqlalchemy import create_engine, text
         from sqlalchemy.pool import StaticPool
+
+        from hunt.testing.test_case import RefreshDatabase
 
         engine = create_engine(
             "sqlite:///:memory:",

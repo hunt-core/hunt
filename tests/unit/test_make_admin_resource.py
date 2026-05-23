@@ -80,8 +80,8 @@ def test_injects_admin_resource_call_after_existing(project):
 
     routes = (project / "routes" / "admin.py").read_text()
     lines = routes.splitlines()
-    user_idx = next(i for i, l in enumerate(lines) if "Admin.resource(UserResource)" in l)
-    post_idx = next(i for i, l in enumerate(lines) if "Admin.resource(PostResource)" in l)
+    user_idx = next(i for i, line in enumerate(lines) if "Admin.resource(UserResource)" in line)
+    post_idx = next(i for i, line in enumerate(lines) if "Admin.resource(PostResource)" in line)
     assert post_idx == user_idx + 1
 
 
@@ -90,8 +90,8 @@ def test_import_grouped_with_other_app_admin_imports(project):
 
     routes = (project / "routes" / "admin.py").read_text()
     lines = routes.splitlines()
-    user_import_idx = next(i for i, l in enumerate(lines) if "from app.admin.user_resource" in l)
-    post_import_idx = next(i for i, l in enumerate(lines) if "from app.admin.post_resource" in l)
+    user_import_idx = next(i for i, line in enumerate(lines) if "from app.admin.user_resource" in line)
+    post_import_idx = next(i for i, line in enumerate(lines) if "from app.admin.post_resource" in line)
     assert post_import_idx == user_import_idx + 1
 
 

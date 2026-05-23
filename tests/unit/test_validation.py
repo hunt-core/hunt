@@ -1,5 +1,6 @@
 import pytest
-from hunt.validation.validator import Validator, ValidationException
+
+from hunt.validation.validator import ValidationException, Validator
 
 
 def test_required_passes():

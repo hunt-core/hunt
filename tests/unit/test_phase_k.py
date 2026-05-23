@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import json
-import textwrap
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,7 +74,7 @@ class TestMakeCommand:
         from hunt.console.commands.make.command import make_command_command
 
         r = CliRunner()
-        with r.isolated_filesystem(temp_dir=tmp_path) as td:
+        with r.isolated_filesystem(temp_dir=tmp_path):
             # Create first time
             r.invoke(make_command_command, ["MyCmd"], catch_exceptions=False)
             # Attempt to overwrite

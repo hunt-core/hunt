@@ -16,11 +16,12 @@ from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
 
 from hunt.database.schema.blueprint import Blueprint
 from hunt.database.schema.builder import Schema
-from hunt.database.schema.migration import MIGRATIONS_TABLE, Migration, Migrator
+from hunt.database.schema.migration import MIGRATIONS_TABLE, Migrator
 
 if os.environ.get("SKIP_INTEGRATION") == "1":
     pytest.skip("SKIP_INTEGRATION=1", allow_module_level=True)
@@ -326,7 +327,7 @@ class TestConstraints:
     def test_not_null_rejects_null(self, conn):
         drop(conn, "tc_nn")
         Schema.create("tc_nn", lambda bp: (bp.id(), bp.string("name")))
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             with conn.connect() as c:
                 c.execute(text("INSERT INTO tc_nn (name) VALUES (NULL)"))
                 c.commit()
@@ -338,7 +339,7 @@ class TestConstraints:
         with conn.connect() as c:
             c.execute(text("INSERT INTO tc_uniq (email) VALUES ('a@b.com')"))
             c.commit()
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             with conn.connect() as c:
                 c.execute(text("INSERT INTO tc_uniq (email) VALUES ('a@b.com')"))
                 c.commit()
@@ -370,7 +371,7 @@ class TestConstraints:
     def test_enum_check_rejects_invalid(self, conn):
         drop(conn, "tc_enum2")
         Schema.create("tc_enum2", lambda bp: (bp.id(), bp.enum("status", ["draft", "pub"])))
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             with conn.connect() as c:
                 c.execute(text("INSERT INTO tc_enum2 (status) VALUES ('bogus')"))
                 c.commit()
@@ -428,7 +429,7 @@ class TestSchemaIntrospection:
             "si_uidx",
             lambda bp: (bp.id(), bp.string("code"), bp.unique("code")),
         )
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             with conn.connect() as c:
                 c.execute(text("INSERT INTO si_uidx (code) VALUES ('X')"))
                 c.execute(text("INSERT INTO si_uidx (code) VALUES ('X')"))

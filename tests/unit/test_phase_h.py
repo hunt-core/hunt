@@ -1,9 +1,7 @@
 """Phase H tests: Blade / Templating Gaps."""
 from __future__ import annotations
 
-import pytest
 from hunt.view.directives import preprocess
-
 
 # ===========================================================================
 # @verbatim / @endverbatim

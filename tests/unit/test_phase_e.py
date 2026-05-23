@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -22,8 +21,9 @@ def _make_raw(status: int = 200, body: str = "", headers: dict | None = None) ->
 
 
 def _make_raw_json(data: Any, status: int = 200) -> Any:
-    import httpx
     import json
+
+    import httpx
 
     content = json.dumps(data).encode()
     return httpx.Response(status, content=content, headers={"content-type": "application/json"})

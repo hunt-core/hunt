@@ -1,5 +1,6 @@
 import pytest
-from hunt.container.container import Container, BindingResolutionError
+
+from hunt.container.container import BindingResolutionError, Container
 
 
 def test_bind_and_make():

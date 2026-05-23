@@ -1,14 +1,12 @@
 """Phase M — Localization / Translation."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from hunt.translation.translator import Translator
-
 
 # ---------------------------------------------------------------------------
 # Fixtures — minimal lang directory wired up in a tmp_path
@@ -355,8 +353,8 @@ class TestHelpers:
 
 class TestTranslationServiceProvider:
     def test_registers_translator_singleton(self, lang):
-        from hunt.translation.provider import TranslationServiceProvider
         from hunt.config.repository import ConfigRepository
+        from hunt.translation.provider import TranslationServiceProvider
 
         mock_app = MagicMock()
         mock_app.path.return_value = lang
