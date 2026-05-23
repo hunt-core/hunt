@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hunt-framework"
-version = "0.2.46"
+version = "0.3.0"
 description = "A Python web framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "syk0" }]
 keywords = ["web", "framework", "orm", "routing", "asgi"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",

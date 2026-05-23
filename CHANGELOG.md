@@ -11,7 +11,7 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.2.46] — 2026-05-23
+## [0.3.0] — 2026-05-23
 
 ### Added
 
