@@ -11,6 +11,7 @@ from hunt.console.commands.config_cache import config_cache_command, config_clea
 from hunt.console.commands.config_show import config_show_command
 from hunt.console.commands.db.seed import db_seed_command
 from hunt.console.commands.db.status import db_status_command
+from hunt.console.commands.env_check import env_check_command
 from hunt.console.commands.job_list import job_list_command
 from hunt.console.commands.job_run import job_run_command
 from hunt.console.commands.key_generate import key_generate_command
@@ -87,6 +88,7 @@ def cli() -> None:
 # Top-level
 cli.add_command(serve_command, name="serve")
 cli.add_command(serve_production_command, name="serve:production")
+cli.add_command(env_check_command, name="env:check")
 cli.add_command(tinker_command, name="tinker")
 cli.add_command(route_list_command, name="route:list")
 cli.add_command(new_command, name="new")

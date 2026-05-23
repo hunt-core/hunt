@@ -11,6 +11,26 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.43] — 2026-05-22
+
+### Added
+
+**M30 — Security headers middleware**
+- **`SecureHeaders`** middleware (`hunt.http.middleware.secure_headers`) — adds `X-Frame-Options`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy` to every response. Opt-in `Strict-Transport-Security` (set `SECURE_HSTS_SECONDS` > 0) and `Content-Security-Policy` (set `SECURE_CONTENT_SECURITY_POLICY`). All values configurable via env vars or subclassing.
+
+**M31 — Lifespan hooks**
+- **`Application.on_startup(callable)`** — registers a callback (sync or async) run when the ASGI server starts up; ideal for warming DB connections or pre-loading data.
+- **`Application.on_shutdown(callable)`** — registers a callback run on graceful shutdown; use for connection teardown, flushing buffers, etc.
+- **`HttpKernel(app=...)`** — new optional `app` parameter wires the kernel to the `Application` so lifespan hooks are dispatched. The `new` project scaffold now passes `app=application` automatically. Hook errors are caught and logged without crashing the server.
+
+**M32 — `hunt env:check`**
+- New CLI command that validates environment configuration before deploying. Checks required vars (`APP_KEY`, `DATABASE_URL`), warns on suboptimal settings (`APP_DEBUG=true`, `SESSION_SECURE=false`, etc.), and lists optional integrations. Exits with code 1 if any required var is missing.
+
+**M33 — Redis-backed rate limiting**
+- **`RedisThrottleRequests`** middleware (`hunt.http.middleware.throttle`) — async sliding-window rate limiter backed by Redis sorted sets. Safe for multi-worker Uvicorn/Gunicorn deployments because counters are shared across all processes. Requires `pip install redis`. Configure via `REDIS_URL` or `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB`/`REDIS_PASSWORD`. Subclass and set `max_attempts`/`decay_seconds` to tune limits per route group.
+
+---
+
 ## [0.2.42] — 2026-05-22
 
 ### Fixed

@@ -25,6 +25,8 @@ class Application(Container):
         self._providers: list[ServiceProvider] = []
         self._booted = False
         self._error_handlers: list[Callable] = []
+        self._startup_handlers: list[Callable] = []
+        self._shutdown_handlers: list[Callable] = []
 
         self._load_env()
         self._bind_paths()
@@ -115,6 +117,20 @@ class Application(Container):
         self.instance("path.database", str(self.database_path()))
         self.instance("path.resources", str(self.resource_path()))
         self.instance("path.storage", str(self.storage_path()))
+
+    def on_startup(self, handler: Callable) -> None:
+        """Register a callback to run when the ASGI server starts up.
+
+        The callback may be async or sync. It receives no arguments.
+        """
+        self._startup_handlers.append(handler)
+
+    def on_shutdown(self, handler: Callable) -> None:
+        """Register a callback to run when the ASGI server shuts down.
+
+        The callback may be async or sync. It receives no arguments.
+        """
+        self._shutdown_handlers.append(handler)
 
     def on_error(self, handler: Callable) -> None:
         """Register a hook called whenever an unhandled exception reaches the kernel.

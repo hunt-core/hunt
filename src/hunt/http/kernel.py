@@ -56,10 +56,12 @@ class HttpKernel:
         router: Router,
         global_middleware: list[Any] | None = None,
         exception_handler: Any | None = None,
+        app: Any | None = None,
     ) -> None:
         self._router = router
         self._global_middleware: list[Any] = list(global_middleware or [])
         self._exception_handler = exception_handler
+        self._app = app
 
         if os.environ.get("APP_ENV", "local") != "testing":
             from hunt.http.middleware.request_id import RequestId
@@ -230,15 +232,28 @@ class HttpKernel:
                 break
         return body
 
-    @staticmethod
-    async def _handle_lifespan(scope: dict, receive: Any, send: Any) -> None:
+    async def _handle_lifespan(self, scope: dict, receive: Any, send: Any) -> None:
         while True:
             message = await receive()
             if message["type"] == "lifespan.startup":
+                await self._run_hooks("_startup_handlers")
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
+                await self._run_hooks("_shutdown_handlers")
                 await send({"type": "lifespan.shutdown.complete"})
                 return
+
+    async def _run_hooks(self, attr: str) -> None:
+        handlers = getattr(self._app, attr, []) if self._app is not None else []
+        for handler in handlers:
+            try:
+                result = handler()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:
+                import logging
+
+                logging.getLogger("hunt").error("Lifespan hook %r raised: %s", handler, exc)
 
     @staticmethod
     async def _try_static(path: str, send: Any) -> bool:

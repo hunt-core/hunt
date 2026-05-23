@@ -503,7 +503,7 @@ global_middleware = [
 ]
 
 # -- HTTP Kernel (ASGI app)
-kernel = HttpKernel(router, global_middleware=global_middleware, exception_handler=exc_handler)
+kernel = HttpKernel(router, global_middleware=global_middleware, exception_handler=exc_handler, app=application)
 application.instance("kernel", kernel)
 
 # ASGI entry point
