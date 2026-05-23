@@ -11,7 +11,11 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.2.45] — 2026-05-23
+## [0.2.46] — 2026-05-23
+
+### Added
+
+- **`vendor:publish` — full view overriding** (`vendor_publish.py`): users can now publish all framework views to `resources/views/` for customisation. `vendor:publish` (no tag) or `--tag views` copies every framework view; `--tag views:auth` copies only auth views; `--tag views:components` (or the existing `--tag components`) copies only UI components. Any file placed in `resources/views/` automatically takes priority over the framework's built-in copy (the `ChoiceLoader` order in `ViewFactory` already ensures this). If a destination file already exists (i.e. the user has already customised it), the framework's copy is placed under `resources/views/framework/` instead so the original is never overwritten and the reference template remains accessible.
 
 ### Fixed
 
