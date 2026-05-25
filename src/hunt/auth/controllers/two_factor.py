@@ -103,22 +103,32 @@ class TwoFactorChallengeController(Controller):
         try:
             secret = TwoFactor.decrypt_secret(encrypted_secret)
         except Exception:
-            request.session().flash("error", "Invalid code. Please try again.")
-            return self.redirect("/two-factor/challenge")
+            # Decryption failure — either APP_KEY was rotated after enrollment or the
+            # stored value is corrupt. Clear the pending session so the user is not
+            # trapped in the challenge loop and can attempt to log in again.
+            request.session().forget("_2fa_pending")
+            request.session().flash(
+                "error",
+                "Two-factor authentication is temporarily unavailable. Please contact support.",
+            )
+            return self.redirect("/login")
 
         if TwoFactor.verify(secret, code):
             request.session().forget("_2fa_pending")
             guard.login(user)
             return self.redirect("/dashboard")
 
-        # Try recovery codes
+        # Try recovery codes. Recovery codes contain a hyphen ("aaaaa-bbbbb");
+        # TOTP codes are all digits — skip the expensive bcrypt scan for TOTP-shaped input.
         raw = user._attributes.get("two_factor_recovery_codes") or "[]"
         try:
             hashes: list[str] = json.loads(raw)
         except Exception:
             hashes = []
 
-        matched = next((h for h in hashes if TwoFactor.verify_recovery_code(code, h)), None)
+        matched = None
+        if "-" in code:
+            matched = next((h for h in hashes if TwoFactor.verify_recovery_code(code, h)), None)
         if matched is not None:
             hashes.remove(matched)
             user.update(two_factor_recovery_codes=json.dumps(hashes))

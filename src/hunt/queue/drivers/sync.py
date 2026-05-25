@@ -1,13 +1,33 @@
 from __future__ import annotations
 
+import signal
+
 from hunt.queue.job import Job
+
+
+class JobTimeoutError(Exception):
+    """Raised when a job exceeds its configured timeout."""
 
 
 class SyncDriver:
     """Runs jobs immediately in the calling process (no real queue)."""
 
     def push(self, job: Job) -> None:
-        job.handle()
+        timeout = getattr(job, "timeout", 60)
+        if timeout and timeout > 0 and hasattr(signal, "SIGALRM"):
+
+            def _handle_timeout(signum: int, frame: object) -> None:
+                raise JobTimeoutError(f"{type(job).__name__} exceeded its {timeout}s timeout.")
+
+            old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+            signal.alarm(timeout)
+            try:
+                job.handle()
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+        else:
+            job.handle()
         self._dispatch_chain(job)
 
     def later(self, delay: int, job: Job) -> None:

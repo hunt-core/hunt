@@ -386,7 +386,8 @@ class QueryBuilder:
         import hashlib
 
         sql, bindings = self._build_select()
-        payload = f"{sql}|{sorted(bindings.items())}"
+        withs = sorted(self._withs.keys())
+        payload = f"{sql}|{sorted(bindings.items())}|{withs}"
         return "qb:" + hashlib.md5(payload.encode()).hexdigest()
 
     # ------------------------------------------------------------------
@@ -414,7 +415,10 @@ class QueryBuilder:
             cache_key = mat._derive_cache_key()
             cached_rows = Cache.get(cache_key)
             if cached_rows is not None:
-                return [mat._hydrate(row) for row in cached_rows]
+                results = [mat._hydrate(row) for row in cached_rows]
+                if results and mat._withs and mat._model_class:
+                    mat._eager_load(results)
+                return results
             sql, bindings = mat._build_select()
             rows = mat._execute(sql, bindings)
             results = [mat._hydrate(row) for row in rows]
@@ -505,9 +509,9 @@ class QueryBuilder:
         """Return a flat list of values for a single column."""
         col = _ident(column)
         mat = self._materialize()
-        mat._selects = [col]
-        mat._model_class = None
-        rows = mat._execute(*mat._build_select())
+        qb = mat.select_raw(col)
+        qb._model_class = None
+        rows = qb._execute(*qb._build_select())
         return [row.get(col) for row in rows]
 
     def paginate(self, per_page: int = 15, page: int = 1):

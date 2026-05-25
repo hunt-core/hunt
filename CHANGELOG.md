@@ -11,6 +11,38 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.4] — 2026-05-25
+
+### Fixed
+
+- **Route model binding returns 404 on missing record** (`http/kernel.py`): `resolve_route_binding` raises `ValueError` when a record is not found. The kernel now catches `ValueError` at the binding call site and converts it to `HttpException(404)`, so missing route model parameters produce a 404 response instead of an unhandled 500.
+- **`_fernet_key()` raises `RuntimeError` when `APP_KEY` is unset** (`auth/two_factor.py`): previously, an empty `APP_KEY` silently produced a deterministic constant Fernet key, making all stored TOTP secrets trivially decryptable. A missing key now raises immediately with an actionable error message.
+- **`APP_KEY` rotation no longer traps 2FA users in a redirect loop** (`auth/controllers/two_factor.py`): a `decrypt_secret` failure (e.g. after key rotation or data corruption) now clears the pending 2FA session and redirects to `/login` with an informative message, instead of looping on `/two-factor/challenge` indefinitely.
+- **Recovery code bcrypt scan skipped for TOTP-shaped input** (`auth/controllers/two_factor.py`): a failed TOTP check previously triggered a serial `bcrypt.checkpw` scan of all 8 recovery code hashes (~800 ms CPU per attempt). Recovery codes always contain a hyphen; a format guard now skips the scan entirely for 6-digit TOTP codes.
+- **Cache hit path now calls `_eager_load`** (`database/query_builder.py`): `get()` with `remember()` and `.with_()` returned models with no eager-loaded relations on cache hits. Relations are now loaded on both cache-hit and cache-miss paths.
+- **`pluck()` no longer overwrites scope-applied `_selects`** (`database/query_builder.py`): `pluck()` was directly mutating `mat._selects` after `_materialize()`, silently discarding any SELECT modifications applied by global scopes. It now uses `select_raw()` which returns a proper clone.
+- **`ModelMeta` only calls `boot()` on the class that defines it** (`database/model.py`): `boot()` was called for every subclass including those that inherit it from a parent, causing the parent's `boot()` body to re-run with `cls` pointing to the subclass. Boot is now only triggered when the class explicitly defines `boot` in its own namespace.
+
+---
+
+## [0.3.3] — 2026-05-25
+
+### Fixed
+
+- **`_url` validation rule now validates the host** (`validation/rules.py`): the rule previously accepted strings like `http://` (no host). It now uses `urllib.parse.urlparse` and requires a non-empty `netloc`.
+- **Query cache key now includes eager-load relations** (`database/query_builder.py`): `remember()` previously shared a cache entry between queries with and without `.with_()` relations, causing eager-loaded relations to be missing on cache hits. The key now includes the sorted set of relation names.
+- **HTML injection in mail rendering fixed** (`mail/message.py`): text passed to `.greeting()`, `.line()`, `.outro()`, and `.action()` is now HTML-escaped before being inserted into the email template.
+- **Duplicate named routes now raise `ValueError`** (`http/router.py`): registering two routes with the same name silently overwrote the first. A `ValueError` is now raised immediately at registration time.
+- **`request.query()` always returns a single string** (`http/request.py`): previously returned a `list` when a query parameter appeared multiple times, making the return type inconsistent. It now always returns the first value. A new `query_all(key)` method returns all values as a list for multi-value params.
+
+### Changed
+
+- **`resource()` routes PUT and PATCH together** (`http/router.py`): the separate PUT and PATCH routes are now registered as a single `match(["PUT", "PATCH"], ...)` route named `{prefix}.update`, following REST convention and eliminating the unnamed PATCH route.
+- **Cache `remember()` uses atomic `add()`** (`cache/manager.py`): all three stores (`RedisStore`, `ArrayStore`, `FileStore`) now write via `add()` instead of `put()` after computing the value, so a concurrent writer that already stored the result wins rather than both writes racing.
+- **Sync queue driver enforces job timeouts** (`queue/drivers/sync.py`): jobs with a `timeout` attribute are now run under `SIGALRM` on POSIX systems. A `JobTimeoutError` is raised if the job exceeds its limit.
+
+---
+
 ## [0.3.2] — 2026-05-25
 
 ### Security
@@ -18,6 +50,11 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - **2FA recovery codes now hashed at rest** (`auth/two_factor.py`, `auth/controllers/two_factor.py`): recovery codes are hashed with bcrypt before being stored in the database. Verification uses constant-time `bcrypt.checkpw` instead of a plain string comparison, and the matched hash is removed on use. The plaintext codes are only ever visible immediately after generation.
 - **TOTP secret encrypted at rest** (`auth/two_factor.py`, `auth/controllers/two_factor.py`): the TOTP secret is now encrypted with Fernet (AES-128-CBC + HMAC-SHA256) before storage, keyed to `APP_KEY`. The secret is decrypted only in memory at verification time.
 - **`manage` view no longer exposes stored codes** (`views/auth/two_factor/manage.html`): the manage page now shows only the count of remaining recovery codes. Plaintext codes are shown once on the `recovery` view immediately after generation or regeneration.
+- **Debug panel no longer exposes auth session keys** (`http/middleware/debug_panel.py`): `_auth_id`, `_2fa_pending`, and `_2fa_pending_secret` are now in `_PRIVATE_SESSION_KEYS` and are filtered from the session tab even when `APP_DEBUG=true`.
+- **HSTS enabled by default** (`http/middleware/secure_headers.py`): `Strict-Transport-Security` now defaults to `max-age=31536000` (1 year). Set `SECURE_HSTS_SECONDS=0` to disable for local development.
+- **Default Content-Security-Policy** (`http/middleware/secure_headers.py`): CSP now defaults to `default-src 'self'` instead of being omitted entirely. Override with `SECURE_CONTENT_SECURITY_POLICY`.
+- **Password reset tokens hashed with bcrypt** (`auth/passwords.py`): reset tokens are now hashed with bcrypt before storage instead of HMAC-SHA256, making offline brute-force infeasible even if both the DB and `APP_KEY` are leaked.
+- **Password reset timing hardened** (`auth/passwords.py`): token generation and hashing now always run before the user lookup, eliminating the timing difference that previously allowed enumeration of registered email addresses.
 - Added `cryptography>=41.0,<45.0` as an explicit dependency.
 
 ---

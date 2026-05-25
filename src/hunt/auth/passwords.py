@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import time
 from typing import Any
@@ -25,12 +23,16 @@ class PasswordBroker:
         The caller is responsible for sending the token to the user (e.g. via
         email once the mail system is implemented).  Returns None when no user
         with that email exists.
+
+        Token generation and hashing always run before the user lookup so that
+        response time does not reveal whether the email is registered.
         """
+        token = os.urandom(32).hex()
+        hashed = self._hash(token)
         if not self._find_user(email):
             return None
-        token = os.urandom(32).hex()
         self._delete_existing(email)
-        self._insert_token(email, self._hash(token))
+        self._insert_token(email, hashed)
         return token
 
     def token_valid(self, email: str, token: str) -> bool:
@@ -41,7 +43,7 @@ class PasswordBroker:
         expiry = int(row.get("created_at", 0)) + self.TOKEN_EXPIRY
         if expiry < int(time.time()):
             return False
-        return hmac.compare_digest(self._hash(token), str(row["token"]))
+        return self._verify(token, str(row["token"]))
 
     def reset(self, credentials: dict[str, Any]) -> bool:
         """Validate token then update the user's password. Returns True on success."""
@@ -77,11 +79,17 @@ class PasswordBroker:
         return self._model.where("email", email).first()
 
     def _hash(self, token: str) -> str:
-        # HMAC with APP_KEY so leaked DB hashes are useless without the key
-        from hunt.security.signing import _get_app_key
+        import bcrypt
 
-        key = _get_app_key()
-        return hmac.new(key, token.encode(), hashlib.sha256).hexdigest()
+        return bcrypt.hashpw(token.encode(), bcrypt.gensalt()).decode()
+
+    def _verify(self, token: str, hashed: str) -> bool:
+        import bcrypt
+
+        try:
+            return bcrypt.checkpw(token.encode(), hashed.encode())
+        except Exception:
+            return False
 
     def _delete_existing(self, email: str) -> None:
         from sqlalchemy import text

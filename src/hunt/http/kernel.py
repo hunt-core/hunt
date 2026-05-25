@@ -171,7 +171,12 @@ class HttpKernel:
                 elif name in params:
                     ann = param.annotation
                     if ann is not inspect.Parameter.empty and isinstance(ann, type) and issubclass(ann, Model):
-                        kwargs[name] = ann.resolve_route_binding(params[name])
+                        try:
+                            kwargs[name] = ann.resolve_route_binding(params[name])
+                        except ValueError as exc:
+                            from hunt.http.exceptions import HttpException
+
+                            raise HttpException(404, "Not Found.") from exc
                     else:
                         kwargs[name] = params[name]
                 elif param.default is not inspect.Parameter.empty:

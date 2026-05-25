@@ -40,9 +40,9 @@ class TwoFactor:
 
     @staticmethod
     def _fernet_key() -> bytes:
-        from cryptography.fernet import Fernet  # noqa: F401 — validates availability
-
         app_key = os.environ.get("APP_KEY", "")
+        if not app_key:
+            raise RuntimeError("APP_KEY is not set. Cannot encrypt 2FA secrets — set APP_KEY in your .env file.")
         return base64.urlsafe_b64encode(hashlib.sha256(app_key.encode()).digest())
 
     @staticmethod

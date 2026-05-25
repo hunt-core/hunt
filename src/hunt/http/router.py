@@ -45,14 +45,15 @@ class Router:
         return self._add(methods, uri, action)
 
     def resource(self, prefix: str, controller: Any) -> None:
-        """Register standard resource routes for a controller class."""
+        """Register standard RESTful resource routes for a controller class."""
         self.get(f"/{prefix}", lambda req: controller().index(req)).named(f"{prefix}.index")
         self.get(f"/{prefix}/create", lambda req: controller().create(req)).named(f"{prefix}.create")
         self.post(f"/{prefix}", lambda req: controller().store(req)).named(f"{prefix}.store")
         self.get(f"/{prefix}/{{id}}", lambda req, id: controller().show(req, id)).named(f"{prefix}.show")
         self.get(f"/{prefix}/{{id}}/edit", lambda req, id: controller().edit(req, id)).named(f"{prefix}.edit")
-        self.put(f"/{prefix}/{{id}}", lambda req, id: controller().update(req, id)).named(f"{prefix}.update")
-        self.patch(f"/{prefix}/{{id}}", lambda req, id: controller().update(req, id))
+        self.match(["PUT", "PATCH"], f"/{prefix}/{{id}}", lambda req, id: controller().update(req, id)).named(
+            f"{prefix}.update"
+        )
         self.delete(f"/{prefix}/{{id}}", lambda req, id: controller().destroy(req, id)).named(f"{prefix}.destroy")
 
     # ------------------------------------------------------------------
@@ -156,6 +157,10 @@ class Router:
 
     def _register_named(self, route: Route) -> None:
         if route.name:
+            if route.name in self._named:
+                raise ValueError(
+                    f"Route name '{route.name}' is already registered. Each named route must have a unique name."
+                )
             self._named[route.name] = route
 
 

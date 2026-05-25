@@ -137,7 +137,10 @@ def _regex(value: Any, params: list, _data: dict) -> str | None:
 def _url(value: Any, _params: list, _data: dict) -> str | None:
     if value is None:
         return None
-    if not re.match(r"^https?://", str(value)):
+    from urllib.parse import urlparse
+
+    parsed = urlparse(str(value))
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return "The field must be a valid URL."
     return None
 

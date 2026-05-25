@@ -205,12 +205,19 @@ def create(request: Request, resource_key: str) -> Response:
 
 def _collect_data(request: Request, fields: list) -> dict:
     """Merge form text values with uploaded files for the given field list."""
+    from hunt.admin.fields.boolean import Boolean as BooleanField
     from hunt.admin.fields.image import Image as ImageField
     from hunt.validation.validator import ValidationException
 
     allowed_attrs = {f.attribute for f in fields if not f._readonly}
     raw_data = request.all()
     data = {k: v for k, v in raw_data.items() if k in allowed_attrs}
+
+    # Unchecked checkboxes are absent from POST data entirely. Explicitly set
+    # them to False so instance.fill() sees the unchecked state.
+    for field in fields:
+        if isinstance(field, BooleanField) and not field._readonly and field.attribute not in data:
+            data[field.attribute] = False
     size_errors: dict[str, list[str]] = {}
     for field in fields:
         if isinstance(field, ImageField) and not field._readonly:

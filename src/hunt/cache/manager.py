@@ -119,16 +119,18 @@ class RedisStore:
 
     def remember(self, key: str, seconds: int, callback: Callable) -> Any:
         value = self.get(key)
-        if value is None:
-            value = callback()
-            self.put(key, value, seconds)
+        if value is not None:
+            return value
+        value = callback()
+        self.add(key, value, seconds)
         return value
 
     def remember_forever(self, key: str, callback: Callable) -> Any:
         value = self.get(key)
-        if value is None:
-            value = callback()
-            self.forever(key, value)
+        if value is not None:
+            return value
+        value = callback()
+        self.add(key, value)
         return value
 
 
@@ -192,16 +194,18 @@ class ArrayStore:
 
     def remember(self, key: str, seconds: int, callback: Callable) -> Any:
         value = self.get(key)
-        if value is None:
-            value = callback()
-            self.put(key, value, seconds)
+        if value is not None:
+            return value
+        value = callback()
+        self.add(key, value, seconds)
         return value
 
     def remember_forever(self, key: str, callback: Callable) -> Any:
         value = self.get(key)
-        if value is None:
-            value = callback()
-            self.forever(key, value)
+        if value is not None:
+            return value
+        value = callback()
+        self.add(key, value)
         return value
 
 

@@ -179,12 +179,9 @@ class TestGatePolicies:
 # Password Reset
 # ===========================================================================
 
-_BROKER_APP_KEY = "b" * 32
-
 
 class TestPasswordBroker:
     def setup_method(self):
-        os.environ["APP_KEY"] = _BROKER_APP_KEY
         from hunt.auth.passwords import PasswordBroker
 
         self.broker = PasswordBroker()
@@ -193,9 +190,6 @@ class TestPasswordBroker:
         model = MagicMock()
         model.where.return_value.first.return_value = self.user
         self.broker.set_model(model)
-
-    def teardown_method(self):
-        os.environ.pop("APP_KEY", None)
 
     def test_send_reset_link_returns_token(self):
         with patch.object(self.broker, "_delete_existing"), patch.object(self.broker, "_insert_token"):

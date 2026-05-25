@@ -26,7 +26,7 @@ class ModelMeta(type):
         # Each subclass gets its own global scope dict
         if "_global_scopes" not in namespace:
             cls._global_scopes = {}
-        if name != "Model":
+        if name != "Model" and "boot" in namespace:
             cls.boot()
         return cls
 

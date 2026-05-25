@@ -126,11 +126,17 @@ class Request:
         return data.get(key, default)
 
     def query(self, key: str, default: Any = None) -> Any:
+        """Return the first value of a query string parameter."""
         qs = parse_qs(self._scope.get("query_string", b"").decode())
         values = qs.get(key)
         if values is None:
             return default
-        return values[0] if len(values) == 1 else values
+        return values[0]
+
+    def query_all(self, key: str) -> list[str]:
+        """Return all values for a query string parameter (for multi-value params)."""
+        qs = parse_qs(self._scope.get("query_string", b"").decode())
+        return qs.get(key, [])
 
     def all(self) -> dict[str, Any]:
         return {**self._all_input(), **self._path_params}

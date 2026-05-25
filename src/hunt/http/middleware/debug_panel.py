@@ -11,7 +11,16 @@ from hunt.http.response import Response
 
 _SENSITIVE_HEADERS = frozenset({"authorization", "cookie", "x-api-key", "x-auth-token", "x-csrf-token"})
 
-_PRIVATE_SESSION_KEYS = frozenset({"_csrf_token", "_flash_new", "_flash_old"})
+_PRIVATE_SESSION_KEYS = frozenset(
+    {
+        "_csrf_token",
+        "_flash_new",
+        "_flash_old",
+        "_auth_id",
+        "_2fa_pending",
+        "_2fa_pending_secret",
+    }
+)
 
 
 def _is_debug() -> bool:

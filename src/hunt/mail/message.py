@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html as _html
+
 from hunt.mail.mailable import Mailable
 
 
@@ -52,20 +54,21 @@ class MailMessage(Mailable):
 
     def render(self) -> str:
         """Render lines into a minimal HTML email body."""
+        e = _html.escape
         parts: list[str] = [
             "<!DOCTYPE html><html><body style='font-family:sans-serif;max-width:600px;margin:auto;padding:20px'>",
-            f"<p><strong>{self._greeting}</strong></p>",
+            f"<p><strong>{e(self._greeting)}</strong></p>",
         ]
         for line in self._intro_lines:
-            parts.append(f"<p>{line}</p>")
+            parts.append(f"<p>{e(line)}</p>")
         if self._action_text and self._action_url:
             color = "#e3342f" if self._error else "#3490dc"
             parts.append(
-                f"<p><a href='{self._action_url}' "
+                f"<p><a href='{e(self._action_url)}' "
                 f"style='background:{color};color:#fff;padding:10px 20px;"
-                f"text-decoration:none;border-radius:4px'>{self._action_text}</a></p>"
+                f"text-decoration:none;border-radius:4px'>{e(self._action_text)}</a></p>"
             )
         for line in self._outro_lines:
-            parts.append(f"<p>{line}</p>")
+            parts.append(f"<p>{e(line)}</p>")
         parts.append("</body></html>")
         return "".join(parts)
