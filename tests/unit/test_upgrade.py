@@ -1,4 +1,5 @@
 """Tests for the upgrade command."""
+
 import json
 
 import pytest
@@ -38,6 +39,7 @@ def project(tmp_path, monkeypatch):
 # Guard: bootstrap/app.py must exist
 # ---------------------------------------------------------------------------
 
+
 def test_error_when_no_bootstrap(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(upgrade_command, [])
@@ -49,10 +51,9 @@ def test_error_when_no_bootstrap(tmp_path, monkeypatch):
 # Adding missing files
 # ---------------------------------------------------------------------------
 
+
 def test_adds_missing_scaffold_files(project, monkeypatch):
-    monkeypatch.setattr(
-        "hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE
-    )
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE)
 
     result = CliRunner().invoke(upgrade_command, [])
 
@@ -62,9 +63,7 @@ def test_adds_missing_scaffold_files(project, monkeypatch):
 
 
 def test_reports_added_files(project, monkeypatch):
-    monkeypatch.setattr(
-        "hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE
-    )
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE)
 
     result = CliRunner().invoke(upgrade_command, [])
 
@@ -77,10 +76,9 @@ def test_reports_added_files(project, monkeypatch):
 # Skipping already up-to-date files
 # ---------------------------------------------------------------------------
 
+
 def test_skips_files_matching_canonical_content(project, monkeypatch):
-    monkeypatch.setattr(
-        "hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE
-    )
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE)
     for rel, content in _SCAFFOLD_SAMPLE.items():
         dest = project / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -97,10 +95,9 @@ def test_skips_files_matching_canonical_content(project, monkeypatch):
 # Skipping customised files
 # ---------------------------------------------------------------------------
 
+
 def test_skips_customised_files(project, monkeypatch):
-    monkeypatch.setattr(
-        "hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE
-    )
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE)
     # Write files with different content and no lock file (simulates user edits
     # before lock file existed, or edits after scaffold)
     for rel in _SCAFFOLD_SAMPLE:
@@ -118,6 +115,7 @@ def test_skips_customised_files(project, monkeypatch):
 # ---------------------------------------------------------------------------
 # Upgrading unmodified files
 # ---------------------------------------------------------------------------
+
 
 def test_upgrades_unmodified_files(project, monkeypatch):
     old_content = "# old scaffold content\n"
@@ -168,10 +166,9 @@ def test_does_not_upgrade_customised_file_even_with_lock(project, monkeypatch):
 # Lock file written
 # ---------------------------------------------------------------------------
 
+
 def test_writes_lock_file_after_upgrade(project, monkeypatch):
-    monkeypatch.setattr(
-        "hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE
-    )
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE)
 
     CliRunner().invoke(upgrade_command, [])
 
@@ -184,9 +181,7 @@ def test_writes_lock_file_after_upgrade(project, monkeypatch):
 
 
 def test_lock_file_stores_canonical_hash(project, monkeypatch):
-    monkeypatch.setattr(
-        "hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE
-    )
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", _SCAFFOLD_SAMPLE)
 
     CliRunner().invoke(upgrade_command, [])
 
@@ -198,6 +193,7 @@ def test_lock_file_stores_canonical_hash(project, monkeypatch):
 # ---------------------------------------------------------------------------
 # Bootstrap patching
 # ---------------------------------------------------------------------------
+
 
 def test_patches_bootstrap_with_auth_routes(project, monkeypatch):
     monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", {})

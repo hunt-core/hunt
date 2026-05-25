@@ -210,9 +210,18 @@ class TestVendorPublish:
         CliRunner().invoke(vendor_publish_command, ["--tag", "components"])
         dest = tmp_path / "resources" / "views" / "components"
         published = {f.name for f in dest.glob("*.html")}
-        for name in ("alert.html", "badge.html", "button.html", "card.html",
-                     "table.html", "modal.html", "navbar.html", "sidebar.html",
-                     "empty-state.html", "form-group.html"):
+        for name in (
+            "alert.html",
+            "badge.html",
+            "button.html",
+            "card.html",
+            "table.html",
+            "modal.html",
+            "navbar.html",
+            "sidebar.html",
+            "empty-state.html",
+            "form-group.html",
+        ):
             assert name in published, f"{name} not published"
 
     def test_skips_existing_without_force(self, tmp_path, monkeypatch):

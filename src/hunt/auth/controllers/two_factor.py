@@ -48,10 +48,11 @@ class TwoFactorSetupController(Controller):
             request.session().flash("error", "Invalid verification code. Please try again.")
             return self.redirect("/two-factor/confirm")
         recovery_codes = TwoFactor.generate_recovery_codes()
+        hashed_codes = [TwoFactor.hash_recovery_code(c) for c in recovery_codes]
         user.update(
-            two_factor_secret=secret,
+            two_factor_secret=TwoFactor.encrypt_secret(secret),
             two_factor_enabled=True,
-            two_factor_recovery_codes=json.dumps(recovery_codes),
+            two_factor_recovery_codes=json.dumps(hashed_codes),
         )
         request.session().forget("_2fa_pending_secret")
         request.session().flash("success", "Two-factor authentication has been enabled.")
@@ -98,7 +99,12 @@ class TwoFactorChallengeController(Controller):
             return self.redirect("/login")
 
         code = request.input("code", "").strip()
-        secret = user._attributes.get("two_factor_secret", "")
+        encrypted_secret = user._attributes.get("two_factor_secret", "")
+        try:
+            secret = TwoFactor.decrypt_secret(encrypted_secret)
+        except Exception:
+            request.session().flash("error", "Invalid code. Please try again.")
+            return self.redirect("/two-factor/challenge")
 
         if TwoFactor.verify(secret, code):
             request.session().forget("_2fa_pending")
@@ -108,16 +114,17 @@ class TwoFactorChallengeController(Controller):
         # Try recovery codes
         raw = user._attributes.get("two_factor_recovery_codes") or "[]"
         try:
-            codes: list[str] = json.loads(raw)
+            hashes: list[str] = json.loads(raw)
         except Exception:
-            codes = []
+            hashes = []
 
-        if code in codes:
-            codes.remove(code)
-            user.update(two_factor_recovery_codes=json.dumps(codes))
+        matched = next((h for h in hashes if TwoFactor.verify_recovery_code(code, h)), None)
+        if matched is not None:
+            hashes.remove(matched)
+            user.update(two_factor_recovery_codes=json.dumps(hashes))
             request.session().forget("_2fa_pending")
             guard.login(user)
-            request.session().flash("warning", "Recovery code used. Please generate new recovery codes.")
+            request.session().flash("warning", "Recovery code used. Please regenerate your recovery codes.")
             return self.redirect("/dashboard")
 
         request.session().flash("error", "Invalid code. Please try again.")
@@ -133,15 +140,15 @@ class TwoFactorManageController(Controller):
             return self.redirect("/login")
         raw = user._attributes.get("two_factor_recovery_codes") or "[]"
         try:
-            recovery_codes: list[str] = json.loads(raw)
+            hashes: list[str] = json.loads(raw)
         except Exception:
-            recovery_codes = []
+            hashes = []
         return self.view(
             "auth.two_factor.manage",
             {
                 "user": user,
                 "enabled": bool(user._attributes.get("two_factor_enabled")),
-                "recovery_codes": recovery_codes,
+                "recovery_code_count": len(hashes),
             },
         )
 
@@ -155,6 +162,7 @@ class TwoFactorManageController(Controller):
             request.session().flash("error", "Incorrect password.")
             return self.redirect("/two-factor/manage")
         recovery_codes = TwoFactor.generate_recovery_codes()
-        user.update(two_factor_recovery_codes=json.dumps(recovery_codes))
+        hashed_codes = [TwoFactor.hash_recovery_code(c) for c in recovery_codes]
+        user.update(two_factor_recovery_codes=json.dumps(hashed_codes))
         request.session().flash("success", "Recovery codes have been regenerated.")
         return self.view("auth.two_factor.recovery", {"recovery_codes": recovery_codes})

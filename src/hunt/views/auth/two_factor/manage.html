@@ -20,16 +20,12 @@
 
 {% if enabled %}
 
-{% if recovery_codes %}
 <div style="margin-bottom:1.5rem;">
     <p style="font-size:.8rem;font-weight:500;color:#aaa;text-transform:uppercase;letter-spacing:.02em;margin-bottom:.75rem;">Recovery Codes</p>
-    <div style="background:#0f0f0f;border:1px solid #2e2e2e;border-radius:8px;padding:1rem;margin-bottom:.75rem;">
-        <ul style="list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:.4rem;">
-            {% for code in recovery_codes %}
-            <li style="font-family:monospace;font-size:.8rem;color:#aaa;">{{ code }}</li>
-            {% endfor %}
-        </ul>
-    </div>
+    <p style="font-size:.875rem;color:#aaa;margin-bottom:.75rem;">
+        You have <strong style="color:#e5e7eb;">{{ recovery_code_count }}</strong> recovery code{{ 's' if recovery_code_count != 1 else '' }} remaining.
+        Recovery codes are only shown once when generated.
+    </p>
     <form method="POST" action="/two-factor/regenerate">
         <input type="hidden" name="_token" value="{{ csrf_token }}">
         <div class="field">
@@ -38,7 +34,6 @@
         <button type="submit" class="btn-submit" style="background:#374151;">Regenerate Recovery Codes</button>
     </form>
 </div>
-{% endif %}
 
 <hr style="border:none;border-top:1px solid #2a2a3e;margin-bottom:1.5rem;">
 

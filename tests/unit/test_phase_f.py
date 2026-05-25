@@ -1,4 +1,5 @@
 """Phase F — Queued Listeners & Event Subscribers tests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock, patch
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _app():
     return MagicMock()
@@ -21,6 +23,7 @@ def _run(coro):
 def _fresh_dispatcher():
     """Return the singleton Dispatcher with all listeners cleared."""
     from hunt.events.dispatcher import Dispatcher
+
     # Clear state by replacing the internal dict directly
     Dispatcher._listeners.clear()
     return Dispatcher
@@ -30,6 +33,7 @@ def _fresh_dispatcher():
 # Event + Listener fixtures (defined at module scope so they are importable
 # by QueuedEventListener which uses importlib)
 # ---------------------------------------------------------------------------
+
 
 class UserRegistered:
     def __init__(self, user_id: int = 0, email: str = "") -> None:
@@ -55,10 +59,12 @@ class _Collector:
 # 1. QueuedEventListener — unit tests
 # ===========================================================================
 
+
 class TestQueuedEventListener:
     def setup_method(self):
         # Register test classes in the allowlist so handle() can execute them
         from hunt.events.queued import allow_event, allow_listener
+
         allow_listener(f"{__name__}._RecordingListener")
         allow_listener(f"{__name__}._NoArgListener")
         allow_event(f"{__name__}.UserRegistered")
@@ -100,8 +106,7 @@ class TestQueuedEventListener:
         )
         with patch("hunt.events.queued._import_dotted") as mock_import:
             mock_import.side_effect = lambda path: (
-                FakeListener if "listener" in path.lower() or path.endswith("Registered")
-                else UserRegistered
+                FakeListener if "listener" in path.lower() or path.endswith("Registered") else UserRegistered
             )
             # Actually test with real imports:
             pass
@@ -174,6 +179,7 @@ class _NoArgListener:
 # 2. EventServiceProvider — queued listeners
 # ===========================================================================
 
+
 class TestQueuedListeners:
     def setup_method(self):
         _fresh_dispatcher()
@@ -190,7 +196,8 @@ class TestQueuedListeners:
         from hunt.testing.fakes import QueueFake
 
         class EmailJob(Job):
-            def handle(self, event=None): pass
+            def handle(self, event=None):
+                pass
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [EmailJob]}
@@ -211,7 +218,9 @@ class TestQueuedListeners:
 
         class FlaggedListener:
             implements_queued_listener = True
-            def handle(self, event=None): pass
+
+            def handle(self, event=None):
+                pass
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [FlaggedListener]}
@@ -231,7 +240,8 @@ class TestQueuedListeners:
         from hunt.testing.fakes import QueueFake
 
         class OrderJob(Job):
-            def handle(self, event=None): pass
+            def handle(self, event=None):
+                pass
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {OrderPlaced: [OrderJob]}
@@ -256,7 +266,8 @@ class TestQueuedListeners:
         from hunt.testing.fakes import QueueFake
 
         class MyJob(Job):
-            def handle(self, event=None): pass
+            def handle(self, event=None):
+                pass
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [MyJob]}
@@ -279,7 +290,8 @@ class TestQueuedListeners:
         calls = []
 
         class InlineListener:
-            def handle(self, event): calls.append(event)
+            def handle(self, event):
+                calls.append(event)
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [InlineListener]}
@@ -305,10 +317,12 @@ class TestQueuedListeners:
         inline_calls = []
 
         class QueuedJob(Job):
-            def handle(self, event=None): pass
+            def handle(self, event=None):
+                pass
 
         class InlineListener:
-            def handle(self, event): inline_calls.append(event)
+            def handle(self, event):
+                inline_calls.append(event)
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [QueuedJob, InlineListener]}
@@ -331,7 +345,8 @@ class TestQueuedListeners:
         from hunt.testing.fakes import QueueFake
 
         class AsyncQueued(Job):
-            def handle(self, event=None): pass
+            def handle(self, event=None):
+                pass
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [AsyncQueued]}
@@ -350,6 +365,7 @@ class TestQueuedListeners:
 # ===========================================================================
 # 3. EventServiceProvider — event subscribers
 # ===========================================================================
+
 
 class TestEventSubscribers:
     def setup_method(self):
@@ -387,8 +403,11 @@ class TestEventSubscribers:
                 dispatcher.listen(UserRegistered, self.on_registered)
                 dispatcher.listen(OrderPlaced, self.on_ordered)
 
-            def on_registered(self, event): calls.append(("registered", event.user_id))
-            def on_ordered(self, event): calls.append(("ordered", event.order_id))
+            def on_registered(self, event):
+                calls.append(("registered", event.user_id))
+
+            def on_ordered(self, event):
+                calls.append(("ordered", event.order_id))
 
         class AppProvider(EventServiceProvider):
             subscribe: ClassVar[list] = [UserSubscriber]
@@ -433,12 +452,15 @@ class TestEventSubscribers:
         subscriber_calls = []
 
         class InlineListener:
-            def handle(self, event): inline_calls.append(event)
+            def handle(self, event):
+                inline_calls.append(event)
 
         class MySub:
             def subscribe(self, dispatcher):
                 dispatcher.listen(OrderPlaced, self.on_order)
-            def on_order(self, event): subscriber_calls.append(event)
+
+            def on_order(self, event):
+                subscriber_calls.append(event)
 
         class AppProvider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [InlineListener]}
@@ -465,10 +487,14 @@ class TestEventSubscribers:
         from hunt.events.provider import EventServiceProvider
 
         class StatefulSubscriber:
-            def __init__(self): self.count = 0
+            def __init__(self):
+                self.count = 0
+
             def subscribe(self, dispatcher):
                 dispatcher.listen(UserRegistered, self.on_event)
-            def on_event(self, event): self.count += 1
+
+            def on_event(self, event):
+                self.count += 1
 
         class AppProvider(EventServiceProvider):
             subscribe: ClassVar[list] = [StatefulSubscriber]
@@ -484,13 +510,15 @@ class TestEventSubscribers:
 # 4. _should_queue helper
 # ===========================================================================
 
+
 class TestShouldQueue:
     def test_job_subclass_returns_true(self):
         from hunt.events.provider import _should_queue
         from hunt.queue.job import Job
 
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         assert _should_queue(MyJob)
 
@@ -498,7 +526,8 @@ class TestShouldQueue:
         from hunt.events.provider import _should_queue
 
         class PlainListener:
-            def handle(self, event): pass
+            def handle(self, event):
+                pass
 
         assert not _should_queue(PlainListener)
 
@@ -507,7 +536,9 @@ class TestShouldQueue:
 
         class FlaggedListener:
             implements_queued_listener = True
-            def handle(self, event): pass
+
+            def handle(self, event):
+                pass
 
         assert _should_queue(FlaggedListener)
 
@@ -516,7 +547,9 @@ class TestShouldQueue:
 
         class NotQueued:
             implements_queued_listener = False
-            def handle(self, event): pass
+
+            def handle(self, event):
+                pass
 
         assert not _should_queue(NotQueued)
 
@@ -527,7 +560,9 @@ class TestShouldQueue:
 
         class MyJob(Job):
             implements_queued_listener = False
-            def handle(self): pass
+
+            def handle(self):
+                pass
 
         assert _should_queue(MyJob)
 
@@ -535,6 +570,7 @@ class TestShouldQueue:
 # ===========================================================================
 # 5. make:listener --queued
 # ===========================================================================
+
 
 class TestMakeListenerQueued:
     def test_queued_flag_generates_job_based_stub(self, tmp_path):
@@ -593,6 +629,7 @@ class TestMakeListenerQueued:
 # 6. Existing provider tests still pass (regression)
 # ===========================================================================
 
+
 class TestExistingProviderRegression:
     def setup_method(self):
         _fresh_dispatcher()
@@ -607,7 +644,8 @@ class TestExistingProviderRegression:
         called = []
 
         class Listener:
-            def handle(self, event): called.append(event)
+            def handle(self, event):
+                called.append(event)
 
         class Provider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [Listener]}
@@ -624,10 +662,12 @@ class TestExistingProviderRegression:
         calls_a, calls_b = [], []
 
         class A:
-            def handle(self, event): calls_a.append(1)
+            def handle(self, event):
+                calls_a.append(1)
 
         class B:
-            def handle(self, event): calls_b.append(1)
+            def handle(self, event):
+                calls_b.append(1)
 
         class Provider(EventServiceProvider):
             listen: ClassVar[dict] = {UserRegistered: [A, B]}

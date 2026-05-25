@@ -1,4 +1,5 @@
 """Phase K — CLI Generators tests."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ from click.testing import CliRunner
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def runner(tmp_path: Path) -> CliRunner:
     return CliRunner()
@@ -23,6 +25,7 @@ def invoke(command, args, cwd: Path):
 def invoke_cwd(command, args, cwd: Path):
     """Invoke command with cwd set to `cwd` (create tmp dir structure)."""
     from click.testing import CliRunner
+
     r = CliRunner()
     result = r.invoke(command, args, catch_exceptions=False)
     return result
@@ -31,6 +34,7 @@ def invoke_cwd(command, args, cwd: Path):
 # ===========================================================================
 # 1. make:command
 # ===========================================================================
+
 
 class TestMakeCommand:
     def test_creates_file(self, tmp_path):
@@ -95,6 +99,7 @@ class TestMakeCommand:
 # 2. make:policy
 # ===========================================================================
 
+
 class TestMakePolicy:
     def test_creates_file(self, tmp_path):
         from hunt.console.commands.make.policy import make_policy_command
@@ -150,6 +155,7 @@ class TestMakePolicy:
 # 3. make:observer
 # ===========================================================================
 
+
 class TestMakeObserver:
     def test_creates_file(self, tmp_path):
         from hunt.console.commands.make.observer import make_observer_command
@@ -200,6 +206,7 @@ class TestMakeObserver:
 # ===========================================================================
 # 4. make:rule
 # ===========================================================================
+
 
 class TestMakeRule:
     def test_creates_file(self, tmp_path):
@@ -253,6 +260,7 @@ class TestMakeRule:
 # 5. make:resource
 # ===========================================================================
 
+
 class TestMakeResource:
     def test_creates_file(self, tmp_path):
         from hunt.console.commands.make.resource import make_resource_command
@@ -298,12 +306,13 @@ class TestMakeResource:
         with r.isolated_filesystem(temp_dir=tmp_path) as td:
             r.invoke(make_resource_command, ["UserResource"], catch_exceptions=False)
             content = (Path(td) / "app" / "resources" / "user_resource.py").read_text()
-        assert "return {" in content or 'return {' in content
+        assert "return {" in content or "return {" in content
 
 
 # ===========================================================================
 # 6. config:cache / config:clear
 # ===========================================================================
+
 
 class TestConfigCache:
     def _write_config(self, td: str, name: str, content: str) -> None:
@@ -376,6 +385,7 @@ class TestConfigCache:
 # ===========================================================================
 # 7. view:cache / view:clear
 # ===========================================================================
+
 
 class TestViewCache:
     def _write_view(self, td: str, name: str, content: str) -> None:
@@ -463,39 +473,49 @@ class TestViewCache:
 # 8. Kernel registration
 # ===========================================================================
 
+
 class TestKernelRegistration:
     def test_make_command_registered(self):
         from hunt.console.kernel import cli
+
         assert "make:command" in cli.commands
 
     def test_make_policy_registered(self):
         from hunt.console.kernel import cli
+
         assert "make:policy" in cli.commands
 
     def test_make_observer_registered(self):
         from hunt.console.kernel import cli
+
         assert "make:observer" in cli.commands
 
     def test_make_rule_registered(self):
         from hunt.console.kernel import cli
+
         assert "make:rule" in cli.commands
 
     def test_make_resource_registered(self):
         from hunt.console.kernel import cli
+
         assert "make:resource" in cli.commands
 
     def test_config_cache_registered(self):
         from hunt.console.kernel import cli
+
         assert "config:cache" in cli.commands
 
     def test_config_clear_registered(self):
         from hunt.console.kernel import cli
+
         assert "config:clear" in cli.commands
 
     def test_view_cache_registered(self):
         from hunt.console.kernel import cli
+
         assert "view:cache" in cli.commands
 
     def test_view_clear_registered(self):
         from hunt.console.kernel import cli
+
         assert "view:clear" in cli.commands

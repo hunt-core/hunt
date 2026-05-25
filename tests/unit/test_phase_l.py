@@ -1,4 +1,5 @@
 """Phase L — Scheduler Enhancements."""
+
 from __future__ import annotations
 
 import os
@@ -13,6 +14,7 @@ from hunt.scheduling.scheduler import ScheduledTask, Scheduler
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
 
 def _task(fn=None) -> ScheduledTask:
     called = []
@@ -30,6 +32,7 @@ def _always_false():
 # ---------------------------------------------------------------------------
 # environments()
 # ---------------------------------------------------------------------------
+
 
 class TestEnvironments:
     def test_runs_when_env_matches(self):
@@ -81,6 +84,7 @@ class TestEnvironments:
 # ---------------------------------------------------------------------------
 # when() / skip()
 # ---------------------------------------------------------------------------
+
 
 class TestWhenSkip:
     def test_when_true_runs(self):
@@ -137,6 +141,7 @@ class TestWhenSkip:
 # ---------------------------------------------------------------------------
 # between()
 # ---------------------------------------------------------------------------
+
 
 class TestBetween:
     def test_within_window_runs(self):
@@ -204,6 +209,7 @@ class TestBetween:
 # run_in_background()
 # ---------------------------------------------------------------------------
 
+
 class TestRunInBackground:
     def test_returns_thread(self):
         barrier = threading.Barrier(2)
@@ -250,6 +256,7 @@ class TestRunInBackground:
 # ---------------------------------------------------------------------------
 # send_output_to() / append_output_to()
 # ---------------------------------------------------------------------------
+
 
 class TestOutputCapture:
     def test_send_output_to_overwrites(self, tmp_path):
@@ -301,6 +308,7 @@ class TestOutputCapture:
 
     def test_stderr_also_captured(self, tmp_path):
         import sys
+
         log = tmp_path / "err.log"
 
         def _fn():
@@ -315,6 +323,7 @@ class TestOutputCapture:
 # ---------------------------------------------------------------------------
 # on_success() / on_failure()
 # ---------------------------------------------------------------------------
+
 
 class TestLifecycleHooks:
     def test_on_success_called_after_success(self):
@@ -394,6 +403,7 @@ class TestLifecycleHooks:
 # ping_before() / then_ping()
 # ---------------------------------------------------------------------------
 
+
 class TestPings:
     def test_ping_before_fires_before_callback(self):
         order = []
@@ -406,8 +416,10 @@ class TestPings:
 
         with patch("hunt.http.client.Http") as mock_http:
             mock_http.get = MagicMock(side_effect=lambda url: order.append(f"ping:{url}"))
-            with patch("hunt.scheduling.scheduler.ScheduledTask._ping",
-                       side_effect=lambda urls: [order.append(f"ping:{u}") for u in urls]):
+            with patch(
+                "hunt.scheduling.scheduler.ScheduledTask._ping",
+                side_effect=lambda urls: [order.append(f"ping:{u}") for u in urls],
+            ):
                 task.run()
 
         # callback must run after ping_before (ordering captured in order list)
@@ -423,6 +435,7 @@ class TestPings:
         task.then_ping("http://healthcheck.example/after")
 
         ping_calls = []
+
         def _tracked_ping(urls):
             ping_calls.append(("ping", list(urls)))
 
@@ -472,6 +485,7 @@ class TestPings:
 # Constraint combination
 # ---------------------------------------------------------------------------
 
+
 class TestConstraintCombinations:
     def test_env_and_when_both_must_pass(self):
         results = []
@@ -502,6 +516,7 @@ class TestConstraintCombinations:
 # ---------------------------------------------------------------------------
 # Scheduler integration
 # ---------------------------------------------------------------------------
+
 
 class TestSchedulerIntegration:
     def test_scheduler_call_returns_task(self):

@@ -1,4 +1,5 @@
 """Phase H tests: Blade / Templating Gaps."""
+
 from __future__ import annotations
 
 from hunt.view.directives import preprocess
@@ -6,6 +7,7 @@ from hunt.view.directives import preprocess
 # ===========================================================================
 # @verbatim / @endverbatim
 # ===========================================================================
+
 
 class TestVerbatim:
     def test_verbatim_wraps_in_raw(self):
@@ -31,14 +33,15 @@ class TestVerbatim:
     def test_verbatim_does_not_affect_content_outside(self):
         src = "{{ $name }}@verbatim{{ $raw }}@endverbatim{{ $other }}"
         out = preprocess(src)
-        assert "{{ name }}" in out       # outside → processed
-        assert "{{ $raw }}" in out        # inside → preserved
-        assert "{{ other }}" in out       # outside → processed
+        assert "{{ name }}" in out  # outside → processed
+        assert "{{ $raw }}" in out  # inside → preserved
+        assert "{{ other }}" in out  # outside → processed
 
 
 # ===========================================================================
 # @json
 # ===========================================================================
+
 
 class TestJson:
     def test_json_simple_variable(self):
@@ -61,6 +64,7 @@ class TestJson:
 # @forelse / @empty / @endforelse
 # ===========================================================================
 
+
 class TestForelse:
     def test_forelse_basic(self):
         src = "@forelse($items as $item)\n{{ $item }}\n@empty\nNone\n@endforelse"
@@ -76,8 +80,7 @@ class TestForelse:
         assert "{% endfor %}" in out
 
     def test_forelse_independent_of_foreach(self):
-        src = ("@foreach($a as $x){{ $x }}@endforeach\n"
-               "@forelse($b as $y){{ $y }}@empty\nnone\n@endforelse")
+        src = "@foreach($a as $x){{ $x }}@endforeach\n@forelse($b as $y){{ $y }}@empty\nnone\n@endforelse"
         out = preprocess(src)
         assert out.count("{% for") == 2
         assert out.count("{% endfor %}") == 2
@@ -86,6 +89,7 @@ class TestForelse:
 # ===========================================================================
 # @switch / @case / @break / @default / @endswitch
 # ===========================================================================
+
 
 class TestSwitch:
     def test_switch_basic(self):
@@ -132,10 +136,7 @@ class TestSwitch:
         assert "{% else %}" not in out
 
     def test_multiple_switches(self):
-        src = (
-            "@switch($a)\n@case(1)\nA\n@break\n@endswitch\n"
-            "@switch($b)\n@case(2)\nB\n@break\n@endswitch"
-        )
+        src = "@switch($a)\n@case(1)\nA\n@break\n@endswitch\n@switch($b)\n@case(2)\nB\n@break\n@endswitch"
         out = preprocess(src)
         assert "{% if a == 1 %}" in out
         assert "{% if b == 2 %}" in out
@@ -145,6 +146,7 @@ class TestSwitch:
 # ===========================================================================
 # @env / @endenv
 # ===========================================================================
+
 
 class TestEnv:
     def test_env_single(self):
@@ -176,6 +178,7 @@ class TestEnv:
 # @once / @endonce
 # ===========================================================================
 
+
 class TestOnce:
     def test_once_strips_markers(self):
         src = "@once\n<script>alert(1)</script>\n@endonce"
@@ -196,6 +199,7 @@ class TestOnce:
 # @py / @endpy
 # ===========================================================================
 
+
 class TestPy:
     def test_py_strips_markers(self):
         src = "@py\n{% set x = 42 %}\n@endpy"
@@ -209,6 +213,7 @@ class TestPy:
 # @prepend / @endprepend
 # ===========================================================================
 
+
 class TestPrepend:
     def test_prepend_treated_like_push(self):
         src = "@prepend('scripts')\n<script>...</script>\n@endprepend"
@@ -221,6 +226,7 @@ class TestPrepend:
 # ===========================================================================
 # @includeIf
 # ===========================================================================
+
 
 class TestIncludeIf:
     def test_include_if_basic(self):
@@ -238,6 +244,7 @@ class TestIncludeIf:
 # ===========================================================================
 # @includeWhen
 # ===========================================================================
+
 
 class TestIncludeWhen:
     def test_include_when_basic(self):
@@ -257,6 +264,7 @@ class TestIncludeWhen:
 # @includeFirst
 # ===========================================================================
 
+
 class TestIncludeFirst:
     def test_include_first_two_views(self):
         src = "@includeFirst(['custom.header', 'default.header'])"
@@ -275,6 +283,7 @@ class TestIncludeFirst:
 # ===========================================================================
 # Pipeline ordering — verify verbatim protects @-directives inside it
 # ===========================================================================
+
 
 class TestPipelineOrdering:
     def test_directives_inside_verbatim_not_processed(self):
@@ -313,6 +322,7 @@ class TestPipelineOrdering:
 # ===========================================================================
 # Existing directives still work (regression)
 # ===========================================================================
+
 
 class TestRegressions:
     def test_extends(self):

@@ -1,4 +1,5 @@
 """Tests for M25 — Live Reload Dev Server."""
+
 from __future__ import annotations
 
 import time
@@ -98,8 +99,7 @@ class TestServeDebugWatchMessage:
 class TestServeOpenBrowser:
     def test_open_flag_triggers_browser(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        with patch("uvicorn.run"), patch("webbrowser.open") as mock_open, \
-             patch("time.sleep"):
+        with patch("uvicorn.run"), patch("webbrowser.open") as mock_open, patch("time.sleep"):
             CliRunner().invoke(serve_command, ["--open"], catch_exceptions=False)
             time.sleep(0.1)
             mock_open.assert_called_once()
@@ -107,8 +107,7 @@ class TestServeOpenBrowser:
 
     def test_open_uses_configured_port(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        with patch("uvicorn.run"), patch("webbrowser.open") as mock_open, \
-             patch("time.sleep"):
+        with patch("uvicorn.run"), patch("webbrowser.open") as mock_open, patch("time.sleep"):
             CliRunner().invoke(serve_command, ["--open", "--port=9090"], catch_exceptions=False)
             time.sleep(0.1)
             mock_open.assert_called_once()

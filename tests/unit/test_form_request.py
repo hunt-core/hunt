@@ -1,4 +1,5 @@
 """Tests for FormRequest (M22)."""
+
 from __future__ import annotations
 
 import pytest
@@ -10,6 +11,7 @@ from hunt.validation.validator import ValidationException, Validator
 # ---------------------------------------------------------------------------
 # Minimal Request stub — avoids the ASGI machinery
 # ---------------------------------------------------------------------------
+
 
 class _FakeRequest:
     def __init__(self, data: dict) -> None:
@@ -32,6 +34,7 @@ def _make_form(cls, data: dict):
 # ---------------------------------------------------------------------------
 # Basic FormRequest subclasses for testing
 # ---------------------------------------------------------------------------
+
 
 class CreatePostRequest(FormRequest):
     def rules(self) -> dict:
@@ -81,6 +84,7 @@ class ExtraFieldRequest(FormRequest):
 # validated() returns only declared fields
 # ---------------------------------------------------------------------------
 
+
 class TestValidatedFiltersFields:
     def test_returns_declared_fields_only(self):
         req = _make_form(CreatePostRequest, {"title": "Hello", "body": "World", "extra": "boom"})
@@ -117,6 +121,7 @@ class TestValidatedFiltersFields:
 # Validation failure
 # ---------------------------------------------------------------------------
 
+
 class TestValidationFailure:
     def test_raises_on_missing_required(self):
         req = _make_form(CreatePostRequest, {"title": ""})
@@ -143,6 +148,7 @@ class TestValidationFailure:
 # authorize()
 # ---------------------------------------------------------------------------
 
+
 class TestAuthorize:
     def test_forbidden_raises_http_exception(self):
         from hunt.http.response import HttpException
@@ -157,6 +163,7 @@ class TestAuthorize:
 # messages()
 # ---------------------------------------------------------------------------
 
+
 class TestCustomMessages:
     def test_custom_message_used(self):
         req = _make_form(CustomMessagesRequest, {})
@@ -169,6 +176,7 @@ class TestCustomMessages:
 # ---------------------------------------------------------------------------
 # after_validation hook
 # ---------------------------------------------------------------------------
+
 
 class TestAfterValidation:
     def test_hook_called_on_success(self):
@@ -189,6 +197,7 @@ class TestAfterValidation:
 # Delegation helpers: input() / all() / file()
 # ---------------------------------------------------------------------------
 
+
 class TestDelegationHelpers:
     def test_input_delegates_to_request(self):
         req = _make_form(CreatePostRequest, {"title": "hi", "body": "ok"})
@@ -204,6 +213,7 @@ class TestDelegationHelpers:
 # ---------------------------------------------------------------------------
 # @old directive
 # ---------------------------------------------------------------------------
+
 
 class TestOldDirective:
     def test_old_single_arg(self):
@@ -221,13 +231,14 @@ class TestOldDirective:
     def test_old_in_input_value(self):
         from hunt.view.directives import preprocess
 
-        result = preprocess('<input value="@old(\'title\')">')
+        result = preprocess("<input value=\"@old('title')\">")
         assert "old('title')" in result
 
 
 # ---------------------------------------------------------------------------
 # @errors directive
 # ---------------------------------------------------------------------------
+
 
 class TestErrorsDirective:
     def test_errors_expands(self):
@@ -254,6 +265,7 @@ class TestErrorsDirective:
 # ---------------------------------------------------------------------------
 # make:form command
 # ---------------------------------------------------------------------------
+
 
 class TestMakeForm:
     def test_creates_file(self, tmp_path, monkeypatch):

@@ -13,12 +13,15 @@ from hunt.database.schema.migration import Migration
 
 class CreateUsersTable(Migration):
     def up(self):
-        Schema.create("users", lambda bp: [
-            bp.id(),
-            bp.string("name"),
-            bp.string("email"),
-            bp.timestamps(),
-        ])
+        Schema.create(
+            "users",
+            lambda bp: [
+                bp.id(),
+                bp.string("name"),
+                bp.string("email"),
+                bp.timestamps(),
+            ],
+        )
 
     def down(self):
         Schema.drop_if_exists("users")
@@ -79,6 +82,7 @@ def test_to_dict():
 # ------------------------------------------------------------------
 # Async ORM — same operations via run_in_executor wrappers
 # ------------------------------------------------------------------
+
 
 async def test_async_create_and_find():
     user = await User.async_create({"name": "Async Alice", "email": "aasync@example.com"})

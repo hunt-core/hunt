@@ -1,4 +1,5 @@
 """Tests for the task scheduler."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,6 +12,7 @@ from hunt.scheduling.scheduler import ScheduledTask, Scheduler
 # ---------------------------------------------------------------------------
 # cron.matches
 # ---------------------------------------------------------------------------
+
 
 class TestCronMatches:
     def test_every_minute_always_matches(self):
@@ -65,6 +67,7 @@ class TestCronMatches:
 # ---------------------------------------------------------------------------
 # ScheduledTask fluent builders
 # ---------------------------------------------------------------------------
+
 
 class TestScheduledTask:
     def _task(self) -> ScheduledTask:
@@ -143,6 +146,7 @@ class TestScheduledTask:
 # Scheduler
 # ---------------------------------------------------------------------------
 
+
 class TestScheduler:
     def test_call_registers_task(self):
         s = Scheduler()
@@ -185,6 +189,7 @@ class TestScheduler:
 # ---------------------------------------------------------------------------
 # schedule:run command
 # ---------------------------------------------------------------------------
+
 
 class TestScheduleRunCommand:
     def test_runs_due_tasks(self, tmp_path, monkeypatch):
@@ -257,6 +262,7 @@ class TestScheduleRunCommand:
 # ---------------------------------------------------------------------------
 # schedule:list command
 # ---------------------------------------------------------------------------
+
 
 class TestScheduleListCommand:
     def test_lists_tasks(self, tmp_path, monkeypatch):

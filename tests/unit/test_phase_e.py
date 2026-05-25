@@ -1,4 +1,5 @@
 """Phase E — HTTP Client tests."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -9,6 +10,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_raw(status: int = 200, body: str = "", headers: dict | None = None) -> Any:
     """Build a fake httpx.Response to wrap in HttpResponse."""
@@ -33,31 +35,37 @@ def _make_raw_json(data: Any, status: int = 200) -> Any:
 # 1. HttpResponse wrapper
 # ===========================================================================
 
+
 class TestHttpResponse:
     def test_status_code(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw(201))
         assert r.status_code == 201
 
     def test_body_returns_text(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw(200, "hello"))
         assert r.body() == "hello"
         assert r.text() == "hello"
 
     def test_json_parses(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw_json({"key": "value"}))
         assert r.json() == {"key": "value"}
 
     def test_json_key_access(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw_json({"name": "Alice", "age": 30}))
         assert r.json("name") == "Alice"
         assert r.json("missing") is None
 
     def test_content_returns_bytes(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw(200, "bytes"))
         assert isinstance(r.content(), bytes)
 
@@ -65,42 +73,50 @@ class TestHttpResponse:
 
     def test_ok_true_for_2xx(self):
         from hunt.http.client import HttpResponse
+
         assert HttpResponse(_make_raw(200)).ok()
         assert HttpResponse(_make_raw(201)).ok()
         assert HttpResponse(_make_raw(204)).ok()
 
     def test_ok_false_for_4xx(self):
         from hunt.http.client import HttpResponse
+
         assert not HttpResponse(_make_raw(404)).ok()
 
     def test_successful_alias_of_ok(self):
         from hunt.http.client import HttpResponse
+
         assert HttpResponse(_make_raw(200)).successful()
         assert not HttpResponse(_make_raw(500)).successful()
 
     def test_redirect(self):
         from hunt.http.client import HttpResponse
+
         assert HttpResponse(_make_raw(301)).redirect()
         assert not HttpResponse(_make_raw(200)).redirect()
 
     def test_failed_true_for_4xx_and_5xx(self):
         from hunt.http.client import HttpResponse
+
         assert HttpResponse(_make_raw(400)).failed()
         assert HttpResponse(_make_raw(500)).failed()
         assert not HttpResponse(_make_raw(200)).failed()
 
     def test_client_error(self):
         from hunt.http.client import HttpResponse
+
         assert HttpResponse(_make_raw(404)).client_error()
         assert not HttpResponse(_make_raw(500)).client_error()
 
     def test_server_error(self):
         from hunt.http.client import HttpResponse
+
         assert HttpResponse(_make_raw(503)).server_error()
         assert not HttpResponse(_make_raw(404)).server_error()
 
     def test_throw_raises_on_failure(self):
         from hunt.http.client import HttpResponse, RequestException
+
         r = HttpResponse(_make_raw(422))
         with pytest.raises(RequestException) as exc_info:
             r.throw()
@@ -108,27 +124,32 @@ class TestHttpResponse:
 
     def test_throw_returns_self_on_success(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw(200))
         assert r.throw() is r
 
     def test_bool_true_for_ok(self):
         from hunt.http.client import HttpResponse
+
         assert bool(HttpResponse(_make_raw(200)))
         assert not bool(HttpResponse(_make_raw(404)))
 
     def test_repr(self):
         from hunt.http.client import HttpResponse
+
         assert "200" in repr(HttpResponse(_make_raw(200)))
 
     # ---- headers ---------------------------------------------------------
 
     def test_headers_dict(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw(200, "", {"x-custom": "yes"}))
         assert r.headers.get("x-custom") == "yes"
 
     def test_header_method(self):
         from hunt.http.client import HttpResponse
+
         r = HttpResponse(_make_raw(200, "", {"x-id": "42"}))
         assert r.header("x-id") == "42"
         assert r.header("missing", "default") == "default"
@@ -138,9 +159,11 @@ class TestHttpResponse:
 # 2. Http.response() static builder
 # ===========================================================================
 
+
 class TestHttpResponseStatic:
     def test_dict_body_sets_json_content_type(self):
         from hunt.http.client import Http
+
         r = Http.response({"id": 1}, 201)
         assert r.status_code == 201
         assert r.json("id") == 1
@@ -148,27 +171,32 @@ class TestHttpResponseStatic:
 
     def test_list_body(self):
         from hunt.http.client import Http
+
         r = Http.response([1, 2, 3], 200)
         assert r.json() == [1, 2, 3]
 
     def test_string_body(self):
         from hunt.http.client import Http
+
         r = Http.response("Hello World", 200)
         assert r.body() == "Hello World"
 
     def test_bytes_body(self):
         from hunt.http.client import Http
+
         r = Http.response(b"raw bytes", 200)
         assert r.content() == b"raw bytes"
 
     def test_empty_body_defaults(self):
         from hunt.http.client import Http
+
         r = Http.response()
         assert r.status_code == 200
         assert r.body() == ""
 
     def test_custom_headers_forwarded(self):
         from hunt.http.client import Http
+
         r = Http.response("ok", 200, {"X-Request-Id": "abc"})
         assert r.header("x-request-id") == "abc"
 
@@ -177,9 +205,11 @@ class TestHttpResponseStatic:
 # 3. PendingRequest builder
 # ===========================================================================
 
+
 class TestPendingRequestBuilder:
     def _pending(self):
         from hunt.http.client import Http, PendingRequest
+
         return PendingRequest(Http)
 
     def test_with_headers_stored(self):
@@ -196,6 +226,7 @@ class TestPendingRequestBuilder:
 
     def test_with_basic_auth(self):
         import base64
+
         p = self._pending().with_basic_auth("alice", "secret")
         expected = "Basic " + base64.b64encode(b"alice:secret").decode()
         assert p._headers["Authorization"] == expected
@@ -238,31 +269,37 @@ class TestPendingRequestBuilder:
 # 4. Http facade proxy
 # ===========================================================================
 
+
 class TestHttpFacadeProxy:
     def test_with_headers_returns_pending_request(self):
         from hunt.http.client import Http, PendingRequest
+
         p = Http.with_headers({"X-A": "1"})
         assert isinstance(p, PendingRequest)
         assert p._headers["X-A"] == "1"
 
     def test_with_token_returns_pending_request(self):
         from hunt.http.client import Http, PendingRequest
+
         p = Http.with_token("tok")
         assert isinstance(p, PendingRequest)
 
     def test_timeout_returns_pending_request(self):
         from hunt.http.client import Http, PendingRequest
+
         p = Http.timeout(10)
         assert isinstance(p, PendingRequest)
         assert p._timeout == 10
 
     def test_accept_json_returns_pending_request(self):
         from hunt.http.client import Http, PendingRequest
+
         p = Http.accept_json()
         assert isinstance(p, PendingRequest)
 
     def test_each_call_creates_fresh_pending_request(self):
         from hunt.http.client import Http
+
         p1 = Http.with_headers({"X-A": "1"})
         p2 = Http.with_headers({"X-B": "2"})
         assert "X-A" not in p2._headers
@@ -273,17 +310,21 @@ class TestHttpFacadeProxy:
 # 5. Http.fake() — fake mode
 # ===========================================================================
 
+
 class TestHttpFake:
     def setup_method(self):
         from hunt.http.client import Http
+
         Http.unfake()
 
     def teardown_method(self):
         from hunt.http.client import Http
+
         Http.unfake()
 
     def test_fake_intercepts_requests(self):
         from hunt.http.client import Http
+
         Http.fake({"https://api.example.com/users": Http.response({"users": []}, 200)})
         resp = Http.get("https://api.example.com/users")
         assert resp.status_code == 200
@@ -291,6 +332,7 @@ class TestHttpFake:
 
     def test_fake_wildcard_matching(self):
         from hunt.http.client import Http
+
         Http.fake({"https://api.example.com/*": Http.response({"ok": True}, 200)})
         resp = Http.get("https://api.example.com/posts/42")
         assert resp.ok()
@@ -298,22 +340,27 @@ class TestHttpFake:
 
     def test_fake_exact_beats_wildcard(self):
         from hunt.http.client import Http
-        Http.fake({
-            "https://api.example.com/*": Http.response("wildcard", 200),
-            "https://api.example.com/special": Http.response("exact", 201),
-        })
+
+        Http.fake(
+            {
+                "https://api.example.com/*": Http.response("wildcard", 200),
+                "https://api.example.com/special": Http.response("exact", 201),
+            }
+        )
         resp = Http.get("https://api.example.com/special")
         assert resp.status_code == 201
         assert resp.body() == "exact"
 
     def test_fake_fallback_returns_200_empty(self):
         from hunt.http.client import Http
+
         Http.fake()  # no patterns — stub everything
         resp = Http.get("https://any.url/path")
         assert resp.status_code == 200
 
     def test_fake_records_requests(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://example.com/a")
         Http.post("https://example.com/b", {"x": 1})
@@ -321,6 +368,7 @@ class TestHttpFake:
 
     def test_fake_records_method(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.post("https://example.com/data", {"a": 1})
         records = Http.recorded()
@@ -329,12 +377,14 @@ class TestHttpFake:
 
     def test_assert_sent_passes_when_matched(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://api.example.com/users")
         Http.assert_sent("https://api.example.com/*")
 
     def test_assert_sent_with_count(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://api.example.com/users")
         Http.get("https://api.example.com/users")
@@ -342,17 +392,20 @@ class TestHttpFake:
 
     def test_assert_sent_fails_when_no_match(self):
         from hunt.http.client import Http
+
         Http.fake()
         with pytest.raises(AssertionError):
             Http.assert_sent("https://missing.example.com/*")
 
     def test_assert_not_sent_passes_when_absent(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.assert_not_sent("https://never.example.com/*")
 
     def test_assert_not_sent_fails_when_present(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://example.com/data")
         with pytest.raises(AssertionError):
@@ -360,11 +413,13 @@ class TestHttpFake:
 
     def test_assert_nothing_sent_passes_when_empty(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.assert_nothing_sent()
 
     def test_assert_nothing_sent_fails_when_requests_made(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://example.com")
         with pytest.raises(AssertionError):
@@ -372,6 +427,7 @@ class TestHttpFake:
 
     def test_unfake_clears_recorded(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://example.com")
         Http.unfake()
@@ -380,6 +436,7 @@ class TestHttpFake:
 
     def test_recorded_filtered_by_pattern(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://api.example.com/users")
         Http.get("https://other.example.com/data")
@@ -389,6 +446,7 @@ class TestHttpFake:
 
     def test_fake_all_verbs_recorded(self):
         from hunt.http.client import Http
+
         Http.fake()
         Http.get("https://example.com/a")
         Http.post("https://example.com/b")
@@ -399,6 +457,7 @@ class TestHttpFake:
 
     def test_fake_glob_star_matches_all(self):
         from hunt.http.client import Http
+
         Http.fake({"*": Http.response("catch-all", 418)})
         resp = Http.get("https://anywhere.com/path")
         assert resp.status_code == 418
@@ -409,10 +468,12 @@ class TestHttpFake:
 # 6. Real requests (mocked at _do_send level)
 # ===========================================================================
 
+
 class TestRealRequests:
     def _mock_send(self, status: int = 200, body: str = "") -> MagicMock:
         raw = _make_raw(status, body)
         from hunt.http.client import HttpResponse
+
         mock = MagicMock(return_value=HttpResponse(raw))
         return mock
 
@@ -424,6 +485,7 @@ class TestRealRequests:
         def fake_do_send(method, url, params=None, data=None):
             captured["params"] = params
             from hunt.http.client import HttpResponse
+
             return HttpResponse(_make_raw(200))
 
         p = Http._pending()
@@ -441,6 +503,7 @@ class TestRealRequests:
             captured["method"] = method
             captured["data"] = data
             from hunt.http.client import HttpResponse
+
             return HttpResponse(_make_raw(201))
 
         p = Http._pending()
@@ -517,15 +580,18 @@ class TestRealRequests:
 # 7. RequestException
 # ===========================================================================
 
+
 class TestRequestException:
     def test_carries_response(self):
         from hunt.http.client import HttpResponse, RequestException
+
         resp = HttpResponse(_make_raw(500))
         exc = RequestException(resp)
         assert exc.response is resp
 
     def test_message_includes_status(self):
         from hunt.http.client import HttpResponse, RequestException
+
         resp = HttpResponse(_make_raw(422))
         exc = RequestException(resp)
         assert "422" in str(exc)

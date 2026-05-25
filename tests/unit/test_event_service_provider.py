@@ -1,4 +1,5 @@
 """Tests for EventServiceProvider."""
+
 from typing import ClassVar
 
 import pytest
@@ -41,12 +42,14 @@ def clean_dispatcher():
 @pytest.fixture()
 def app():
     from unittest.mock import MagicMock
+
     return MagicMock()
 
 
 # ---------------------------------------------------------------------------
 # Basic wiring
 # ---------------------------------------------------------------------------
+
 
 def test_listener_registered_on_boot(app):
     class AppEventServiceProvider(EventServiceProvider):
@@ -102,6 +105,7 @@ def test_multiple_events_wired_independently(app):
 # Empty listen dict
 # ---------------------------------------------------------------------------
 
+
 def test_empty_listen_dict_boots_without_error(app):
     class AppEventServiceProvider(EventServiceProvider):
         listen: ClassVar[dict] = {}
@@ -115,6 +119,7 @@ def test_empty_listen_dict_boots_without_error(app):
 # ---------------------------------------------------------------------------
 # Each boot call instantiates a fresh listener
 # ---------------------------------------------------------------------------
+
 
 def test_listener_instantiated_per_boot(app):
     instances = []
@@ -140,6 +145,7 @@ def test_listener_instantiated_per_boot(app):
 # ---------------------------------------------------------------------------
 # Subclass inheriting listen from base
 # ---------------------------------------------------------------------------
+
 
 def test_subclass_can_extend_listen(app):
     class BaseProvider(EventServiceProvider):

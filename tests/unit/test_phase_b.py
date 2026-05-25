@@ -1,4 +1,5 @@
 """Phase B tests: Gates & Policies, Password Reset, Email Verification, Multi-Guard Auth."""
+
 from __future__ import annotations
 
 import os
@@ -10,6 +11,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_user(id_=1, email="user@example.com", password="hashed", **extra):
     user = MagicMock()
@@ -23,9 +25,11 @@ def _make_user(id_=1, email="user@example.com", password="hashed", **extra):
 # Gate & Policies
 # ===========================================================================
 
+
 class TestGateDefineAndCheck:
     def setup_method(self):
         from hunt.auth.gate import _Gate
+
         self.gate = _Gate()
 
     def test_allows_defined_ability(self):
@@ -80,6 +84,7 @@ class TestGateDefineAndCheck:
         self.gate.define("admin-only", lambda user: False)
         user = _make_user()
         from hunt.http.response import HttpException
+
         with pytest.raises(HttpException) as exc_info:
             self.gate.for_user(user).authorize("admin-only")
         assert exc_info.value.status == 403
@@ -93,6 +98,7 @@ class TestGateDefineAndCheck:
 class TestGateBeforeAfterCallbacks:
     def setup_method(self):
         from hunt.auth.gate import _Gate
+
         self.gate = _Gate()
 
     def test_before_callback_can_grant(self):
@@ -125,6 +131,7 @@ class TestGateBeforeAfterCallbacks:
 class TestGatePolicies:
     def setup_method(self):
         from hunt.auth.gate import _Gate
+
         self.gate = _Gate()
 
     def test_policy_method_invoked(self):
@@ -174,10 +181,12 @@ class TestGatePolicies:
 
 _BROKER_APP_KEY = "b" * 32
 
+
 class TestPasswordBroker:
     def setup_method(self):
         os.environ["APP_KEY"] = _BROKER_APP_KEY
         from hunt.auth.passwords import PasswordBroker
+
         self.broker = PasswordBroker()
 
         self.user = _make_user()
@@ -189,16 +198,14 @@ class TestPasswordBroker:
         os.environ.pop("APP_KEY", None)
 
     def test_send_reset_link_returns_token(self):
-        with patch.object(self.broker, "_delete_existing"), \
-             patch.object(self.broker, "_insert_token"):
+        with patch.object(self.broker, "_delete_existing"), patch.object(self.broker, "_insert_token"):
             token = self.broker.send_reset_link("user@example.com")
         assert token is not None
         assert len(token) == 64  # 32 bytes → 64 hex chars
 
     def test_send_reset_link_returns_none_for_unknown_email(self):
         self.broker._model.where.return_value.first.return_value = None
-        with patch.object(self.broker, "_delete_existing"), \
-             patch.object(self.broker, "_insert_token"):
+        with patch.object(self.broker, "_delete_existing"), patch.object(self.broker, "_insert_token"):
             result = self.broker.send_reset_link("nope@example.com")
         assert result is None
 
@@ -230,9 +237,11 @@ class TestPasswordBroker:
         raw = "newpass"
         hashed_token = self.broker._hash(raw)
         row = {"email": "user@example.com", "token": hashed_token, "created_at": int(time.time())}
-        with patch.object(self.broker, "_get_row", return_value=row), \
-             patch.object(self.broker, "_delete_existing"), \
-             patch("hunt.auth.manager.hash_password", return_value="newhash"):
+        with (
+            patch.object(self.broker, "_get_row", return_value=row),
+            patch.object(self.broker, "_delete_existing"),
+            patch("hunt.auth.manager.hash_password", return_value="newhash"),
+        ):
             result = self.broker.reset({"email": "user@example.com", "token": raw, "password": "newpass"})
         assert result is True
         assert self.user._attributes["password"] == "newhash"
@@ -260,6 +269,7 @@ class TestEmailVerification:
     def setup_method(self):
         os.environ["APP_KEY"] = _TEST_APP_KEY
         from hunt.auth.verification import _EmailVerification
+
         self.ev = _EmailVerification()
 
     def test_verification_url_contains_id_expires_signature(self):
@@ -296,6 +306,7 @@ class TestEmailVerification:
         user = _make_user(id_=1, email="a@b.com")
         old_ts = int(time.time()) - 7200
         from hunt.security.signing import sign
+
         sig = sign(f"1:a@b.com:{old_ts}")
         user.save = MagicMock()
         assert self.ev.verify(user, str(old_ts), sig) is False
@@ -340,9 +351,11 @@ class TestEmailVerification:
 # Multi-Guard Auth
 # ===========================================================================
 
+
 class TestSessionGuard:
     def setup_method(self):
         from hunt.auth.manager import _SessionGuard
+
         self.guard = _SessionGuard("web")
         model = MagicMock()
         self.user = _make_user()
@@ -356,6 +369,7 @@ class TestSessionGuard:
 
     def _patch_session(self, session=_SENTINEL):
         from hunt.auth import manager as mgr
+
         value = self.session if session is self._SENTINEL else session
         return patch.object(mgr, "_get_session", return_value=value)
 
@@ -394,11 +408,13 @@ class TestSessionGuard:
 
     def test_session_key_web(self):
         from hunt.auth.manager import _SessionGuard
+
         g = _SessionGuard("web")
         assert g._session_key == "_auth_id"
 
     def test_session_key_named(self):
         from hunt.auth.manager import _SessionGuard
+
         g = _SessionGuard("admin")
         assert g._session_key == "_auth_id_admin"
 
@@ -407,6 +423,7 @@ class TestSessionGuard:
         model.where.return_value.first.return_value = self.user
 
         from hunt.auth.manager import _SessionGuard
+
         guard = _SessionGuard("web", model)
 
         with self._patch_session():
@@ -419,6 +436,7 @@ class TestSessionGuard:
         model.where.return_value.first.return_value = self.user
 
         from hunt.auth.manager import _SessionGuard
+
         guard = _SessionGuard("web", model)
 
         with self._patch_session():
@@ -431,6 +449,7 @@ class TestSessionGuard:
         model.where.return_value.first.return_value = None
 
         from hunt.auth.manager import _SessionGuard
+
         guard = _SessionGuard("web", model)
 
         with self._patch_session():
@@ -441,6 +460,7 @@ class TestSessionGuard:
 class TestTokenGuard:
     def setup_method(self):
         from hunt.auth.manager import _TokenGuard
+
         self.model = MagicMock()
         self.user = _make_user()
         self.model.where.return_value.first.return_value = self.user
@@ -454,6 +474,7 @@ class TestTokenGuard:
 
     def test_user_found_via_bearer(self):
         import hashlib
+
         req = self._mock_request(bearer="token123")
         with patch("hunt.auth.manager._get_current_request", return_value=req):
             u = self.guard.user()
@@ -493,22 +514,26 @@ class TestTokenGuard:
 class TestAuthManager:
     def setup_method(self):
         from hunt.auth.manager import _AuthManager
+
         self.auth = _AuthManager()
 
     def test_default_guard_is_session(self):
         from hunt.auth.manager import _SessionGuard
+
         assert isinstance(self.auth._default_guard, _SessionGuard)
 
     def test_configure_creates_guards(self):
         model = MagicMock()
         self.auth.configure({"web": {"driver": "session", "model": model}})
         from hunt.auth.manager import _SessionGuard
+
         assert isinstance(self.auth._guards["web"], _SessionGuard)
 
     def test_configure_token_guard(self):
         model = MagicMock()
         self.auth.configure({"api": {"driver": "token", "model": model, "field": "api_token"}})
         from hunt.auth.manager import _TokenGuard
+
         assert isinstance(self.auth._guards["api"], _TokenGuard)
 
     def test_configure_unknown_driver_raises(self):
@@ -520,11 +545,13 @@ class TestAuthManager:
         self.auth.configure({"api": {"driver": "token", "model": model}})
         g = self.auth.guard("api")
         from hunt.auth.manager import _TokenGuard
+
         assert isinstance(g, _TokenGuard)
 
     def test_guard_lazy_creates_session_guard(self):
         g = self.auth.guard("unknown")
         from hunt.auth.manager import _SessionGuard
+
         assert isinstance(g, _SessionGuard)
 
     def test_web_configure_updates_default(self):
@@ -550,10 +577,12 @@ class TestAuthManager:
 # EnsureEmailIsVerified middleware
 # ===========================================================================
 
+
 class TestEnsureEmailIsVerified:
     @pytest.mark.asyncio
     async def test_passes_verified_user(self):
         from hunt.http.middleware.verified import EnsureEmailIsVerified
+
         mw = EnsureEmailIsVerified()
 
         user = _make_user(email_verified_at=int(time.time()))
@@ -564,8 +593,7 @@ class TestEnsureEmailIsVerified:
         async def async_next(req):
             return next_handler(req)
 
-        with patch("hunt.auth.manager.Auth") as mock_auth, \
-             patch("hunt.auth.verification.EmailVerification") as mock_ev:
+        with patch("hunt.auth.manager.Auth") as mock_auth, patch("hunt.auth.verification.EmailVerification") as mock_ev:
             mock_auth.user.return_value = user
             mock_ev.is_verified.return_value = True
             result = await mw.handle(request, async_next)
@@ -576,6 +604,7 @@ class TestEnsureEmailIsVerified:
     async def test_redirects_unverified_user(self):
         from hunt.http.middleware.verified import EnsureEmailIsVerified
         from hunt.http.response import RedirectResponse
+
         mw = EnsureEmailIsVerified()
 
         user = _make_user()
@@ -584,8 +613,7 @@ class TestEnsureEmailIsVerified:
         async def async_next(req):
             return MagicMock()
 
-        with patch("hunt.auth.manager.Auth") as mock_auth, \
-             patch("hunt.auth.verification.EmailVerification") as mock_ev:
+        with patch("hunt.auth.manager.Auth") as mock_auth, patch("hunt.auth.verification.EmailVerification") as mock_ev:
             mock_auth.user.return_value = user
             mock_ev.is_verified.return_value = False
             result = await mw.handle(request, async_next)
@@ -596,14 +624,14 @@ class TestEnsureEmailIsVerified:
     async def test_redirects_guest(self):
         from hunt.http.middleware.verified import EnsureEmailIsVerified
         from hunt.http.response import RedirectResponse
+
         mw = EnsureEmailIsVerified()
         request = MagicMock()
 
         async def async_next(req):
             return MagicMock()
 
-        with patch("hunt.auth.manager.Auth") as mock_auth, \
-             patch("hunt.auth.verification.EmailVerification") as mock_ev:
+        with patch("hunt.auth.manager.Auth") as mock_auth, patch("hunt.auth.verification.EmailVerification") as mock_ev:
             mock_auth.user.return_value = None
             mock_ev.is_verified.return_value = False
             result = await mw.handle(request, async_next)
@@ -615,9 +643,11 @@ class TestEnsureEmailIsVerified:
 # Controller.authorize()
 # ===========================================================================
 
+
 class TestControllerAuthorize:
     def test_authorize_delegates_to_gate(self):
         from hunt.http.controller import Controller
+
         ctrl = Controller()
 
         with patch("hunt.auth.gate.Gate") as mock_gate:
@@ -627,6 +657,7 @@ class TestControllerAuthorize:
     def test_authorize_propagates_exception(self):
         from hunt.http.controller import Controller
         from hunt.http.response import HttpException
+
         ctrl = Controller()
 
         with patch("hunt.auth.gate.Gate") as mock_gate:
@@ -639,9 +670,11 @@ class TestControllerAuthorize:
 # View directives: @can / @cannot
 # ===========================================================================
 
+
 class TestCanDirectives:
     def test_can_directive_renders(self):
         from hunt.view.directives import preprocess
+
         source = "@can('edit-post')\n<button>Edit</button>\n@endcan"
         out = preprocess(source)
         assert "{% if can('edit-post') %}" in out
@@ -649,6 +682,7 @@ class TestCanDirectives:
 
     def test_cannot_directive_renders(self):
         from hunt.view.directives import preprocess
+
         source = "@cannot('delete')\n<p>Not allowed</p>\n@endcannot"
         out = preprocess(source)
         assert "{% if not can('delete') %}" in out
@@ -656,6 +690,7 @@ class TestCanDirectives:
 
     def test_can_with_model_arg(self):
         from hunt.view.directives import preprocess
+
         source = "@can('view', post)\n<div>Post</div>\n@endcan"
         out = preprocess(source)
         assert "{% if can('view', post) %}" in out
@@ -665,19 +700,24 @@ class TestCanDirectives:
 # auth __init__ exports
 # ===========================================================================
 
+
 class TestAuthPackageExports:
     def test_exports_auth(self):
         from hunt.auth import Auth
+
         assert Auth is not None
 
     def test_exports_gate(self):
         from hunt.auth import Gate
+
         assert Gate is not None
 
     def test_exports_password(self):
         from hunt.auth import Password
+
         assert Password is not None
 
     def test_exports_email_verification(self):
         from hunt.auth import EmailVerification
+
         assert EmailVerification is not None

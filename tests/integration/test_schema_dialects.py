@@ -6,6 +6,7 @@ Runs each test against SQLite (in-memory), MySQL 8 (Docker), and PostgreSQL 15
 
 Skip with:  SKIP_INTEGRATION=1 pytest tests/integration/
 """
+
 from __future__ import annotations
 
 import os
@@ -36,6 +37,7 @@ if "DOCKER_HOST" not in os.environ:
 # ---------------------------------------------------------------------------
 # Container fixtures  (session-scoped = one container for the whole run)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def mysql_engine():
@@ -68,6 +70,7 @@ def postgres_engine():
 # Parametrised engine — lazy loading so SQLite tests never start containers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(params=["sqlite", "mysql", "postgres"])
 def db(request):
     if request.param == "sqlite":
@@ -83,6 +86,7 @@ def db(request):
 # Connection patcher  (wires Hunt's internal connection() to the test engine)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def conn(db):
     with (
@@ -95,6 +99,7 @@ def conn(db):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def drop(engine, *tables: str) -> None:
     with engine.connect() as c:
@@ -117,6 +122,7 @@ def insert_one(engine, table: str, **values) -> dict:
 # Auto-increment primary key  (the original bug)
 # ===========================================================================
 
+
 class TestAutoIncrementId:
     def test_sequential_ids_on_all_dialects(self, conn):
         drop(conn, "ai_ids")
@@ -133,6 +139,7 @@ class TestAutoIncrementId:
 # ===========================================================================
 # Dialect-specific column types
 # ===========================================================================
+
 
 class TestColumnTypes:
     """
@@ -254,36 +261,56 @@ class TestColumnTypes:
 # Unit-level check: _resolve_type covers all mapped cases without a DB
 # ---------------------------------------------------------------------------
 
+
 class TestResolveType:
-    @pytest.mark.parametrize("col_type,expected", [
-        ("TINYINT", "SMALLINT"),
-        ("MEDIUMTEXT", "TEXT"),
-        ("LONGTEXT", "TEXT"),
-        ("DATETIME", "TIMESTAMP"),
-        ("DOUBLE", "DOUBLE PRECISION"),
-        ("BLOB", "BYTEA"),
-        ("FLOAT(8,2)", "REAL"),
-        ("FLOAT(53,10)", "DOUBLE PRECISION"),
-        # Passthrough types
-        ("INTEGER", "INTEGER"),
-        ("VARCHAR", "VARCHAR"),
-        ("TEXT", "TEXT"),
-        ("BOOLEAN", "BOOLEAN"),
-    ])
+    @pytest.mark.parametrize(
+        "col_type,expected",
+        [
+            ("TINYINT", "SMALLINT"),
+            ("MEDIUMTEXT", "TEXT"),
+            ("LONGTEXT", "TEXT"),
+            ("DATETIME", "TIMESTAMP"),
+            ("DOUBLE", "DOUBLE PRECISION"),
+            ("BLOB", "BYTEA"),
+            ("FLOAT(8,2)", "REAL"),
+            ("FLOAT(53,10)", "DOUBLE PRECISION"),
+            # Passthrough types
+            ("INTEGER", "INTEGER"),
+            ("VARCHAR", "VARCHAR"),
+            ("TEXT", "TEXT"),
+            ("BOOLEAN", "BOOLEAN"),
+        ],
+    )
     def test_postgresql_mapping(self, col_type, expected):
         assert Blueprint._resolve_type(col_type, "postgresql") == expected
 
-    @pytest.mark.parametrize("col_type", [
-        "TINYINT", "MEDIUMTEXT", "LONGTEXT", "DATETIME",
-        "DOUBLE", "BLOB", "FLOAT(8,2)",
-    ])
+    @pytest.mark.parametrize(
+        "col_type",
+        [
+            "TINYINT",
+            "MEDIUMTEXT",
+            "LONGTEXT",
+            "DATETIME",
+            "DOUBLE",
+            "BLOB",
+            "FLOAT(8,2)",
+        ],
+    )
     def test_mysql_passthrough(self, col_type):
         assert Blueprint._resolve_type(col_type, "mysql") == col_type
 
-    @pytest.mark.parametrize("col_type", [
-        "TINYINT", "MEDIUMTEXT", "LONGTEXT", "DATETIME",
-        "DOUBLE", "BLOB", "FLOAT(8,2)",
-    ])
+    @pytest.mark.parametrize(
+        "col_type",
+        [
+            "TINYINT",
+            "MEDIUMTEXT",
+            "LONGTEXT",
+            "DATETIME",
+            "DOUBLE",
+            "BLOB",
+            "FLOAT(8,2)",
+        ],
+    )
     def test_sqlite_passthrough(self, col_type):
         assert Blueprint._resolve_type(col_type, "sqlite") == col_type
 
@@ -312,8 +339,8 @@ class TestUnsignedKeyword:
 # Constraints
 # ===========================================================================
 
-class TestConstraints:
 
+class TestConstraints:
     def test_nullable_accepts_null(self, conn):
         drop(conn, "tc_null")
         Schema.create("tc_null", lambda bp: (bp.id(), bp.string("note").nullable()))
@@ -382,8 +409,8 @@ class TestConstraints:
 # Schema introspection
 # ===========================================================================
 
-class TestSchemaIntrospection:
 
+class TestSchemaIntrospection:
     def test_has_table_true(self, conn):
         drop(conn, "si_ht")
         Schema.create("si_ht", lambda bp: bp.id())
@@ -441,8 +468,8 @@ class TestSchemaIntrospection:
 # Schema.table() — ALTER operations
 # ===========================================================================
 
-class TestAlterTable:
 
+class TestAlterTable:
     def test_add_column(self, conn):
         drop(conn, "at_add")
         Schema.create("at_add", lambda bp: (bp.id(), bp.string("name")))
@@ -486,7 +513,6 @@ class CreateMigItems(Migration):
 
 
 class TestMigrations:
-
     def test_creates_migrations_table(self, conn):
         drop(conn, MIGRATIONS_TABLE)
         with tempfile.TemporaryDirectory() as tmp:

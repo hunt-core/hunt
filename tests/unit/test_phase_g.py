@@ -1,4 +1,5 @@
 """Phase G — Queue Improvements tests."""
+
 from __future__ import annotations
 
 import time
@@ -11,8 +12,10 @@ import pytest
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
+
 class _Echo(list):
     """Capture output written via click.echo."""
+
     def __call__(self, msg="", err=False):
         self.append((msg, err))
 
@@ -28,6 +31,7 @@ def _make_raw_result(rows):
 def _signed_payload(body_dict: dict) -> str:
     """Build a signed envelope string (same format as DatabaseDriver)."""
     from hunt.queue.drivers.database import _make_payload
+
     return _make_payload(body_dict)
 
 
@@ -35,31 +39,43 @@ def _signed_payload(body_dict: dict) -> str:
 # Job base class
 # ---------------------------------------------------------------------------
 
+
 class TestJobBase:
     def test_queue_default(self):
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         assert MyJob.queue == "default"
 
     def test_tries_default(self):
         from hunt.queue.job import Job
+
         assert Job.tries == 3
 
     def test_timeout_default(self):
         from hunt.queue.job import Job
+
         assert Job.timeout == 60
 
     def test_backoff_default(self):
         from hunt.queue.job import Job
+
         assert Job.backoff == 0
 
     def test_chain_sets_attribute(self):
         from hunt.queue.job import Job
+
         class A(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         class B(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         a = A()
         b = B()
         result = a.chain([b])
@@ -68,8 +84,11 @@ class TestJobBase:
 
     def test_dispatch_calls_queue_push(self):
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         job = MyJob()
         with patch("hunt.queue.manager.Queue") as mock_queue:
             job.dispatch()
@@ -77,8 +96,11 @@ class TestJobBase:
 
     def test_dispatch_later_calls_queue_later(self):
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         job = MyJob()
         with patch("hunt.queue.manager.Queue") as mock_queue:
             job.dispatch_later(60)
@@ -86,16 +108,23 @@ class TestJobBase:
 
     def test_dispatch_now_runs_synchronously(self):
         from hunt.queue.job import Job
+
         ran = []
+
         class MyJob(Job):
-            def handle(self): ran.append(True)
+            def handle(self):
+                ran.append(True)
+
         MyJob.dispatch_now()
         assert ran == [True]
 
     def test_failed_hook_default_is_noop(self):
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         MyJob().failed(Exception("boom"))  # should not raise
 
 
@@ -103,35 +132,51 @@ class TestJobBase:
 # SyncDriver
 # ---------------------------------------------------------------------------
 
+
 class TestSyncDriver:
     def test_push_calls_handle(self):
         from hunt.queue.drivers.sync import SyncDriver
         from hunt.queue.job import Job
+
         ran = []
+
         class MyJob(Job):
-            def handle(self): ran.append(True)
+            def handle(self):
+                ran.append(True)
+
         SyncDriver().push(MyJob())
         assert ran == [True]
 
     def test_later_runs_immediately(self):
         from hunt.queue.drivers.sync import SyncDriver
         from hunt.queue.job import Job
+
         ran = []
+
         class MyJob(Job):
-            def handle(self): ran.append(True)
+            def handle(self):
+                ran.append(True)
+
         SyncDriver().later(99, MyJob())
         assert ran == [True]
 
     def test_push_dispatches_chain(self):
         from hunt.queue.drivers.sync import SyncDriver
         from hunt.queue.job import Job
+
         order = []
+
         class First(Job):
-            def handle(self): order.append("first")
+            def handle(self):
+                order.append("first")
+
         class Second(Job):
-            def handle(self): order.append("second")
+            def handle(self):
+                order.append("second")
+
         class Third(Job):
-            def handle(self): order.append("third")
+            def handle(self):
+                order.append("third")
 
         job = First()
         job.chain([Second(), Third()])
@@ -140,18 +185,22 @@ class TestSyncDriver:
 
     def test_pop_returns_none(self):
         from hunt.queue.drivers.sync import SyncDriver
+
         assert SyncDriver().pop() is None
 
     def test_size_always_zero(self):
         from hunt.queue.drivers.sync import SyncDriver
+
         assert SyncDriver().size() == 0
 
     def test_delete_noop(self):
         from hunt.queue.drivers.sync import SyncDriver
+
         SyncDriver().delete(999)  # no exception
 
     def test_fail_noop(self):
         from hunt.queue.drivers.sync import SyncDriver
+
         SyncDriver().fail(1, "default", "{}", "boom")  # no exception
 
 
@@ -159,13 +208,19 @@ class TestSyncDriver:
 # DatabaseDriver serialization helpers
 # ---------------------------------------------------------------------------
 
+
 class TestDatabaseDriverSerialize:
     def test_serialize_job_basic(self):
         from hunt.queue.drivers.database import _serialize_job
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def __init__(self, x=1): self.x = x
-            def handle(self): pass
+            def __init__(self, x=1):
+                self.x = x
+
+            def handle(self):
+                pass
+
         body = _serialize_job(MyJob(x=42))
         assert "MyJob" in body["class"]
         assert body["data"]["x"] == 42
@@ -176,11 +231,15 @@ class TestDatabaseDriverSerialize:
     def test_serialize_excludes_private(self):
         from hunt.queue.drivers.database import _serialize_job
         from hunt.queue.job import Job
+
         class MyJob(Job):
             def __init__(self):
                 self._private = "secret"
                 self.public = "ok"
-            def handle(self): pass
+
+            def handle(self):
+                pass
+
         body = _serialize_job(MyJob())
         assert "_private" not in body["data"]
         assert body["data"]["public"] == "ok"
@@ -188,10 +247,15 @@ class TestDatabaseDriverSerialize:
     def test_serialize_chain(self):
         from hunt.queue.drivers.database import _serialize_job
         from hunt.queue.job import Job
+
         class A(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         class B(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         a = A()
         a.chain([B()])
         body = _serialize_job(a)
@@ -201,9 +265,13 @@ class TestDatabaseDriverSerialize:
     def test_serialize_custom_backoff_list(self):
         from hunt.queue.drivers.database import _serialize_job
         from hunt.queue.job import Job
+
         class MyJob(Job):
             backoff: ClassVar[list] = [5, 10, 20]
-            def handle(self): pass
+
+            def handle(self):
+                pass
+
         body = _serialize_job(MyJob())
         assert body["backoff"] == [5, 10, 20]
 
@@ -211,6 +279,7 @@ class TestDatabaseDriverSerialize:
 # ---------------------------------------------------------------------------
 # DatabaseDriver push / later / push_payload
 # ---------------------------------------------------------------------------
+
 
 class TestDatabaseDriverPush:
     def setup_method(self):
@@ -234,8 +303,11 @@ class TestDatabaseDriverPush:
     def test_push_inserts_to_jobs(self):
         from hunt.queue.drivers.database import DatabaseDriver
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         DatabaseDriver().push(MyJob())
         sql = self._insert_call()[0][0]
         assert "INSERT INTO jobs" in sql
@@ -243,8 +315,11 @@ class TestDatabaseDriverPush:
     def test_later_sets_available_at(self):
         from hunt.queue.drivers.database import DatabaseDriver
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         before = int(time.time())
         DatabaseDriver().later(300, MyJob())
         args = self._insert_call()[0][1]
@@ -252,6 +327,7 @@ class TestDatabaseDriverPush:
 
     def test_push_payload_inserts(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         body = {"class": "app.jobs.X", "data": {}, "chain": []}
         DatabaseDriver().push_payload(body, "default")
         sql = self._insert_call()[0][0]
@@ -261,6 +337,7 @@ class TestDatabaseDriverPush:
 # ---------------------------------------------------------------------------
 # DatabaseDriver pop / delete / release / fail
 # ---------------------------------------------------------------------------
+
 
 class TestDatabaseDriverLifecycle:
     def setup_method(self):
@@ -273,12 +350,14 @@ class TestDatabaseDriverLifecycle:
 
     def test_pop_returns_none_when_empty(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         self._raw.return_value = _make_raw_result([])
         result = DatabaseDriver().pop()
         assert result is None
 
     def test_pop_filters_available_at(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         self._raw.return_value = _make_raw_result([])
         DatabaseDriver().pop("default")
         sql = self._raw.call_args_list[0][0][0]
@@ -286,6 +365,7 @@ class TestDatabaseDriverLifecycle:
 
     def test_pop_updates_reserved_at(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         row = MagicMock()
         row.id = 7
         row._mapping = {"id": 7, "queue": "default", "attempts": 1, "payload": "{}"}
@@ -296,6 +376,7 @@ class TestDatabaseDriverLifecycle:
 
     def test_delete_removes_job(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         self._raw.return_value = _make_raw_result([])
         DatabaseDriver().delete(42)
         sql = self._raw.call_args[0][0]
@@ -304,6 +385,7 @@ class TestDatabaseDriverLifecycle:
 
     def test_release_clears_reserved_at(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         self._raw.return_value = _make_raw_result([])
         DatabaseDriver().release(5, delay=60)
         sql = self._raw.call_args[0][0]
@@ -311,6 +393,7 @@ class TestDatabaseDriverLifecycle:
 
     def test_fail_inserts_to_jobs_failed(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         self._raw.return_value = _make_raw_result([])
         DatabaseDriver().fail(3, "default", '{"payload": true}', "boom")
         # First call: INSERT jobs_failed; second: DELETE FROM jobs
@@ -321,6 +404,7 @@ class TestDatabaseDriverLifecycle:
 
     def test_fail_stores_exception_text(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         self._raw.return_value = _make_raw_result([])
         DatabaseDriver().fail(1, "default", "{}", "Something broke")
         args = self._raw.call_args_list[0][0][1]
@@ -328,6 +412,7 @@ class TestDatabaseDriverLifecycle:
 
     def test_size_filters_available_at(self):
         from hunt.queue.drivers.database import DatabaseDriver
+
         mock_row = MagicMock()
         mock_row.cnt = 5
         self._raw.return_value = MagicMock(fetchone=MagicMock(return_value=mock_row))
@@ -341,10 +426,12 @@ class TestDatabaseDriverLifecycle:
 # QueueManager
 # ---------------------------------------------------------------------------
 
+
 class TestQueueManager:
     def test_configure_database(self):
         from hunt.queue.drivers.database import DatabaseDriver
         from hunt.queue.manager import _QueueManager
+
         mgr = _QueueManager()
         mgr.configure("database")
         assert isinstance(mgr._driver, DatabaseDriver)
@@ -352,6 +439,7 @@ class TestQueueManager:
     def test_configure_sync(self):
         from hunt.queue.drivers.sync import SyncDriver
         from hunt.queue.manager import _QueueManager
+
         mgr = _QueueManager()
         mgr.configure("sync")
         assert isinstance(mgr._driver, SyncDriver)
@@ -359,6 +447,7 @@ class TestQueueManager:
     def test_configure_default_is_sync(self):
         from hunt.queue.drivers.sync import SyncDriver
         from hunt.queue.manager import _QueueManager
+
         mgr = _QueueManager()
         mgr._get_driver()
         assert isinstance(mgr._driver, SyncDriver)
@@ -366,8 +455,11 @@ class TestQueueManager:
     def test_push_delegates_to_driver(self):
         from hunt.queue.job import Job
         from hunt.queue.manager import _QueueManager
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         mgr = _QueueManager()
         mock_driver = MagicMock()
         mgr._driver = mock_driver
@@ -378,8 +470,11 @@ class TestQueueManager:
     def test_later_delegates_to_driver(self):
         from hunt.queue.job import Job
         from hunt.queue.manager import _QueueManager
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         mgr = _QueueManager()
         mock_driver = MagicMock()
         mgr._driver = mock_driver
@@ -389,6 +484,7 @@ class TestQueueManager:
 
     def test_size_delegates_to_driver(self):
         from hunt.queue.manager import _QueueManager
+
         mgr = _QueueManager()
         mock_driver = MagicMock()
         mock_driver.size.return_value = 7
@@ -398,6 +494,7 @@ class TestQueueManager:
     def test_configure_redis(self):
         from hunt.queue.drivers.redis import RedisDriver
         from hunt.queue.manager import _QueueManager
+
         mgr = _QueueManager()
         mgr.configure("redis", host="localhost", port=6379)
         assert isinstance(mgr._driver, RedisDriver)
@@ -413,6 +510,7 @@ _FAKE_PAYLOAD = '{"body":"{}","signature":"fake"}'
 class TestRedisDriver:
     def setup_method(self):
         import sys
+
         self._mock_redis_module = MagicMock()
         self._mock_client = MagicMock()
         self._mock_redis_module.Redis.return_value = self._mock_client
@@ -426,6 +524,7 @@ class TestRedisDriver:
         self._payload_patcher.start()
 
         from hunt.queue.drivers.redis import RedisDriver
+
         self.driver = RedisDriver(prefix="test_q")
         self.driver._client = self._mock_client
 
@@ -435,8 +534,11 @@ class TestRedisDriver:
 
     def test_push_lpush(self):
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         self.driver.push(MyJob())
         assert self._mock_client.lpush.called
         key = self._mock_client.lpush.call_args[0][0]
@@ -444,8 +546,11 @@ class TestRedisDriver:
 
     def test_later_zadd(self):
         from hunt.queue.job import Job
+
         class MyJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
+
         self.driver.later(300, MyJob())
         assert self._mock_client.zadd.called
         key = self._mock_client.zadd.call_args[0][0]
@@ -501,6 +606,7 @@ class TestRedisDriver:
         import sys
 
         from hunt.queue.drivers.redis import RedisDriver
+
         driver = RedisDriver()
         with patch.dict(sys.modules, {"redis": None}):
             with pytest.raises(RuntimeError, match="redis-py"):
@@ -517,32 +623,39 @@ class TestRedisDriver:
 # Backoff calculation helper
 # ---------------------------------------------------------------------------
 
+
 class TestBackoffHelper:
     def test_int_backoff(self):
         from hunt.console.commands.queue_work import _backoff_delay
+
         assert _backoff_delay(30, 1) == 30
         assert _backoff_delay(30, 3) == 30
 
     def test_list_backoff_first_attempt(self):
         from hunt.console.commands.queue_work import _backoff_delay
+
         assert _backoff_delay([5, 15, 60], 1) == 5
 
     def test_list_backoff_second_attempt(self):
         from hunt.console.commands.queue_work import _backoff_delay
+
         assert _backoff_delay([5, 15, 60], 2) == 15
 
     def test_list_backoff_clamps_to_last(self):
         from hunt.console.commands.queue_work import _backoff_delay
+
         assert _backoff_delay([5, 15, 60], 99) == 60
 
     def test_zero_backoff(self):
         from hunt.console.commands.queue_work import _backoff_delay
+
         assert _backoff_delay(0, 1) == 0
 
 
 # ---------------------------------------------------------------------------
 # queue:work — chain dispatching
 # ---------------------------------------------------------------------------
+
 
 class TestQueueWorkChain:
     def test_successful_job_pushes_chain_next(self):
@@ -551,10 +664,12 @@ class TestQueueWorkChain:
         from hunt.queue.job import Job
 
         class First(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         class Second(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         first = First()
         first.chain([Second()])
@@ -578,6 +693,7 @@ class TestQueueWorkChain:
 # ---------------------------------------------------------------------------
 # queue:table command
 # ---------------------------------------------------------------------------
+
 
 class TestQueueTableCommand:
     def test_creates_migration_file(self, tmp_path):
@@ -615,13 +731,14 @@ class TestQueueTableCommand:
 
         migration = next((tmp_path / "database" / "migrations").glob("*.py"))
         content = migration.read_text()
-        assert "Schema.create(\"jobs\"" in content
-        assert "Schema.create(\"jobs_failed\"" in content
+        assert 'Schema.create("jobs"' in content
+        assert 'Schema.create("jobs_failed"' in content
 
 
 # ---------------------------------------------------------------------------
 # queue:failed / queue:retry / queue:flush commands
 # ---------------------------------------------------------------------------
+
 
 class TestQueueFailedCommands:
     def setup_method(self):
@@ -634,12 +751,14 @@ class TestQueueFailedCommands:
 
     def _run_cmd(self, cmd, args=None):
         from click.testing import CliRunner
+
         runner = CliRunner()
         with patch("hunt.console.commands.queue_failed._load_env"):
             return runner.invoke(cmd, args or [], catch_exceptions=False)
 
     def test_queue_failed_no_rows(self):
         from hunt.console.commands.queue_failed import queue_failed_command
+
         self._raw.return_value = MagicMock(fetchall=MagicMock(return_value=[]))
         result = self._run_cmd(queue_failed_command)
         assert result.exit_code == 0
@@ -647,6 +766,7 @@ class TestQueueFailedCommands:
 
     def test_queue_failed_lists_rows(self):
         from hunt.console.commands.queue_failed import queue_failed_command
+
         row = MagicMock()
         row.id = 1
         row.uuid = "abc-123"
@@ -660,12 +780,14 @@ class TestQueueFailedCommands:
 
     def test_queue_retry_not_found(self):
         from hunt.console.commands.queue_failed import queue_retry_command
+
         self._raw.return_value = MagicMock(fetchone=MagicMock(return_value=None))
         result = self._run_cmd(queue_retry_command, ["999"])
         assert result.exit_code != 0
 
     def test_queue_retry_requeues_job(self):
         from hunt.console.commands.queue_failed import queue_retry_command
+
         row = MagicMock()
         row.queue = "default"
         row.payload = '{"body": "x", "signature": "y"}'
@@ -681,6 +803,7 @@ class TestQueueFailedCommands:
 
     def test_queue_flush_deletes_all(self):
         from hunt.console.commands.queue_failed import queue_flush_command
+
         self._raw.return_value = MagicMock()
         result = self._run_cmd(queue_flush_command)
         assert result.exit_code == 0
@@ -689,6 +812,7 @@ class TestQueueFailedCommands:
 
     def test_queue_flush_with_hours_filter(self):
         from hunt.console.commands.queue_failed import queue_flush_command
+
         self._raw.return_value = MagicMock()
         result = self._run_cmd(queue_flush_command, ["--hours", "24"])
         assert result.exit_code == 0

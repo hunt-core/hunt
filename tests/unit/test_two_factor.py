@@ -66,6 +66,47 @@ class TestTwoFactorService:
         codes = TwoFactor.generate_recovery_codes(n=12)
         assert len(codes) == 12
 
+    def test_hash_recovery_code_produces_bcrypt_hash(self):
+        code = "abc12-def34"
+        hashed = TwoFactor.hash_recovery_code(code)
+        assert hashed.startswith("$2b$") or hashed.startswith("$2a$")
+
+    def test_verify_recovery_code_correct(self):
+        code = "abc12-def34"
+        hashed = TwoFactor.hash_recovery_code(code)
+        assert TwoFactor.verify_recovery_code(code, hashed) is True
+
+    def test_verify_recovery_code_wrong(self):
+        hashed = TwoFactor.hash_recovery_code("abc12-def34")
+        assert TwoFactor.verify_recovery_code("wrong-code1", hashed) is False
+
+    def test_hash_recovery_code_salted(self):
+        code = "abc12-def34"
+        assert TwoFactor.hash_recovery_code(code) != TwoFactor.hash_recovery_code(code)
+
+    def test_encrypt_decrypt_secret_roundtrip(self, monkeypatch):
+        monkeypatch.setenv("APP_KEY", "test-app-key-for-unit-tests")
+        secret = TwoFactor.generate_secret()
+        encrypted = TwoFactor.encrypt_secret(secret)
+        assert encrypted != secret
+        assert TwoFactor.decrypt_secret(encrypted) == secret
+
+    def test_encrypt_secret_is_not_plaintext(self, monkeypatch):
+        monkeypatch.setenv("APP_KEY", "test-app-key-for-unit-tests")
+        secret = TwoFactor.generate_secret()
+        encrypted = TwoFactor.encrypt_secret(secret)
+        assert secret not in encrypted
+
+    def test_decrypt_fails_with_wrong_key(self, monkeypatch):
+        monkeypatch.setenv("APP_KEY", "key-a")
+        secret = TwoFactor.generate_secret()
+        encrypted = TwoFactor.encrypt_secret(secret)
+        monkeypatch.setenv("APP_KEY", "key-b")
+        from cryptography.fernet import InvalidToken
+
+        with pytest.raises(InvalidToken):
+            TwoFactor.decrypt_secret(encrypted)
+
 
 class TestSessionGuardTwoFactor:
     def _make_guard(self, user_attrs):

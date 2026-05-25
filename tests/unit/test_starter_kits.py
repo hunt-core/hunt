@@ -1,4 +1,5 @@
 """Tests for M24 — Starter Kits."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +12,7 @@ from hunt.console.commands.new import new_command
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _new(tmp_path: Path, *args: str) -> object:
     runner = CliRunner()
     return runner.invoke(new_command, ["myapp", *args], catch_exceptions=False)
@@ -19,6 +21,7 @@ def _new(tmp_path: Path, *args: str) -> object:
 # ---------------------------------------------------------------------------
 # Base --starter flag wiring
 # ---------------------------------------------------------------------------
+
 
 class TestStarterFlag:
     def test_invalid_starter_exits(self, tmp_path, monkeypatch):
@@ -44,6 +47,7 @@ class TestStarterFlag:
 # ---------------------------------------------------------------------------
 # Blog starter
 # ---------------------------------------------------------------------------
+
 
 class TestBlogStarter:
     def _apply(self, tmp_path: Path, monkeypatch) -> Path:
@@ -126,6 +130,7 @@ class TestBlogStarter:
 # API starter
 # ---------------------------------------------------------------------------
 
+
 class TestApiStarter:
     def _apply(self, tmp_path: Path, monkeypatch) -> Path:
         monkeypatch.chdir(tmp_path)
@@ -187,6 +192,7 @@ class TestApiStarter:
 # SaaS starter
 # ---------------------------------------------------------------------------
 
+
 class TestSaasStarter:
     def _apply(self, tmp_path: Path, monkeypatch) -> Path:
         monkeypatch.chdir(tmp_path)
@@ -236,10 +242,7 @@ class TestSaasStarter:
 
     def test_teams_migration_has_plan_column(self, tmp_path, monkeypatch):
         app = self._apply(tmp_path, monkeypatch)
-        mig = next(
-            f for f in (app / "database" / "migrations").iterdir()
-            if "teams" in f.name
-        )
+        mig = next(f for f in (app / "database" / "migrations").iterdir() if "teams" in f.name)
         assert "plan" in mig.read_text()
         assert "stripe_customer_id" in mig.read_text()
 

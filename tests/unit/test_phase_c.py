@@ -1,4 +1,5 @@
 """Phase C tests: Mail & Notifications."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -12,6 +13,7 @@ from hunt.mail.message import MailMessage
 # ===========================================================================
 # Mailable — fluent builder
 # ===========================================================================
+
 
 class TestMailable:
     def test_to_single_address(self):
@@ -81,6 +83,7 @@ class TestMailable:
     def test_build_hook_called(self):
         class MyMail(Mailable):
             built = False
+
             def build(self):
                 MyMail.built = True
                 return self.subject("Built")
@@ -105,6 +108,7 @@ class TestMailable:
 # ===========================================================================
 # MailMessage (notification builder)
 # ===========================================================================
+
 
 class TestMailMessage:
     def test_greeting(self):
@@ -160,6 +164,7 @@ class TestMailMessage:
 # _ArrayDriver
 # ===========================================================================
 
+
 class TestArrayDriver:
     def test_stores_mailable(self):
         driver = _ArrayDriver()
@@ -185,6 +190,7 @@ class TestArrayDriver:
 # _LogDriver
 # ===========================================================================
 
+
 class TestLogDriver:
     def test_log_driver_calls_log(self):
         driver = _LogDriver()
@@ -202,6 +208,7 @@ class TestLogDriver:
 # ===========================================================================
 # _build_mime
 # ===========================================================================
+
 
 class TestBuildMime:
     def test_subject_and_to(self):
@@ -237,14 +244,17 @@ class TestBuildMime:
 # _MailManager
 # ===========================================================================
 
+
 class TestMailManager:
     def setup_method(self):
         self.mail = _MailManager()
-        self.mail.configure({
-            "default": "log",
-            "mailers": {"log": {"transport": "log"}},
-            "from": {"address": "from@app.com", "name": "App"},
-        })
+        self.mail.configure(
+            {
+                "default": "log",
+                "mailers": {"log": {"transport": "log"}},
+                "from": {"address": "from@app.com", "name": "App"},
+            }
+        )
 
     def test_configure_sets_defaults(self):
         assert self.mail._default == "log"
@@ -253,6 +263,7 @@ class TestMailManager:
 
     def test_to_returns_pending_mail(self):
         from hunt.mail.manager import _PendingMail
+
         pending = self.mail.to("x@b.com")
         assert isinstance(pending, _PendingMail)
 
@@ -336,26 +347,31 @@ class TestMailManager:
 # Notification
 # ===========================================================================
 
+
 class TestNotification:
     def test_id_is_uuid_string(self):
         from hunt.notifications.notification import Notification
+
         n = Notification()
         assert len(n.id) == 36
         assert n.id.count("-") == 4
 
     def test_default_via_is_mail(self):
         from hunt.notifications.notification import Notification
+
         n = Notification()
         assert n.via(None) == ["mail"]
 
     def test_to_mail_raises_by_default(self):
         from hunt.notifications.notification import Notification
+
         n = Notification()
         with pytest.raises(NotImplementedError):
             n.to_mail(None)
 
     def test_to_database_raises_by_default(self):
         from hunt.notifications.notification import Notification
+
         n = Notification()
         with pytest.raises(NotImplementedError):
             n.to_database(None)
@@ -375,6 +391,7 @@ class TestNotification:
 # ===========================================================================
 # Notifiable mixin
 # ===========================================================================
+
 
 def _make_notifiable(email="user@example.com", id_=1):
     from hunt.notifications.notifiable import Notifiable
@@ -407,11 +424,12 @@ class TestNotifiable:
 
         user = _make_notifiable()
         mail = _MailManager()
-        mail.configure({"default": "log", "mailers": {"log": {"transport": "log"}}, "from": {"address": "a@b.com", "name": "A"}})
+        mail.configure(
+            {"default": "log", "mailers": {"log": {"transport": "log"}}, "from": {"address": "a@b.com", "name": "A"}}
+        )
         fake = mail.fake()
 
-        with patch("hunt.notifications.channels.mail.Mail", mail), \
-             patch("hunt.mail.manager.Mail", mail):
+        with patch("hunt.notifications.channels.mail.Mail", mail), patch("hunt.mail.manager.Mail", mail):
             user.notify(Poke())
 
         assert len(fake.sent()) == 1
@@ -438,6 +456,7 @@ class TestNotifiable:
 # NotificationFake
 # ===========================================================================
 
+
 class TestNotificationFake:
     def test_fake_intercepts_notify(self):
         from hunt.notifications.fake import NotificationFake
@@ -446,6 +465,7 @@ class TestNotificationFake:
         class Ping(Notification):
             def via(self, n):
                 return ["mail"]
+
             def to_mail(self, n):
                 return MailMessage()
 
@@ -463,6 +483,7 @@ class TestNotificationFake:
         class Ping(Notification):
             def via(self, n):
                 return ["mail"]
+
             def to_mail(self, n):
                 return MailMessage()
 
@@ -497,6 +518,7 @@ class TestNotificationFake:
         class Ping(Notification):
             def via(self, n):
                 return ["mail"]
+
             def to_mail(self, n):
                 return MailMessage()
 
@@ -515,8 +537,10 @@ class TestNotificationFake:
             def __init__(self, tag):
                 super().__init__()
                 self.tag = tag
+
             def via(self, n):
                 return ["mail"]
+
             def to_mail(self, n):
                 return MailMessage()
 
@@ -530,6 +554,7 @@ class TestNotificationFake:
 # ===========================================================================
 # MailChannel
 # ===========================================================================
+
 
 class TestMailChannel:
     def test_routes_to_notifiable_email(self):
@@ -571,6 +596,7 @@ class TestMailChannel:
 # ===========================================================================
 # make:mail / make:notification commands
 # ===========================================================================
+
 
 class TestMakeMailCommand:
     def test_make_mail_creates_file(self, tmp_path, monkeypatch):

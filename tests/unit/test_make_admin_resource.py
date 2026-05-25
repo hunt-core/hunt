@@ -49,6 +49,7 @@ def project(tmp_path, monkeypatch):
 # Happy path
 # ---------------------------------------------------------------------------
 
+
 def test_creates_resource_file(project):
     result = CliRunner().invoke(make_admin_resource_command, ["post"])
 
@@ -106,6 +107,7 @@ def test_prints_confirmation(project):
 # Model file missing
 # ---------------------------------------------------------------------------
 
+
 def test_error_when_model_file_missing(project):
     result = CliRunner().invoke(make_admin_resource_command, ["invoice"])
 
@@ -124,6 +126,7 @@ def test_no_file_written_when_model_missing(project):
 # No class in model file
 # ---------------------------------------------------------------------------
 
+
 def test_error_when_no_class_in_model_file(project):
     (project / "app" / "models" / "empty.py").write_text("# nothing here\n")
 
@@ -136,6 +139,7 @@ def test_error_when_no_class_in_model_file(project):
 # ---------------------------------------------------------------------------
 # Already registered
 # ---------------------------------------------------------------------------
+
 
 def test_error_when_already_registered(project):
     CliRunner().invoke(make_admin_resource_command, ["post"])
@@ -151,6 +155,7 @@ def test_error_when_already_registered(project):
 # ---------------------------------------------------------------------------
 # Resource file already exists
 # ---------------------------------------------------------------------------
+
 
 def test_error_when_resource_file_exists(project):
     (project / "app" / "admin" / "post_resource.py").write_text("# placeholder\n")
@@ -174,6 +179,7 @@ def test_routes_not_modified_when_resource_file_exists(project):
 # No routes/admin.py present
 # ---------------------------------------------------------------------------
 
+
 def test_succeeds_without_routes_file(project):
     (project / "routes" / "admin.py").unlink()
 
@@ -186,6 +192,7 @@ def test_succeeds_without_routes_file(project):
 # ---------------------------------------------------------------------------
 # Class name derived from file, not argument
 # ---------------------------------------------------------------------------
+
 
 def test_class_name_read_from_file_not_argument(project):
     # File is named 'blog_post.py' but the class inside is 'Entry'

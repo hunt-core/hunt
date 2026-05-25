@@ -11,6 +11,17 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.2] — 2026-05-25
+
+### Security
+
+- **2FA recovery codes now hashed at rest** (`auth/two_factor.py`, `auth/controllers/two_factor.py`): recovery codes are hashed with bcrypt before being stored in the database. Verification uses constant-time `bcrypt.checkpw` instead of a plain string comparison, and the matched hash is removed on use. The plaintext codes are only ever visible immediately after generation.
+- **TOTP secret encrypted at rest** (`auth/two_factor.py`, `auth/controllers/two_factor.py`): the TOTP secret is now encrypted with Fernet (AES-128-CBC + HMAC-SHA256) before storage, keyed to `APP_KEY`. The secret is decrypted only in memory at verification time.
+- **`manage` view no longer exposes stored codes** (`views/auth/two_factor/manage.html`): the manage page now shows only the count of remaining recovery codes. Plaintext codes are shown once on the `recovery` view immediately after generation or regeneration.
+- Added `cryptography>=41.0,<45.0` as an explicit dependency.
+
+---
+
 ## [0.3.1] — 2026-05-24
 
 ### Added

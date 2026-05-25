@@ -1,4 +1,5 @@
 """Tests for M23 — App Introspection CLI commands."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ from click.testing import CliRunner
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _migrations_dir(tmp_path: Path) -> Path:
     d = tmp_path / "database" / "migrations"
     d.mkdir(parents=True)
@@ -20,7 +22,7 @@ def _migrations_dir(tmp_path: Path) -> Path:
 def _write_migration(d: Path, name: str) -> None:
     (d / f"{name}.py").write_text(
         "from hunt.database.schema.migration import Migration\n"
-        f"class {name.split('_', 3)[-1].title().replace('_','')}(Migration):\n"
+        f"class {name.split('_', 3)[-1].title().replace('_', '')}(Migration):\n"
         "    def up(self): pass\n"
         "    def down(self): pass\n"
     )
@@ -29,18 +31,15 @@ def _write_migration(d: Path, name: str) -> None:
 def _config_dir(tmp_path: Path) -> Path:
     d = tmp_path / "config"
     d.mkdir()
-    (d / "app.py").write_text(
-        'app = {"name": "TestApp", "debug": False}\n'
-    )
-    (d / "database.py").write_text(
-        'database = {"connection": "sqlite", "password": "s3cr3t"}\n'
-    )
+    (d / "app.py").write_text('app = {"name": "TestApp", "debug": False}\n')
+    (d / "database.py").write_text('database = {"connection": "sqlite", "password": "s3cr3t"}\n')
     return d
 
 
 # ---------------------------------------------------------------------------
 # route:list --json
 # ---------------------------------------------------------------------------
+
 
 class TestRouteListJson:
     def test_json_flag_outputs_valid_json(self, tmp_path, monkeypatch):
@@ -120,6 +119,7 @@ class TestRouteListJson:
 # db:status
 # ---------------------------------------------------------------------------
 
+
 class TestDbStatus:
     def test_table_output(self, tmp_path, monkeypatch):
         from hunt.console.commands.db.status import db_status_command
@@ -168,6 +168,7 @@ class TestDbStatus:
 # ---------------------------------------------------------------------------
 # config:show
 # ---------------------------------------------------------------------------
+
 
 class TestConfigShow:
     def test_table_output(self, tmp_path, monkeypatch):
@@ -253,6 +254,7 @@ class TestConfigShow:
 # ---------------------------------------------------------------------------
 # app:info
 # ---------------------------------------------------------------------------
+
 
 class TestAppInfo:
     def _make_project(self, tmp_path: Path) -> None:

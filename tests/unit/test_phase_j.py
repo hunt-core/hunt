@@ -1,4 +1,5 @@
 """Phase J — Testing Utilities tests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,6 +14,7 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -26,6 +28,7 @@ class _FakeUser:
 # ===========================================================================
 # 1. EventFake
 # ===========================================================================
+
 
 class TestEventFake:
     # ---- basic recording ---------------------------------------------------
@@ -129,7 +132,8 @@ class TestEventFake:
         from hunt.testing.fakes import EventFake
 
         class A:
-            def __init__(self, val): self.val = val
+            def __init__(self, val):
+                self.val = val
 
         class B:
             pass
@@ -171,6 +175,7 @@ class TestEventFake:
 # 2. QueueFake
 # ===========================================================================
 
+
 class TestQueueFake:
     # ---- basic recording ---------------------------------------------------
 
@@ -179,11 +184,13 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class SendEmail(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         job = SendEmail()
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             Queue.push(job)
             fake.assert_pushed(SendEmail)
 
@@ -198,7 +205,8 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class NeverPushed(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             fake.assert_not_pushed(NeverPushed)
@@ -210,10 +218,12 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class Sync(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             Queue.push(Sync())
             Queue.push(Sync())
             fake.assert_pushed(Sync, count=2)
@@ -223,10 +233,12 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class Sync(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             Queue.push(Sync())
             with pytest.raises(AssertionError, match="Expected 5"):
                 fake.assert_pushed(Sync, count=5)
@@ -238,11 +250,15 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class ProcessOrder(Job):
-            def __init__(self, order_id): self.order_id = order_id
-            def handle(self): pass
+            def __init__(self, order_id):
+                self.order_id = order_id
+
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             Queue.push(ProcessOrder(1))
             Queue.push(ProcessOrder(42))
             fake.assert_pushed(ProcessOrder, callback=lambda j: j.order_id == 42)
@@ -254,10 +270,12 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class DelayedJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             job = DelayedJob()
             Queue.later(300, job)
             fake.assert_pushed(DelayedJob)
@@ -268,7 +286,8 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class AnotherJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             job = AnotherJob()
@@ -281,13 +300,16 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class A(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         class B(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             Queue.push(A())
             Queue.push(B())
             Queue.push(A())
@@ -302,10 +324,12 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class ShouldNotBePushed(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             Queue.push(ShouldNotBePushed())
             with pytest.raises(AssertionError, match="NOT to be pushed"):
                 fake.assert_not_pushed(ShouldNotBePushed)
@@ -317,10 +341,12 @@ class TestQueueFake:
         from hunt.testing.fakes import QueueFake
 
         class AJob(Job):
-            def handle(self): pass
+            def handle(self):
+                pass
 
         with QueueFake() as fake:
             from hunt.queue.manager import Queue
+
             Queue.push(AJob())
             with pytest.raises(AssertionError, match="no jobs pushed"):
                 fake.assert_nothing_pushed()
@@ -329,6 +355,7 @@ class TestQueueFake:
 # ===========================================================================
 # 3. freeze_time
 # ===========================================================================
+
 
 class TestFreezeTime:
     def test_time_time_frozen(self):
@@ -394,6 +421,7 @@ class TestFreezeTime:
 # ===========================================================================
 # 4. Factory.state()
 # ===========================================================================
+
 
 class TestFactoryState:
     def _make_factory(self):
@@ -477,7 +505,9 @@ class TestFactoryState:
         class TF(Factory):
             model = FakeModel
             states: ClassVar[dict] = {"vip": lambda: {"vip": True}}
-            def definition(self): return {"vip": False}
+
+            def definition(self):
+                return {"vip": False}
 
         f1 = TF().state("vip")
         f2 = TF()  # fresh instance, no state
@@ -489,6 +519,7 @@ class TestFactoryState:
 # ===========================================================================
 # 5. HuntTestCase.acting_as()
 # ===========================================================================
+
 
 class TestActingAs:
     def _make_kernel(self, route_fn):
@@ -508,6 +539,7 @@ class TestActingAs:
         def view():
             captured["user"] = Auth.user()
             from hunt.http.response import JsonResponse
+
             return JsonResponse({"ok": True})
 
         kernel = self._make_kernel(view)
@@ -538,9 +570,11 @@ class TestActingAs:
             captured["check"] = Auth.check()
             captured["guest"] = Auth.guest()
             from hunt.http.response import JsonResponse
+
             return JsonResponse({})
 
         from hunt.testing.test_case import HuntTestCase
+
         tc = HuntTestCase()
         tc.kernel = self._make_kernel(view)
         tc.acting_as(_FakeUser())
@@ -557,9 +591,11 @@ class TestActingAs:
         def view():
             captured["id"] = Auth.id()
             from hunt.http.response import JsonResponse
+
             return JsonResponse({})
 
         from hunt.testing.test_case import HuntTestCase
+
         tc = HuntTestCase()
         tc.kernel = self._make_kernel(view)
         tc.acting_as(_FakeUser(user_id=99))
@@ -581,6 +617,7 @@ class TestActingAs:
 # ===========================================================================
 # 6. HuntTestCase.without_middleware()
 # ===========================================================================
+
 
 class TestWithoutMiddleware:
     def _kernel_with_mw(self, middleware_class, route_fn):
@@ -605,9 +642,11 @@ class TestWithoutMiddleware:
 
         def view():
             from hunt.http.response import JsonResponse
+
             return JsonResponse({})
 
         from hunt.testing.test_case import HuntTestCase
+
         tc = HuntTestCase()
         tc.kernel = self._kernel_with_mw(TrackingMw, view)
         _run(tc.get("/"))
@@ -627,9 +666,11 @@ class TestWithoutMiddleware:
 
         def view():
             from hunt.http.response import JsonResponse
+
             return JsonResponse({})
 
         from hunt.testing.test_case import HuntTestCase
+
         tc = HuntTestCase()
         tc.kernel = self._kernel_with_mw(SkippedMw, view)
         tc.without_middleware(SkippedMw)
@@ -655,15 +696,18 @@ class TestWithoutMiddleware:
 
         def view():
             from hunt.http.response import JsonResponse
+
             return JsonResponse({})
 
         from hunt.http.kernel import HttpKernel
         from hunt.http.router import Router
+
         router = Router()
         router.get("/", view)
         kernel = HttpKernel(router, global_middleware=[AlwaysRuns, Skipped])
 
         from hunt.testing.test_case import HuntTestCase
+
         tc = HuntTestCase()
         tc.kernel = kernel
         tc.without_middleware(Skipped)
@@ -697,9 +741,11 @@ class TestWithoutMiddleware:
 
         def view():
             from hunt.http.response import JsonResponse
+
             return JsonResponse({})
 
         from hunt.testing.test_case import HuntTestCase
+
         tc = HuntTestCase()
         tc.kernel = self._kernel_with_mw(Counted, view)
         tc.without_middleware(Counted)
@@ -713,6 +759,7 @@ class TestWithoutMiddleware:
 # ===========================================================================
 # 7. RefreshDatabase
 # ===========================================================================
+
 
 class TestRefreshDatabase:
     def test_setup_is_noop(self):
@@ -792,23 +839,29 @@ class TestRefreshDatabase:
 # 8. Testing __init__ exports
 # ===========================================================================
 
+
 class TestExports:
     def test_event_fake_exported(self):
         from hunt.testing import EventFake
+
         assert EventFake is not None
 
     def test_queue_fake_exported(self):
         from hunt.testing import QueueFake
+
         assert QueueFake is not None
 
     def test_freeze_time_exported(self):
         from hunt.testing import freeze_time
+
         assert freeze_time is not None
 
     def test_hunt_test_case_exported(self):
         from hunt.testing import HuntTestCase
+
         assert HuntTestCase is not None
 
     def test_refresh_database_exported(self):
         from hunt.testing import RefreshDatabase
+
         assert RefreshDatabase is not None

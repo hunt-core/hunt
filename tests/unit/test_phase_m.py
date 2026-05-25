@@ -1,4 +1,5 @@
 """Phase M — Localization / Translation."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,6 +13,7 @@ from hunt.translation.translator import Translator
 # Fixtures — minimal lang directory wired up in a tmp_path
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def lang(tmp_path: Path) -> Path:
     en = tmp_path / "en"
@@ -22,7 +24,7 @@ def lang(tmp_path: Path) -> Path:
         '    "greeting": "Hello, :name!",\n'
         '    "farewell": "Goodbye, :Name!",\n'
         '    "shout": "HELLO, :NAME!",\n'
-        "    \"nested\": {\"deep\": \"Found it\"},\n"
+        '    "nested": {"deep": "Found it"},\n'
         "}\n"
     )
     (en / "auth.py").write_text(
@@ -41,11 +43,7 @@ def lang(tmp_path: Path) -> Path:
     )
     es = tmp_path / "es"
     es.mkdir()
-    (es / "messages.py").write_text(
-        "messages = {\n"
-        '    "welcome": "Bienvenido!",\n'
-        "}\n"
-    )
+    (es / "messages.py").write_text('messages = {\n    "welcome": "Bienvenido!",\n}\n')
     return tmp_path
 
 
@@ -57,6 +55,7 @@ def t(lang: Path) -> Translator:
 # ---------------------------------------------------------------------------
 # Basic key resolution
 # ---------------------------------------------------------------------------
+
 
 class TestBasicResolution:
     def test_resolves_simple_key(self, t):
@@ -85,6 +84,7 @@ class TestBasicResolution:
 # Replacements
 # ---------------------------------------------------------------------------
 
+
 class TestReplacements:
     def test_basic_replacement(self, t):
         assert t.get("messages.greeting", {"name": "Alice"}) == "Hello, Alice!"
@@ -107,6 +107,7 @@ class TestReplacements:
 # ---------------------------------------------------------------------------
 # Locale switching
 # ---------------------------------------------------------------------------
+
 
 class TestLocaleSwitching:
     def test_get_locale_default(self, lang):
@@ -136,6 +137,7 @@ class TestLocaleSwitching:
 # Fallback locale
 # ---------------------------------------------------------------------------
 
+
 class TestFallback:
     def test_falls_back_when_key_missing_in_locale(self, lang):
         # "es" locale has messages.welcome but not messages.greeting
@@ -160,6 +162,7 @@ class TestFallback:
 # has()
 # ---------------------------------------------------------------------------
 
+
 class TestHas:
     def test_has_existing_key(self, t):
         assert t.has("messages.welcome") is True
@@ -180,6 +183,7 @@ class TestHas:
 # Pluralization — simple ngettext-style
 # ---------------------------------------------------------------------------
 
+
 class TestSimplePlural:
     def test_singular(self, t):
         assert t.choice("plural.simple", 1) == "one apple"
@@ -197,6 +201,7 @@ class TestSimplePlural:
 # ---------------------------------------------------------------------------
 # Pluralization — Laravel qualified-style
 # ---------------------------------------------------------------------------
+
 
 class TestQualifiedPlural:
     def test_exact_zero(self, t):
@@ -230,6 +235,7 @@ class TestQualifiedPlural:
 # choice() with replacements + missing key
 # ---------------------------------------------------------------------------
 
+
 class TestChoiceEdgeCases:
     def test_missing_key_returns_key(self, t):
         assert t.choice("plural.nope", 1) == "plural.nope"
@@ -248,6 +254,7 @@ class TestChoiceEdgeCases:
 # ---------------------------------------------------------------------------
 # Lang file loading
 # ---------------------------------------------------------------------------
+
 
 class TestLangFileLoading:
     def test_groups_cached_after_first_load(self, t):
@@ -277,9 +284,11 @@ class TestLangFileLoading:
 # Application.locale() / set_locale()
 # ---------------------------------------------------------------------------
 
+
 class TestApplicationLocale:
     def test_set_and_get_locale(self):
         from hunt.application import Application
+
         mock_translator = MagicMock()
         mock_translator.get_locale.return_value = "fr"
 
@@ -308,6 +317,7 @@ class TestApplicationLocale:
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 class TestHelpers:
     def test_double_underscore_helper(self, lang):
         tr = Translator(lang)
@@ -315,6 +325,7 @@ class TestHelpers:
         mock_app.return_value = tr
 
         import hunt.support.helpers as helpers
+
         with patch.object(helpers, "app", mock_app):
             result = helpers.__("messages.welcome")
         assert result == "Welcome!"
@@ -324,6 +335,7 @@ class TestHelpers:
         mock_app = MagicMock(return_value=tr)
 
         import hunt.support.helpers as helpers
+
         with patch.object(helpers, "app", mock_app):
             assert helpers.trans("messages.welcome") == "Welcome!"
 
@@ -332,17 +344,20 @@ class TestHelpers:
         mock_app = MagicMock(return_value=tr)
 
         import hunt.support.helpers as helpers
+
         with patch.object(helpers, "app", mock_app):
             assert helpers.trans_choice("plural.simple", 1) == "one apple"
             assert helpers.trans_choice("plural.simple", 5) == "many apples"
 
     def test_double_underscore_returns_key_on_error(self):
         import hunt.support.helpers as helpers
+
         with patch.object(helpers, "app", side_effect=RuntimeError("no app")):
             assert helpers.__("some.key") == "some.key"
 
     def test_trans_choice_returns_key_on_error(self):
         import hunt.support.helpers as helpers
+
         with patch.object(helpers, "app", side_effect=RuntimeError("no app")):
             assert helpers.trans_choice("some.key", 3) == "some.key"
 
@@ -350,6 +365,7 @@ class TestHelpers:
 # ---------------------------------------------------------------------------
 # TranslationServiceProvider
 # ---------------------------------------------------------------------------
+
 
 class TestTranslationServiceProvider:
     def test_registers_translator_singleton(self, lang):
@@ -375,5 +391,6 @@ class TestTranslationServiceProvider:
 
     def test_boot_is_noop(self, lang):
         from hunt.translation.provider import TranslationServiceProvider
+
         provider = TranslationServiceProvider(MagicMock())
         provider.boot()  # should not raise

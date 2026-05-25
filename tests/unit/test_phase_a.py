@@ -1,4 +1,5 @@
 """Tests for Phase A feature implementations."""
+
 from __future__ import annotations
 
 from typing import ClassVar
@@ -9,9 +10,11 @@ import pytest
 # A1 — Database Transactions
 # ===========================================================================
 
+
 class TestDbTransactions:
     def test_transaction_exported(self):
         from hunt.database import begin, transaction
+
         assert callable(transaction)
         assert callable(begin)
 
@@ -21,6 +24,7 @@ class TestDbTransactions:
         from sqlalchemy import text
 
         from hunt.database.connection import _connections, connection
+
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
@@ -31,6 +35,7 @@ class TestDbTransactions:
             c.commit()
 
         from hunt.database import transaction
+
         transaction(lambda conn: conn.execute(text("INSERT INTO tx_test (val) VALUES ('hello')")))
 
         with eng.connect() as c:
@@ -43,6 +48,7 @@ class TestDbTransactions:
         from sqlalchemy import text
 
         from hunt.database.connection import _connections, connection
+
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
@@ -53,6 +59,7 @@ class TestDbTransactions:
             c.commit()
 
         from hunt.database import begin
+
         with begin() as conn:
             conn.execute(text("INSERT INTO begin_test (val) VALUES ('world')"))
 
@@ -66,6 +73,7 @@ class TestDbTransactions:
         from sqlalchemy import text
 
         from hunt.database.connection import _connections, connection
+
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
@@ -76,6 +84,7 @@ class TestDbTransactions:
             c.commit()
 
         from hunt.database import begin
+
         with pytest.raises(RuntimeError):
             with begin() as conn:
                 conn.execute(text("INSERT INTO rollback_test (val) VALUES ('oops')"))
@@ -90,18 +99,21 @@ class TestDbTransactions:
 # A2 — Eager Loading
 # ===========================================================================
 
+
 class TestEagerLoading:
     @pytest.fixture(autouse=True)
     def setup_db(self):
         import os
 
         from hunt.database.connection import _connections
+
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
         from sqlalchemy import text
 
         from hunt.database.connection import connection
+
         eng = connection()
         with eng.connect() as c:
             c.execute(text("CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT)"))
@@ -251,9 +263,11 @@ class TestEagerLoading:
 # A3 — Request enhancements
 # ===========================================================================
 
+
 class TestRequestCookie:
     def _make_request(self, headers=None):
         from hunt.http.request import Request
+
         scope = {
             "type": "http",
             "method": "GET",
@@ -264,9 +278,11 @@ class TestRequestCookie:
         return Request(scope)
 
     def test_cookie_reads_value(self):
-        req = self._make_request([
-            (b"cookie", b"foo=bar; baz=qux"),
-        ])
+        req = self._make_request(
+            [
+                (b"cookie", b"foo=bar; baz=qux"),
+            ]
+        )
         assert req.cookie("foo") == "bar"
         assert req.cookie("baz") == "qux"
 
@@ -276,6 +292,7 @@ class TestRequestCookie:
 
     def test_missing_is_inverse_of_has(self):
         from hunt.http.request import Request
+
         scope = {
             "type": "http",
             "method": "POST",
@@ -347,6 +364,7 @@ class TestUploadedFile:
 
     def test_has_file_returns_false_when_no_file(self):
         from hunt.http.request import Request
+
         scope = {
             "type": "http",
             "method": "GET",
@@ -362,15 +380,18 @@ class TestUploadedFile:
 # A4 — Redirect enhancements
 # ===========================================================================
 
+
 class TestFluentRedirect:
     def test_redirect_returns_fluent_redirect(self):
         from hunt.http.response import FluentRedirect, redirect
+
         r = redirect("/foo")
         assert isinstance(r, FluentRedirect)
         assert r._headers["Location"] == "/foo"
 
     def test_to_changes_location(self):
         from hunt.http.response import redirect
+
         r = redirect("/old").to("/new")
         assert r._headers["Location"] == "/new"
 
@@ -378,6 +399,7 @@ class TestFluentRedirect:
         from unittest.mock import patch
 
         from hunt.http.response import FluentRedirect
+
         with patch("hunt.auth.manager._get_current_request", return_value=None):
             r = FluentRedirect().back(default="/home")
         assert r._headers["Location"] == "/home"
@@ -415,6 +437,7 @@ class TestFluentRedirect:
     def test_helpers_redirect_returns_fluent(self):
         from hunt.http.response import FluentRedirect
         from hunt.support.helpers import redirect
+
         assert isinstance(redirect("/x"), FluentRedirect)
 
 
@@ -422,18 +445,21 @@ class TestFluentRedirect:
 # A5 — Query Builder gaps
 # ===========================================================================
 
+
 class TestQueryBuilderGaps:
     @pytest.fixture(autouse=True)
     def setup_db(self):
         import os
 
         from hunt.database.connection import _connections
+
         os.environ["DB_CONNECTION"] = "sqlite"
         os.environ["DB_DATABASE"] = ":memory:"
         _connections.clear()
         from sqlalchemy import text
 
         from hunt.database.connection import connection
+
         eng = connection()
         with eng.connect() as c:
             c.execute(text("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, score INTEGER DEFAULT 0)"))
@@ -444,6 +470,7 @@ class TestQueryBuilderGaps:
 
     def _qb(self):
         from hunt.database.query_builder import QueryBuilder
+
         return QueryBuilder("items")
 
     def test_when_applies_callback_when_true(self):
@@ -460,6 +487,7 @@ class TestQueryBuilderGaps:
         from sqlalchemy import text
 
         from hunt.database.connection import connection
+
         eng = connection()
         with eng.connect() as c:
             c.execute(text("CREATE TABLE sales (id INTEGER PRIMARY KEY, dept TEXT, amount INTEGER)"))
@@ -468,6 +496,7 @@ class TestQueryBuilderGaps:
             c.execute(text("INSERT INTO sales (dept, amount) VALUES ('B', 50)"))
             c.commit()
         from hunt.database.query_builder import QueryBuilder
+
         results = (
             QueryBuilder("sales")
             .select_raw("dept", "SUM(amount) as total")
@@ -482,6 +511,7 @@ class TestQueryBuilderGaps:
         from sqlalchemy import text
 
         from hunt.database.connection import connection
+
         eng = connection()
         with eng.connect() as c:
             c.execute(text("CREATE TABLE dupes (id INTEGER PRIMARY KEY, color TEXT)"))
@@ -490,6 +520,7 @@ class TestQueryBuilderGaps:
             c.execute(text("INSERT INTO dupes (color) VALUES ('blue')"))
             c.commit()
         from hunt.database.query_builder import QueryBuilder
+
         results = QueryBuilder("dupes").select("color").distinct().get()
         colors = [r["color"] for r in results]
         assert sorted(colors) == ["blue", "red"]
@@ -511,9 +542,11 @@ class TestQueryBuilderGaps:
 
     def test_chunk_stops_early_on_false(self):
         collected = []
+
         def cb(batch):
             collected.extend(batch)
             return False
+
         self._qb().chunk(2, cb)
         assert len(collected) == 2  # only first chunk
 
@@ -527,12 +560,14 @@ class TestQueryBuilderGaps:
         from sqlalchemy import text
 
         from hunt.database.connection import connection
+
         eng = connection()
         with eng.connect() as c:
             c.execute(text("CREATE TABLE tags (id INTEGER PRIMARY KEY, item_id INTEGER, label TEXT)"))
             c.execute(text("INSERT INTO tags (item_id, label) VALUES (1, 'featured')"))
             c.commit()
         from hunt.database.query_builder import QueryBuilder
+
         results = (
             QueryBuilder("items")
             .select_raw("items.name", "tags.label")
@@ -546,9 +581,11 @@ class TestQueryBuilderGaps:
 # A6 — Validation gaps
 # ===========================================================================
 
+
 class TestValidationGaps:
     def _v(self, data, rules):
         from hunt.validation.validator import Validator
+
         return Validator.make(data, rules)
 
     def test_nullable_skips_other_rules_when_empty(self):
@@ -616,6 +653,7 @@ class TestValidationGaps:
 
     def test_uuid_valid(self):
         import uuid
+
         assert self._v({"id": str(uuid.uuid4())}, {"id": "uuid"}).passes()
         assert self._v({"id": "not-a-uuid"}, {"id": "uuid"}).fails()
 
@@ -653,6 +691,7 @@ class TestValidationGaps:
         class MustBeFoo:
             def passes(self, field, value):
                 return value == "foo"
+
             def message(self):
                 return "The :attribute must be foo."
 
@@ -667,6 +706,7 @@ class TestValidationGaps:
         class AlwaysPass:
             def passes(self, field, value):
                 return True
+
             def message(self):
                 return "never"
 
@@ -678,58 +718,70 @@ class TestValidationGaps:
 # A7 — Str utility gaps
 # ===========================================================================
 
+
 class TestStrGaps:
     def test_headline(self):
         from hunt.support.str import Str
+
         assert Str.headline("foo_bar_baz") == "Foo Bar Baz"
         assert Str.headline("fooBarBaz") == "Foo Bar Baz"
         assert Str.headline("foo-bar-baz") == "Foo Bar Baz"
 
     def test_limit(self):
         from hunt.support.str import Str
+
         assert Str.limit("Hello world", 5) == "Hello..."
         assert Str.limit("Hi", 10) == "Hi"
         assert Str.limit("Hello world", 5, " (more)") == "Hello (more)"
 
     def test_words(self):
         from hunt.support.str import Str
+
         assert Str.words("one two three four", 2) == "one two..."
         assert Str.words("one two", 5) == "one two"
 
     def test_after(self):
         from hunt.support.str import Str
+
         assert Str.after("foo@bar.com", "@") == "bar.com"
         assert Str.after("no-match", "@") == "no-match"
 
     def test_after_last(self):
         from hunt.support.str import Str
+
         assert Str.after_last("path/to/file.txt", "/") == "file.txt"
 
     def test_before(self):
         from hunt.support.str import Str
+
         assert Str.before("foo@bar.com", "@") == "foo"
         assert Str.before("no-match", "@") == "no-match"
 
     def test_before_last(self):
         from hunt.support.str import Str
+
         assert Str.before_last("path/to/file.txt", "/") == "path/to"
 
     def test_between(self):
         from hunt.support.str import Str
+
         assert Str.between("[hello]", "[", "]") == "hello"
 
     def test_squish(self):
         from hunt.support.str import Str
+
         assert Str.squish("  hello   world  ") == "hello world"
         assert Str.squish("foo\n\nbar") == "foo bar"
 
     def test_wrap(self):
         from hunt.support.str import Str
+
         assert Str.wrap("hello", '"') == '"hello"'
         assert Str.wrap("hello", "<b>", "</b>") == "<b>hello</b>"
 
     def test_is_(self):
         from hunt.support.str import Str
+
         assert Str.is_("foo*", "foobar") is True
         assert Str.is_("foo*", "barfoo") is False
         assert Str.is_("*.txt", "file.txt") is True
@@ -737,25 +789,30 @@ class TestStrGaps:
 
     def test_replace_first(self):
         from hunt.support.str import Str
+
         assert Str.replace_first("a", "x", "a b a") == "x b a"
 
     def test_replace_last(self):
         from hunt.support.str import Str
+
         assert Str.replace_last("a", "x", "a b a") == "a b x"
 
     def test_uuid_is_valid_uuid4(self):
         import uuid
 
         from hunt.support.str import Str
+
         val = Str.uuid()
         parsed = uuid.UUID(val)
         assert parsed.version == 4
 
     def test_random_length(self):
         from hunt.support.str import Str
+
         r = Str.random(24)
         assert len(r) == 24
 
     def test_random_different_each_call(self):
         from hunt.support.str import Str
+
         assert Str.random() != Str.random()

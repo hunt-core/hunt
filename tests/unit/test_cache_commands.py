@@ -1,4 +1,5 @@
 """Tests for the cache CLI commands."""
+
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +17,7 @@ def project(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # cache clear
 # ---------------------------------------------------------------------------
+
 
 class TestCacheClear:
     def test_clears_cache_directory(self, project):
@@ -63,6 +65,7 @@ class TestCacheClear:
 # ---------------------------------------------------------------------------
 # cache forget
 # ---------------------------------------------------------------------------
+
 
 class TestCacheForget:
     def test_calls_cache_forget_with_key(self, project):

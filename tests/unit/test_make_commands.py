@@ -1,4 +1,5 @@
 """Tests for all hunt make:* CLI commands."""
+
 import re
 from pathlib import Path
 
@@ -29,6 +30,7 @@ def project(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # make:model
 # ---------------------------------------------------------------------------
+
 
 class TestMakeModel:
     def test_creates_file(self, project):
@@ -62,6 +64,7 @@ class TestMakeModel:
 # make:controller
 # ---------------------------------------------------------------------------
 
+
 class TestMakeController:
     def test_plain_controller(self, project):
         result = CliRunner().invoke(make_controller_command, ["post_controller"])
@@ -92,6 +95,7 @@ class TestMakeController:
 # ---------------------------------------------------------------------------
 # make:migration
 # ---------------------------------------------------------------------------
+
 
 class TestMakeMigration:
     def _only_migration(self, project) -> Path:
@@ -139,6 +143,7 @@ class TestMakeMigration:
 # make:middleware
 # ---------------------------------------------------------------------------
 
+
 class TestMakeMiddleware:
     def test_creates_file(self, project):
         result = CliRunner().invoke(make_middleware_command, ["AuthMiddleware"])
@@ -159,6 +164,7 @@ class TestMakeMiddleware:
 # ---------------------------------------------------------------------------
 # make:request
 # ---------------------------------------------------------------------------
+
 
 class TestMakeRequest:
     def test_creates_file(self, project):
@@ -194,6 +200,7 @@ class TestMakeRequest:
 # make:event
 # ---------------------------------------------------------------------------
 
+
 class TestMakeEvent:
     def test_creates_file(self, project):
         result = CliRunner().invoke(make_event_command, ["UserRegistered"])
@@ -217,6 +224,7 @@ class TestMakeEvent:
 # ---------------------------------------------------------------------------
 # make:listener
 # ---------------------------------------------------------------------------
+
 
 class TestMakeListener:
     def test_creates_file(self, project):
@@ -246,6 +254,7 @@ class TestMakeListener:
 # make:job
 # ---------------------------------------------------------------------------
 
+
 class TestMakeJob:
     def test_creates_file(self, project):
         result = CliRunner().invoke(make_job_command, ["ProcessPayment"])
@@ -270,6 +279,7 @@ class TestMakeJob:
 # ---------------------------------------------------------------------------
 # make:factory
 # ---------------------------------------------------------------------------
+
 
 class TestMakeFactory:
     def test_creates_file(self, project):
@@ -308,6 +318,7 @@ class TestMakeFactory:
 # make:seeder
 # ---------------------------------------------------------------------------
 
+
 class TestMakeSeeder:
     def test_creates_file(self, project):
         result = CliRunner().invoke(make_seeder_command, ["Post"])
@@ -339,6 +350,7 @@ class TestMakeSeeder:
 # ---------------------------------------------------------------------------
 # field_types helpers
 # ---------------------------------------------------------------------------
+
 
 class TestFieldTypes:
     def test_parse_empty(self):
@@ -381,6 +393,7 @@ class TestFieldTypes:
 # ---------------------------------------------------------------------------
 # make:crud
 # ---------------------------------------------------------------------------
+
 
 class TestMakeCrud:
     def _setup_routes(self, project):
@@ -470,6 +483,7 @@ class TestMakeCrud:
 # ---------------------------------------------------------------------------
 # make:api
 # ---------------------------------------------------------------------------
+
 
 class TestMakeApi:
     def _setup_routes(self, project):

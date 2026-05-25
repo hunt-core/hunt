@@ -1,4 +1,5 @@
 """Tests for the key:generate command."""
+
 import pytest
 from click.testing import CliRunner
 
@@ -24,6 +25,7 @@ def test_show_flag_key_is_base64_encoded(project):
 
     key = result.output.strip()
     import base64
+
     raw = key.removeprefix("base64:")
     decoded = base64.urlsafe_b64decode(raw + "==")
     assert len(decoded) == 32
