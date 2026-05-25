@@ -83,6 +83,11 @@ class QueryBuilder:
         self._withs: dict[str, Callable | None] = {}
         self._raw_wheres: list[tuple[str, dict]] = []
         self._nested_wheres: list[tuple[str, Callable[[QueryBuilder], QueryBuilder]]] = []
+        self._global_scope_fns: dict[str, Any] = {}
+        self._skip_global_scopes: set[str] = set()
+        self._skip_all_global_scopes: bool = False
+        self._remember_ttl: int | None = None
+        self._remember_key: str | None = None
 
     # ------------------------------------------------------------------
     # Cloning
@@ -106,6 +111,11 @@ class QueryBuilder:
         qb._withs = dict(self._withs)
         qb._raw_wheres = list(self._raw_wheres)
         qb._nested_wheres = list(self._nested_wheres)
+        qb._global_scope_fns = dict(self._global_scope_fns)
+        qb._skip_global_scopes = set(self._skip_global_scopes)
+        qb._skip_all_global_scopes = self._skip_all_global_scopes
+        qb._remember_ttl = self._remember_ttl
+        qb._remember_key = self._remember_key
         return qb
 
     # ------------------------------------------------------------------
@@ -334,6 +344,52 @@ class QueryBuilder:
         raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
 
     # ------------------------------------------------------------------
+    # Global scope control
+    # ------------------------------------------------------------------
+
+    def without_global_scope(self, *names: str) -> QueryBuilder:
+        qb = self._clone()
+        qb._skip_global_scopes.update(names)
+        return qb
+
+    def without_global_scopes(self) -> QueryBuilder:
+        qb = self._clone()
+        qb._skip_all_global_scopes = True
+        return qb
+
+    def _materialize(self) -> QueryBuilder:
+        """Apply pending global scopes and return an execution-ready QueryBuilder."""
+        qb = self._clone()
+        scopes = qb._global_scope_fns
+        if not scopes or qb._skip_all_global_scopes:
+            qb._global_scope_fns = {}
+            return qb
+        skip = set(qb._skip_global_scopes)
+        for name, scope_fn in scopes.items():
+            if name not in skip:
+                qb = scope_fn(qb)
+        qb._global_scope_fns = {}
+        return qb
+
+    # ------------------------------------------------------------------
+    # Query caching
+    # ------------------------------------------------------------------
+
+    def remember(self, ttl: int, key: str | None = None) -> QueryBuilder:
+        """Cache the result of get() / first() for *ttl* seconds."""
+        qb = self._clone()
+        qb._remember_ttl = ttl
+        qb._remember_key = key
+        return qb
+
+    def _derive_cache_key(self) -> str:
+        import hashlib
+
+        sql, bindings = self._build_select()
+        payload = f"{sql}|{sorted(bindings.items())}"
+        return "qb:" + hashlib.md5(payload.encode()).hexdigest()
+
+    # ------------------------------------------------------------------
     # Collection protocol — makes QueryBuilder usable as a list directly
     # ------------------------------------------------------------------
 
@@ -351,11 +407,26 @@ class QueryBuilder:
     # ------------------------------------------------------------------
 
     def get(self) -> list[Any]:
-        sql, bindings = self._build_select()
-        rows = self._execute(sql, bindings)
-        results = [self._hydrate(row) for row in rows]
-        if results and self._withs and self._model_class:
-            self._eager_load(results)
+        mat = self._materialize()
+        if mat._remember_ttl is not None:
+            from hunt.cache.manager import Cache
+
+            cache_key = mat._derive_cache_key()
+            cached_rows = Cache.get(cache_key)
+            if cached_rows is not None:
+                return [mat._hydrate(row) for row in cached_rows]
+            sql, bindings = mat._build_select()
+            rows = mat._execute(sql, bindings)
+            results = [mat._hydrate(row) for row in rows]
+            if results and mat._withs and mat._model_class:
+                mat._eager_load(results)
+            Cache.put(cache_key, rows, mat._remember_ttl)
+            return results
+        sql, bindings = mat._build_select()
+        rows = mat._execute(sql, bindings)
+        results = [mat._hydrate(row) for row in rows]
+        if results and mat._withs and mat._model_class:
+            mat._eager_load(results)
         return results
 
     def first(self) -> Any | None:
@@ -374,12 +445,13 @@ class QueryBuilder:
         return self.where("id", id).first()
 
     def count(self) -> int:
-        qb = self.select_raw("COUNT(*) as _count")
+        mat = self._materialize()
+        qb = mat.select_raw("COUNT(*) as _count")
         qb._order_bys = []
         qb._limit_val = None
         qb._offset_val = None
         sql, bindings = qb._build_select()
-        rows = self._execute(sql, bindings)
+        rows = mat._execute(sql, bindings)
         if rows:
             row = rows[0]
             return int(row["_count"] if isinstance(row, dict) else row[0])
@@ -390,48 +462,52 @@ class QueryBuilder:
 
     def min(self, column: str) -> Any:
         col = _ident(column)
-        qb = self.select_raw(f"MIN({col}) as _agg")
+        mat = self._materialize()
+        qb = mat.select_raw(f"MIN({col}) as _agg")
         qb._order_bys = []
         qb._limit_val = None
         qb._offset_val = None
-        rows = self._execute(*qb._build_select())
+        rows = mat._execute(*qb._build_select())
         return rows[0]["_agg"] if rows else None
 
     def max(self, column: str) -> Any:
         col = _ident(column)
-        qb = self.select_raw(f"MAX({col}) as _agg")
+        mat = self._materialize()
+        qb = mat.select_raw(f"MAX({col}) as _agg")
         qb._order_bys = []
         qb._limit_val = None
         qb._offset_val = None
-        rows = self._execute(*qb._build_select())
+        rows = mat._execute(*qb._build_select())
         return rows[0]["_agg"] if rows else None
 
     def avg(self, column: str) -> float | None:
         col = _ident(column)
-        qb = self.select_raw(f"AVG({col}) as _agg")
+        mat = self._materialize()
+        qb = mat.select_raw(f"AVG({col}) as _agg")
         qb._order_bys = []
         qb._limit_val = None
         qb._offset_val = None
-        rows = self._execute(*qb._build_select())
+        rows = mat._execute(*qb._build_select())
         val = rows[0]["_agg"] if rows else None
         return float(val) if val is not None else None
 
     def sum(self, column: str) -> Any:
         col = _ident(column)
-        qb = self.select_raw(f"SUM({col}) as _agg")
+        mat = self._materialize()
+        qb = mat.select_raw(f"SUM({col}) as _agg")
         qb._order_bys = []
         qb._limit_val = None
         qb._offset_val = None
-        rows = self._execute(*qb._build_select())
+        rows = mat._execute(*qb._build_select())
         return rows[0]["_agg"] if rows else None
 
     def pluck(self, column: str) -> list[Any]:
         """Return a flat list of values for a single column."""
         col = _ident(column)
-        qb = self._clone()
-        qb._selects = [col]
-        qb._model_class = None
-        rows = qb._execute(*qb._build_select())
+        mat = self._materialize()
+        mat._selects = [col]
+        mat._model_class = None
+        rows = mat._execute(*mat._build_select())
         return [row.get(col) for row in rows]
 
     def paginate(self, per_page: int = 15, page: int = 1):
@@ -589,14 +665,15 @@ class QueryBuilder:
             conn.commit()
 
     def update(self, data: dict) -> int:
-        where_clause, bindings = self._build_where_clause()
+        mat = self._materialize()
+        where_clause, bindings = mat._build_where_clause()
         sets = ", ".join(f"{_ident(k)} = :_set_{k}" for k in data.keys())
         for k, v in data.items():
             bindings[f"_set_{k}"] = v
-        sql = f"UPDATE {self._table} SET {sets}"
+        sql = f"UPDATE {mat._table} SET {sets}"
         if where_clause:
             sql += f" WHERE {where_clause}"
-        engine = connection(self._conn_name)
+        engine = connection(mat._conn_name)
         with engine.connect() as conn:
             from hunt.database.debug import timed_execute
 
@@ -645,11 +722,12 @@ class QueryBuilder:
             return result.rowcount
 
     def delete(self) -> int:
-        where_clause, bindings = self._build_where_clause()
-        sql = f"DELETE FROM {self._table}"
+        mat = self._materialize()
+        where_clause, bindings = mat._build_where_clause()
+        sql = f"DELETE FROM {mat._table}"
         if where_clause:
             sql += f" WHERE {where_clause}"
-        engine = connection(self._conn_name)
+        engine = connection(mat._conn_name)
         with engine.connect() as conn:
             from hunt.database.debug import timed_execute
 

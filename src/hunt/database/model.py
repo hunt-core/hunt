@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextvars
 import time
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from hunt.database.query_builder import QueryBuilder, _run_sync
@@ -22,6 +23,11 @@ class ModelMeta(type):
         # Each subclass gets its own event listener dict so observers don't bleed across models
         if "_event_listeners" not in namespace:
             cls._event_listeners = {}
+        # Each subclass gets its own global scope dict
+        if "_global_scopes" not in namespace:
+            cls._global_scopes = {}
+        if name != "Model":
+            cls.boot()
         return cls
 
 
@@ -40,6 +46,8 @@ class Model(metaclass=ModelMeta):
     attributes: ClassVar[dict] = {}
     _soft_deletes: ClassVar[bool] = False
     _connection: ClassVar[str | None] = None
+    _global_scopes: ClassVar[dict] = {}
+    route_key_name: ClassVar[str] = ""
 
     _event_listeners: ClassVar[dict[str, list]] = {}
 
@@ -187,8 +195,34 @@ class Model(metaclass=ModelMeta):
     # ------------------------------------------------------------------
 
     @classmethod
+    def boot(cls) -> None:
+        """Override to register global scopes or observers at class definition time."""
+
+    @classmethod
+    def add_global_scope(cls, name: str, scope: Callable[[QueryBuilder], QueryBuilder]) -> None:
+        cls._global_scopes[name] = scope
+
+    @classmethod
+    def without_global_scope(cls, *names: str) -> QueryBuilder:
+        return cls.query().without_global_scope(*names)
+
+    @classmethod
+    def without_global_scopes(cls) -> QueryBuilder:
+        return cls.query().without_global_scopes()
+
+    @classmethod
+    def resolve_route_binding(cls, value: Any) -> Model:
+        key = cls.route_key_name or cls.primary_key
+        instance = cls.query().where(key, value).first()
+        if instance is None:
+            raise ValueError(f"{cls.__name__} not found with {key}={value!r}")
+        return instance
+
+    @classmethod
     def query(cls) -> QueryBuilder:
-        return QueryBuilder(cls.table, cls, cls._connection)
+        qb = QueryBuilder(cls.table, cls, cls._connection)
+        qb._global_scope_fns = dict(cls._global_scopes)
+        return qb
 
     @classmethod
     def with_(cls, *relations: str | dict) -> QueryBuilder:

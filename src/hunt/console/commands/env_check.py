@@ -89,6 +89,12 @@ def env_check_command() -> None:
         sys.exit(1)
 
 
+def check_required() -> list[str]:
+    """Return names of required env vars that are not set. Loads .env first."""
+    _load_dotenv()
+    return [key for key, _ in _REQUIRED if not os.environ.get(key)]
+
+
 def _load_dotenv() -> None:
     env_file = Path.cwd() / ".env"
     if env_file.exists():

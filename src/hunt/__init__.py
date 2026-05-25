@@ -12,4 +12,4 @@ Quick start:
     from hunt.validation.validator import Validator
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"

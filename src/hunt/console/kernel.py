@@ -46,6 +46,7 @@ from hunt.console.commands.queue_failed import (
 )
 from hunt.console.commands.queue_table import queue_table_command
 from hunt.console.commands.queue_work import queue_work_command
+from hunt.console.commands.route_export import route_export_command
 from hunt.console.commands.route_list import route_list_command
 from hunt.console.commands.schedule_list import schedule_list_command
 from hunt.console.commands.schedule_run import schedule_run_command
@@ -94,6 +95,7 @@ cli.add_command(down_command, name="down")
 cli.add_command(up_command, name="up")
 cli.add_command(tinker_command, name="tinker")
 cli.add_command(route_list_command, name="route:list")
+cli.add_command(route_export_command, name="route:export")
 cli.add_command(new_command, name="new")
 cli.add_command(upgrade_command, name="upgrade")
 cli.add_command(key_generate_command, name="key:generate")

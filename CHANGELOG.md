@@ -11,6 +11,18 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.1] — 2026-05-24
+
+### Added
+
+- **Global model scopes** (`model.py`, `query_builder.py`): models can now register always-on query constraints via `boot()` + `add_global_scope(name, fn)`. The scope function receives the `QueryBuilder` and returns a modified one. Scopes are applied lazily at execution time via `_materialize()`, so callers can opt out with `Model.without_global_scope("name")` or `Model.without_global_scopes()` before the query runs. Scopes propagate through all terminal methods (`get`, `first`, `count`, `min`, `max`, `avg`, `sum`, `pluck`, `update`, `delete`).
+- **`route_key_name` for route model binding** (`model.py`, `http/kernel.py`): models can set `route_key_name: ClassVar[str] = "slug"` to bind routes on a column other than `id`. The kernel now calls `Model.resolve_route_binding(value)` instead of `find_or_fail`, which respects `route_key_name` and raises `ValueError` (→ 404) when no record is found.
+- **Query result caching — `.remember(ttl, key=None)`** (`query_builder.py`): chain `.remember(300)` on any query to cache the raw rows for `ttl` seconds using the active Cache driver. The cache key is derived from an MD5 of the SQL and bindings, or from the explicit `key` argument. A cache hit re-hydrates the cached rows into model instances without hitting the database.
+- **`route:export` — OpenAPI 3.1 spec generation** (`route_export.py`, `console/kernel.py`): `hunt route:export` outputs a JSON OpenAPI 3.1 spec built from the registered route table. `--output path/to/openapi.json` writes to a file; `--title` and `--version` set `info.title` / `info.version`. Path parameters are extracted from `{param}` URI segments; action docstrings supply `summary` and `description`; POST/PUT/PATCH routes get a generic `application/json` request body schema.
+- **`env:check` pre-serve gate** (`env_check.py`, `serve.py`, `serve_production.py`): `hunt serve` now prints a warning when required environment variables (`APP_KEY`, `DATABASE_URL`) are missing so developers notice early. `hunt serve:production` hard-aborts with exit code 1 on the same condition — a production server must not start misconfigured. The shared `check_required()` helper in `env_check.py` loads `.env` before checking.
+
+---
+
 ## [0.3.0] — 2026-05-23
 
 ### Added

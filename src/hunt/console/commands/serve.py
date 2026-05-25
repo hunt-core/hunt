@@ -18,6 +18,15 @@ _WATCH_DIRS = ("app", "config", "resources", "routes")
 @click.option("--open", "open_browser", is_flag=True, help="Open the app in the default browser after starting")
 def serve_command(host: str, port: int, reload: bool, open_browser: bool) -> None:
     """Start the development server."""
+    from hunt.console.commands.env_check import check_required
+
+    missing = check_required()
+    if missing:
+        click.echo("  Warning: required environment variables are not set:", err=True)
+        for var in missing:
+            click.echo(f"    ! {var}", err=True)
+        click.echo("  Run `hunt env:check` for details.\n", err=True)
+
     import uvicorn
 
     cwd = Path.cwd()

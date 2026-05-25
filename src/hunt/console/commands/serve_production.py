@@ -44,6 +44,18 @@ def _warn_if_misconfigured() -> None:
 )
 def serve_production_command(host: str, port: int, workers: int | None) -> None:
     """Start a production-grade server (multiple workers, no reload)."""
+    import sys
+
+    from hunt.console.commands.env_check import check_required
+
+    missing = check_required()
+    if missing:
+        click.echo("  Error: required environment variables are not set:", err=True)
+        for var in missing:
+            click.echo(f"    ✗ {var}", err=True)
+        click.echo("  Run `hunt env:check` for details.", err=True)
+        sys.exit(1)
+
     import uvicorn
 
     n_workers = workers if workers is not None else _default_workers()

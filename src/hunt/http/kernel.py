@@ -171,7 +171,7 @@ class HttpKernel:
                 elif name in params:
                     ann = param.annotation
                     if ann is not inspect.Parameter.empty and isinstance(ann, type) and issubclass(ann, Model):
-                        kwargs[name] = ann.find_or_fail(params[name])
+                        kwargs[name] = ann.resolve_route_binding(params[name])
                     else:
                         kwargs[name] = params[name]
                 elif param.default is not inspect.Parameter.empty:
