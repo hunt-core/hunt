@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.9] — 2026-05-26
+
+### Added
+
+- **Python 3.14 support** — added `Programming Language :: Python :: 3.14` classifier.
+
+---
+
 ## [0.4.8] — 2026-05-26
 
 ### Added
