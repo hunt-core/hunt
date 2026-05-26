@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# lodge — hunt framework Docker Compose wrapper
+# Usage: ./lodge <command> [options]
+
+set -e
+
+# ── Detect Docker Compose ────────────────────────────────────────────────────
+if docker compose version >/dev/null 2>&1; then
+    DC="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    DC="docker-compose"
+else
+    echo "  Error: Docker Compose is not installed." >&2
+    exit 1
+fi
+
+# ── Verify Docker is running ─────────────────────────────────────────────────
+if ! docker info >/dev/null 2>&1; then
+    echo "  Error: Docker is not running. Start Docker Desktop and try again." >&2
+    exit 1
+fi
+
+# ── TTY detection (interactive terminal vs CI/pipe) ──────────────────────────
+if [ -t 0 ]; then
+    TTY="-it"
+else
+    TTY=""
+fi
+
+APP="app"
+
+# ── No arguments → show status ───────────────────────────────────────────────
+if [ $# -eq 0 ]; then
+    $DC ps
+    exit 0
+fi
+
+# ── Command dispatch ─────────────────────────────────────────────────────────
+case "$1" in
+    up)
+        shift
+        $DC up "$@"
+        ;;
+    down)
+        shift
+        $DC down "$@"
+        ;;
+    stop)
+        shift
+        $DC stop "$@"
+        ;;
+    restart)
+        shift
+        $DC restart "${@:-$APP}"
+        ;;
+    build)
+        shift
+        $DC build "$@"
+        ;;
+    ps|status)
+        $DC ps
+        ;;
+    shell|bash)
+        $DC exec $TTY $APP bash
+        ;;
+    python|py)
+        shift
+        $DC exec $TTY $APP python "$@"
+        ;;
+    hunt)
+        shift
+        $DC exec $TTY $APP hunt "$@"
+        ;;
+    test|pytest)
+        shift
+        $DC exec $TTY $APP pytest "$@"
+        ;;
+    pip)
+        shift
+        $DC exec $TTY $APP pip "$@"
+        ;;
+    logs)
+        shift
+        $DC logs --follow "${@:-$APP}"
+        ;;
+    share)
+        # Expose the app port publicly via a localhost tunnel
+        if ! command -v cloudflared >/dev/null 2>&1; then
+            echo "  Error: cloudflared is not installed." >&2
+            echo "  Install it from https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/" >&2
+            exit 1
+        fi
+        cloudflared tunnel --url "http://localhost:${APP_PORT:-8000}"
+        ;;
+    *)
+        # Pass-through anything else directly to docker compose
+        $DC "$@"
+        ;;
+esac
