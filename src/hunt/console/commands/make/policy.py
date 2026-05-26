@@ -37,9 +37,20 @@ class {class_name}:
 @click.command("make:policy")
 @click.argument("name")
 @click.option("-m", "--model", default=None, help="The model the policy applies to")
-def make_policy_command(name: str, model: str | None) -> None:
+@click.option("--dry-run", is_flag=True, help="Preview without writing")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+def make_policy_command(name: str, model: str | None, dry_run: bool, as_json: bool) -> None:
     """Create a new policy class."""
+    from hunt.console.commands.make._output import output
+
+    output.configure(dry_run=dry_run, as_json=as_json)
+    _create_policy(name, model=model)
+    output.finish()
+
+
+def _create_policy(name: str, model: str | None = None) -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._output import output
 
     class_name = Str.pascal(Str.snake(name))
     content = load_stub("policy", _STUB).format(class_name=class_name)
@@ -53,9 +64,4 @@ def make_policy_command(name: str, model: str | None) -> None:
         )
 
     out = Path.cwd() / "app" / "policies" / f"{Str.snake(name)}.py"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if out.exists():
-        click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
-        return
-    out.write_text(content)
-    click.echo(f"  Created Policy: {out.relative_to(Path.cwd())}")
+    output.write(out, content, label="Created Policy    ")

@@ -11,6 +11,26 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.1] — 2026-05-26
+
+### Added
+
+- **`hunt context`** — new command that emits a compact snapshot of the current project (routes, models with fillable/relations, middleware, env keys, directory structure) in markdown or `--json`. Designed for AI coding assistants; uses AST-based model discovery so no database connection is required. `--no-routes` skips the app boot entirely for fast offline use.
+- **`hunt make:model` expanded flags** — `-f/--factory`, `-s/--seeder`, `-p/--policy` flags added alongside the existing `-m` and `-c`. `--all` is a shorthand for all five. `--fields "col:type …"` now accepted directly on `make:model`, populating `fillable` in the model stub and generating typed blueprint columns in the migration (previously only available via `make:crud`).
+- **`hunt make:test`** — new scaffold command. `--unit` (default) writes to `tests/unit/`, `--feature` writes to `tests/feature/`. Both stubs include correct pytest class structure and imports.
+- **`--dry-run` and `--json` flags on all core `make:*` commands** — every `make:model`, `make:controller`, `make:migration`, `make:factory`, `make:seeder`, `make:policy`, `make:crud`, and `make:test` now accepts `--dry-run` (prints what would be written without touching the filesystem) and `--json` (emits a machine-readable `{"created": […], "dry_run": […], "skipped": […]}` summary). Backed by a shared `_output.py` singleton so all make helpers inherit the mode automatically.
+- **`llms.txt` and `llms-full.txt`** — added to the hunt-docs `public/` directory. `llms.txt` is an index conforming to the llms.txt spec with links to every doc section. `llms-full.txt` is a dense, self-contained ~3000-token code-heavy reference covering routing, controllers, models, query builder, relations, migrations, validation, views, auth, caching, sessions, queues, events, mail, and all CLI commands — optimised for AI agents that need full framework context in a single fetch.
+- **CLI docs updated** — `docs/cli/page.md` now documents `hunt context`, the expanded `make:model` flags, `make:test`, and the universal `--dry-run`/`--json` flags on all make commands.
+- **AI Agents docs page** — new `docs/ai-agents/` page covering `hunt context`, `llms.txt`/`llms-full.txt`, dry-run/JSON scaffolding workflow, and recommended agent session patterns.
+- **Admin Metrics docs rewritten** — corrected to reflect the actual constructor-based API (`ValueMetric(name, resolver, ...)`) instead of the incorrect subclass pattern previously documented.
+- **Docs nav restructured** — renamed "Digging Deeper" → "Backend Services"; moved Validation into The Basics; reordered Security to Authentication-first; added Observability group (Logging, Testing) and Internationalization group (Localization); AI Agents section added before CLI Reference.
+
+### Fixed
+
+- **`make:crud --dry-run` idempotency** — the route-append step now uses a quoted-sentinel check (`"/<prefix>"`) instead of a bare substring match, preventing false positive skips and correctly respecting `--dry-run` mode.
+
+---
+
 ## [0.3.9] — 2026-05-25
 
 ### Added

@@ -11,9 +11,14 @@ from hunt.support.str import Str
 @click.command("make:crud")
 @click.argument("name")
 @click.option("--fields", default="", metavar="FIELDS", help='Column definitions, e.g. "title:string body:text"')
-def make_crud_command(name: str, fields: str) -> None:
+@click.option("--dry-run", is_flag=True, help="Preview files without writing them")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+def make_crud_command(name: str, fields: str, dry_run: bool, as_json: bool) -> None:
     """Scaffold a full CRUD resource: model, migration, controller, views, and routes."""
+    from hunt.console.commands.make._output import output
     from hunt.console.commands.make.field_types import parse_fields
+
+    output.configure(dry_run=dry_run, as_json=as_json)
 
     parsed = parse_fields(fields)
     class_name = Str.pascal(name)
@@ -27,23 +32,24 @@ def make_crud_command(name: str, fields: str) -> None:
     _make_controller(class_name, snake, table, route_prefix, view_dir, parsed)
     _make_views(view_dir, class_name, route_prefix, parsed)
     _append_routes(class_name, snake, route_prefix)
+    output.finish()
 
 
 # ---------------------------------------------------------------------------
 
 
 def _make_model(class_name: str, table: str, fields: list[tuple[str, str]]) -> None:
+    from hunt.console.commands.make._output import output
     from hunt.console.commands.make.field_types import fillable_list
 
     fill = fillable_list(fields) if fields else "[]"
     content = _MODEL_STUB.replace("{{class}}", class_name).replace("{{table}}", table).replace("{{fillable}}", fill)
     out = Path.cwd() / "app" / "models" / f"{Str.snake(class_name)}.py"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
-    click.echo(f"  Created Model:      {out.relative_to(Path.cwd())}")
+    output.write(out, content, label="Created Model     ")
 
 
 def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) -> None:
+    from hunt.console.commands.make._output import output
     from hunt.console.commands.make.field_types import migration_columns
 
     timestamp = time.strftime("%Y_%m_%d_%H%M%S")
@@ -53,9 +59,7 @@ def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) 
     content = _MIGRATION_STUB.replace("{{class}}", mig_class).replace("{{table}}", table).replace("{{columns}}", body)
     filename = f"{timestamp}_create_{table}_table"
     out = Path.cwd() / "database" / "migrations" / f"{filename}.py"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
-    click.echo(f"  Created Migration:  {out.relative_to(Path.cwd())}")
+    output.write(out, content, label="Created Migration ")
 
 
 def _make_controller(
@@ -79,16 +83,16 @@ def _make_controller(
         .replace("{{store_lines}}", store_lines)
         .replace("{{update_lines}}", update_lines)
     )
+    from hunt.console.commands.make._output import output
+
     out = Path.cwd() / "app" / "controllers" / f"{snake}_controller.py"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
-    click.echo(f"  Created Controller: {out.relative_to(Path.cwd())}")
+    output.write(out, content, label="Created Controller")
 
 
 def _make_views(view_dir: str, class_name: str, route_prefix: str, fields: list[tuple[str, str]]) -> None:
-    base = Path.cwd() / "resources" / "views" / view_dir
-    base.mkdir(parents=True, exist_ok=True)
+    from hunt.console.commands.make._output import output
 
+    base = Path.cwd() / "resources" / "views" / view_dir
     col_names = [col for col, _ in fields]
     form_fields_html = _form_fields_html(col_names)
     table_headers = "".join(f"                <th>{col.replace('_', ' ').title()}</th>\n" for col in col_names)
@@ -110,26 +114,32 @@ def _make_views(view_dir: str, class_name: str, route_prefix: str, fields: list[
         .replace("{{field_rows}}", _show_fields_html(col_names)),
     }
     for filename, content in views.items():
-        f = base / filename
-        f.write_text(content)
-        click.echo(f"  Created View:       resources/views/{view_dir}/{filename}")
+        output.write(base / filename, content, label="Created View      ")
 
 
 def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
+    from hunt.console.commands.make._output import output
+
     routes_file = Path.cwd() / "routes" / "web.py"
     if not routes_file.exists():
-        click.echo("  Warning: routes/web.py not found — routes not appended.", err=True)
+        output.echo("  Warning: routes/web.py not found — routes not appended.")
         return
 
     block = (
         _ROUTES_BLOCK.replace("{{class}}", class_name).replace("{{snake}}", snake).replace("{{prefix}}", route_prefix)
     )
     existing = routes_file.read_text()
-    if f"/{route_prefix}" in existing:
-        click.echo(f"  Skipped Routes:     /{route_prefix} already in routes/web.py")
+    sentinel = f'"/{route_prefix}"'
+    if sentinel in existing:
+        output.echo(f"  Skipped Routes:     /{route_prefix} already in routes/web.py")
         return
+
+    if output.dry_run:
+        output.echo(f"  [dry-run] Updated Routes: routes/web.py  (/{route_prefix})")
+        return
+
     routes_file.write_text(existing.rstrip() + "\n\n" + block + "\n")
-    click.echo(f"  Updated Routes:     routes/web.py  (/{route_prefix})")
+    output.echo(f"  Updated Routes:     routes/web.py  (/{route_prefix})")
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ from hunt.console.commands.app_info import app_info_command
 from hunt.console.commands.cache import cache_group
 from hunt.console.commands.config_cache import config_cache_command, config_clear_command
 from hunt.console.commands.config_show import config_show_command
+from hunt.console.commands.context import context_command
 from hunt.console.commands.db.seed import db_seed_command
 from hunt.console.commands.db.status import db_status_command
 from hunt.console.commands.env_check import env_check_command
@@ -38,6 +39,7 @@ from hunt.console.commands.make.request import make_form_command, make_request_c
 from hunt.console.commands.make.resource import make_resource_command
 from hunt.console.commands.make.rule import make_rule_command
 from hunt.console.commands.make.seeder import make_seeder_command
+from hunt.console.commands.make.test import make_test_command
 from hunt.console.commands.make.two_factor import make_two_factor_command
 from hunt.console.commands.migrate import migrate_fresh, migrate_group, migrate_rollback, migrate_run, migrate_status
 from hunt.console.commands.new import new_command
@@ -96,6 +98,7 @@ cli.add_command(env_check_command, name="env:check")
 cli.add_command(down_command, name="down")
 cli.add_command(up_command, name="up")
 cli.add_command(tinker_command, name="tinker")
+cli.add_command(context_command, name="context")
 cli.add_command(route_list_command, name="route:list")
 cli.add_command(route_export_command, name="route:export")
 cli.add_command(new_command, name="new")
@@ -151,6 +154,7 @@ cli.add_command(make_resource_command, name="make:resource")
 cli.add_command(make_two_factor_command, name="make:2fa-controllers")
 cli.add_command(make_crud_command, name="make:crud")
 cli.add_command(make_api_command, name="make:api")
+cli.add_command(make_test_command, name="make:test")
 cli.add_command(make_component_command, name="make:component")
 cli.add_command(vendor_publish_command, name="vendor:publish")
 

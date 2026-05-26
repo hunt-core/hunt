@@ -11,13 +11,20 @@ from hunt.support.str import Str
 @click.argument("name")
 @click.option("--resource", is_flag=True, help="Generate a resource controller with CRUD methods")
 @click.option("--api", is_flag=True, help="Generate an API resource controller (no create/edit views)")
-def make_controller_command(name: str, resource: bool, api: bool) -> None:
+@click.option("--dry-run", is_flag=True, help="Preview without writing")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+def make_controller_command(name: str, resource: bool, api: bool, dry_run: bool, as_json: bool) -> None:
     """Create a new controller class."""
+    from hunt.console.commands.make._output import output
+
+    output.configure(dry_run=dry_run, as_json=as_json)
     _create_controller(name, resource=resource or api, api=api)
+    output.finish()
 
 
 def _create_controller(name: str, resource: bool = False, api: bool = False) -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._output import output
 
     class_name = Str.pascal(name)
     if resource and not api:
@@ -29,9 +36,7 @@ def _create_controller(name: str, resource: bool = False, api: bool = False) -> 
     content = stub.replace("{{class}}", class_name)
 
     out = Path.cwd() / "app" / "controllers" / f"{Str.snake(name)}.py"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
-    click.echo(f"  Created Controller: {out.relative_to(Path.cwd())}")
+    output.write(out, content, label="Created Controller")
 
 
 _PLAIN_STUB = """\
