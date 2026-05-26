@@ -39,6 +39,7 @@
     <link rel="stylesheet" href="{{ prefix }}/assets/admin.css">
     <link rel="stylesheet" href="{{ prefix }}/assets/trix.css">
     <script type="text/javascript" src="{{ prefix }}/assets/trix.umd.min.js"></script>
+    <script>window._huntAdmin={prefix:{{ prefix | tojson }},resourceKey:{{ resource_key | default('') | tojson }}};</script>
     <style>
         /* Mobile sidebar slide transition */
         #mobile-sidebar { display: none; }

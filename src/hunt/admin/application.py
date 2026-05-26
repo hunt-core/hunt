@@ -154,7 +154,7 @@ class _Admin:
 
         # Static assets are public — served without authentication so the browser
         # can load CSS/JS before the session is verified.
-        router.get(f"{self.prefix}/assets/{{filename:path}}", static_ctrl.serve)
+        router.get(f"{self.prefix}/assets/{{filename:.+}}", static_ctrl.serve)
 
         with router.group(prefix=self.prefix, middleware=[AdminGate]):
             # Dashboard

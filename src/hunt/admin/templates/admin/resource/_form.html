@@ -200,7 +200,7 @@
                 clearTimeout(timer);
                 timer = setTimeout(function() {
                     var q = display.value.trim();
-                    fetch('{{ prefix }}/resources/{{ resource_key }}/search-relation?field={{ field.attribute }}&q=' + encodeURIComponent(q))
+                    fetch(window._huntAdmin.prefix+'/resources/'+window._huntAdmin.resourceKey+'/search-relation?field={{ field.attribute }}&q=' + encodeURIComponent(q))
                         .then(function(r) { return r.json(); })
                         .then(function(data) {
                             list.innerHTML = '';
@@ -303,16 +303,17 @@
         } else if (!window._huntMDELoading) {
             window._huntMDELoading = true;
             window._huntMDEQueue = [boot];
+            var _p = window._huntAdmin.prefix;
             var lnk1 = document.createElement('link');
             lnk1.rel = 'stylesheet';
-            lnk1.href = '{{ prefix }}/assets/font-awesome.min.css';
+            lnk1.href = _p+'/assets/font-awesome.min.css';
             document.head.appendChild(lnk1);
             var lnk2 = document.createElement('link');
             lnk2.rel = 'stylesheet';
-            lnk2.href = '{{ prefix }}/assets/easymde.min.css';
+            lnk2.href = _p+'/assets/easymde.min.css';
             document.head.appendChild(lnk2);
             var scr = document.createElement('script');
-            scr.src = '{{ prefix }}/assets/easymde.min.js';
+            scr.src = _p+'/assets/easymde.min.js';
             scr.onload = function() { (window._huntMDEQueue || []).forEach(function(fn) { fn(); }); };
             document.head.appendChild(scr);
         } else {

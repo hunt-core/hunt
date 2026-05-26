@@ -11,6 +11,15 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.6] — 2026-05-26
+
+### Fixed
+
+- **Admin asset route not matching** — `{filename:path}` was interpreted as a regex constraint (matching only the literal string `"path"`). Changed to `{filename:.+}` so all asset filenames, including font subdirectory paths like `fonts/fontawesome-webfont.woff2`, resolve correctly.
+- **`{{ prefix }}` and `{{ resource_key }}` empty in form macros** — Jinja2 `{% from … import %}` macros do not inherit the calling template's context. `prefix` and `resource_key` were silently rendering as empty strings in `_form.html`, breaking EasyMDE asset URLs and the BelongsTo searchable autocomplete. Fixed by injecting `window._huntAdmin = {prefix, resourceKey}` into the layout once and reading from that global in all macro JavaScript.
+
+---
+
 ## [0.4.5] — 2026-05-26
 
 ### Added
