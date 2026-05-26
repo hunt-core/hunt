@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.4] — 2026-05-26
+
+### Added
+
+- **`Markdown` admin field** — new `Markdown` field type for admin resources. Renders an [EasyMDE](https://github.com/Ionaru/easy-markdown-editor) editor (loaded lazily from CDN) with bold, italic, headings, tables, images, and links in the toolbar. On the detail/show page, markdown is converted to sanitized HTML via Python-Markdown (`tables`, `fenced_code`, `nl2br` extensions) and `nh3`. Added `markdown>=3.4,<4.0` as a framework dependency.
+
+---
+
 ## [0.4.3] — 2026-05-26
 
 ### Added

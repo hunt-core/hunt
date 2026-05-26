@@ -103,6 +103,13 @@
                         {% else %}
                         —
                         {% endif %}
+                    {% elif field.field_type == 'markdown' %}
+                        {% set md_html = field.render_html(instance) %}
+                        {% if md_html %}
+                        <div class="prose prose-invert prose-sm max-w-none">{{ md_html | safe }}</div>
+                        {% else %}
+                        —
+                        {% endif %}
                     {% elif field.field_type == 'belongs_to' %}
                         {% set fk_val = field.value_for(instance) %}
                         {% set display_text = field.display_value(instance) %}

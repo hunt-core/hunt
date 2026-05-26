@@ -4,6 +4,7 @@ from hunt.admin.fields.boolean import Boolean
 from hunt.admin.fields.datetime_ import Date, DateTime
 from hunt.admin.fields.has_many import HasMany
 from hunt.admin.fields.image import Image
+from hunt.admin.fields.markdown import Markdown
 from hunt.admin.fields.number import Currency, Number
 from hunt.admin.fields.richtext import RichText
 from hunt.admin.fields.select import Select
@@ -20,6 +21,7 @@ __all__ = [
     "Email",
     "HasMany",
     "Image",
+    "Markdown",
     "Number",
     "Password",
     "RichText",
