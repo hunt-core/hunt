@@ -206,13 +206,22 @@ def create(request: Request, resource_key: str) -> Response:
 
 def _collect_data(request: Request, fields: list) -> dict:
     """Merge form text values with uploaded files for the given field list."""
+    from hunt.admin.fields.belongs_to import BelongsTo as BelongsToField
+    from hunt.admin.fields.belongs_to_many import BelongsToMany as BelongsToManyField
     from hunt.admin.fields.boolean import Boolean as BooleanField
     from hunt.admin.fields.image import Image as ImageField
     from hunt.validation.validator import ValidationException
 
-    allowed_attrs = {f.attribute for f in fields if not f._readonly}
+    # BelongsToMany fields are pivot-only — synced separately after save, not via fill()
+    allowed_attrs = {f.attribute for f in fields if not f._readonly and not isinstance(f, BelongsToManyField)}
     raw_data = request.all()
     data = {k: v for k, v in raw_data.items() if k in allowed_attrs}
+
+    # Convert empty-string FK values to None so the DB receives NULL, not ''
+    for field in fields:
+        if isinstance(field, BelongsToField) and not field._readonly:
+            if field.attribute in data and data[field.attribute] == "":
+                data[field.attribute] = None
 
     # Unchecked checkboxes are absent from POST data entirely. Explicitly set
     # them to False so instance.fill() sees the unchecked state.
@@ -251,6 +260,26 @@ def _store_image_fields(data: dict, fields: list) -> dict:
     return result
 
 
+def _sync_belongs_to_many(request: Request, instance: Any, fields: list) -> None:
+    """Detach-then-reattach pivot rows for every BelongsToMany field in fields."""
+    from hunt.admin.fields.belongs_to_many import BelongsToMany as BelongsToManyField
+
+    if instance is None:
+        return
+    for field in fields:
+        if not isinstance(field, BelongsToManyField) or field._readonly:
+            continue
+        csv_val = str(request.input(field.attribute) or "").strip()
+        ids = [i.strip() for i in csv_val.split(",") if i.strip()]
+        try:
+            rel = getattr(instance, field.relation_method)()
+            rel.detach()
+            for rid in ids:
+                rel.attach(int(rid))
+        except Exception:
+            pass
+
+
 def store(request: Request, resource_key: str) -> Response:
     from hunt.admin.application import Admin
 
@@ -268,6 +297,8 @@ def store(request: Request, resource_key: str) -> Response:
     stored = _store_image_fields(data, create_fields)
     instance = resource.model.create(stored)
 
+    _sync_belongs_to_many(request, instance, create_fields)
+
     from hunt.admin.audit import AuditLog, _write_audit
 
     if isinstance(resource, AuditLog) and instance is not None:
@@ -284,6 +315,7 @@ def store(request: Request, resource_key: str) -> Response:
 
 def edit(request: Request, resource_key: str, id: str) -> Response:
     from hunt.admin.application import Admin
+    from hunt.admin.fields.has_many import HasMany
 
     resource = _get_resource(resource_key)
     instance = _get_instance(resource, id)
@@ -291,6 +323,21 @@ def edit(request: Request, resource_key: str, id: str) -> Response:
         raise HttpException(403, "Forbidden.")
 
     edit_fields = [f for f in resource.fields() if f._show_on_edit]
+    has_many_panels = [f for f in resource.fields() if isinstance(f, HasMany)]
+    related_data: dict = {}
+    for panel in has_many_panels:
+        try:
+            related_resource_inst = panel.related_resource_class()
+            fk = panel.foreign_key or f"{type(instance).__name__.lower()}_id"
+            related_data[panel.attribute] = (
+                related_resource_inst.model.query()
+                .where(fk, instance._attributes.get("id"))
+                .limit(20)
+                .get()
+            )
+        except Exception:
+            related_data[panel.attribute] = []
+
     ctx = Admin._base_context(request)
     ctx.update(
         {
@@ -301,6 +348,8 @@ def edit(request: Request, resource_key: str, id: str) -> Response:
             "fields": edit_fields,
             "old": ctx["old"] or instance._attributes,
             "record_id": id,
+            "has_many_panels": has_many_panels,
+            "related_data": related_data,
         }
     )
     return Admin._render("admin/resource/edit.html", ctx)
@@ -328,6 +377,8 @@ def update(request: Request, resource_key: str, id: str) -> Response:
     old_attrs = dict(instance._attributes)
     instance.fill(final)
     instance.save()
+
+    _sync_belongs_to_many(request, instance, edit_fields)
 
     from hunt.admin.audit import AuditLog, _write_audit
 

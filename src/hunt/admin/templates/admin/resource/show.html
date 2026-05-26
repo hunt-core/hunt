@@ -119,6 +119,18 @@
                         {% else %}
                         —
                         {% endif %}
+                    {% elif field.field_type == 'belongs_to_many' %}
+                        {% set rel_items = field.get_current_items(instance) %}
+                        {% if rel_items %}
+                        <div class="flex flex-wrap gap-1.5">
+                            {% for item_id, item_label in rel_items %}
+                            <a href="{{ prefix }}/resources/{{ field.related_resource_class.slug() }}/{{ item_id }}"
+                               class="inline-flex items-center rounded-md bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/20 hover:bg-indigo-500/20">{{ item_label }}</a>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        —
+                        {% endif %}
                     {% else %}
                         {{ field.display_value(instance) or '—' }}
                     {% endif %}

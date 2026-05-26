@@ -247,6 +247,113 @@
     {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
 </div>
 
+{% elif field.field_type == 'belongs_to_many' %}
+{% set current_items = field.get_current_items(record) if record is not none else [] %}
+{% set current_ids_csv = current_items | map(attribute=0) | join(',') %}
+<div class="sm:col-span-2">
+    <label class="block text-sm/6 font-medium text-white">
+        {{ field.label }}
+        {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
+    </label>
+    <div class="mt-2" id="btm_wrap_{{ field.attribute }}">
+        <input type="hidden" name="{{ field.attribute }}" id="btm_hidden_{{ field.attribute }}" value="{{ current_ids_csv }}">
+        <div id="btm_chips_{{ field.attribute }}" class="flex flex-wrap gap-1.5 min-h-8 mb-2">
+            {% for item_id, item_label in current_items %}
+            <span class="inline-flex items-center gap-x-1 rounded-md bg-indigo-500/15 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30" data-id="{{ item_id }}">
+                {{ item_label }}
+                <button type="button" class="btm-remove ml-0.5 leading-none" aria-label="Remove">
+                    <svg class="size-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+                </button>
+            </span>
+            {% endfor %}
+        </div>
+        <div class="relative">
+            <input type="text" id="btm_search_{{ field.attribute }}" autocomplete="off"
+                   {% if field._readonly %}disabled{% endif %}
+                   placeholder="Type to search and add…"
+                   class="block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 bg-white/5 text-white outline-white/10 focus:outline-indigo-500">
+            <ul id="btm_results_{{ field.attribute }}" class="hidden absolute z-50 mt-1 w-full rounded-md bg-gray-800 py-1 inset-ring inset-ring-white/10 shadow-lg max-h-48 overflow-y-auto text-sm text-white"></ul>
+        </div>
+    </div>
+    {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
+    {% if not field._readonly %}
+    <script>
+    (function() {
+        var hidden = document.getElementById('btm_hidden_{{ field.attribute }}');
+        var chips  = document.getElementById('btm_chips_{{ field.attribute }}');
+        var search = document.getElementById('btm_search_{{ field.attribute }}');
+        var list   = document.getElementById('btm_results_{{ field.attribute }}');
+        var timer;
+
+        function selectedIds() {
+            var v = hidden.value;
+            return v ? v.split(',') : [];
+        }
+        function setIds(ids) {
+            hidden.value = ids.join(',');
+        }
+        function makeRemoveBtn() {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btm-remove ml-0.5 leading-none';
+            btn.setAttribute('aria-label', 'Remove');
+            btn.innerHTML = '<svg class="size-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg>';
+            return btn;
+        }
+        function addChip(id, label) {
+            var ids = selectedIds();
+            if (ids.indexOf(String(id)) >= 0) return;
+            ids.push(String(id));
+            setIds(ids);
+            var span = document.createElement('span');
+            span.className = 'inline-flex items-center gap-x-1 rounded-md bg-indigo-500/15 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30';
+            span.dataset.id = String(id);
+            span.textContent = label;
+            var btn = makeRemoveBtn();
+            btn.addEventListener('click', function() { removeChip(span); });
+            span.appendChild(btn);
+            chips.appendChild(span);
+        }
+        function removeChip(span) {
+            var id = span.dataset.id;
+            setIds(selectedIds().filter(function(x) { return x !== id; }));
+            span.remove();
+        }
+        chips.querySelectorAll('.btm-remove').forEach(function(btn) {
+            btn.addEventListener('click', function() { removeChip(btn.closest('[data-id]')); });
+        });
+        search.addEventListener('input', function() {
+            clearTimeout(timer);
+            timer = setTimeout(function() {
+                var q = search.value.trim();
+                fetch(window._huntAdmin.prefix+'/resources/'+window._huntAdmin.resourceKey+'/search-relation?field={{ field.attribute }}&q='+encodeURIComponent(q))
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        list.innerHTML = '';
+                        if (!data.results || !data.results.length) { list.classList.add('hidden'); return; }
+                        data.results.forEach(function(item) {
+                            var li = document.createElement('li');
+                            li.textContent = item.label;
+                            li.className = 'px-3 py-2 cursor-pointer hover:bg-white/10';
+                            li.addEventListener('mousedown', function(e) {
+                                e.preventDefault();
+                                addChip(item.id, item.label);
+                                search.value = '';
+                                list.classList.add('hidden');
+                            });
+                            list.appendChild(li);
+                        });
+                        list.classList.remove('hidden');
+                    })
+                    .catch(function() { list.classList.add('hidden'); });
+            }, 250);
+        });
+        search.addEventListener('blur', function() { setTimeout(function() { list.classList.add('hidden'); }, 200); });
+    })();
+    </script>
+    {% endif %}
+</div>
+
 {% elif field.field_type == 'markdown' %}
 <div class="sm:col-span-2">
     <label class="block text-sm/6 font-medium text-white" for="field_{{ field.attribute }}">

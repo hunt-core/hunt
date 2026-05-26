@@ -7,6 +7,7 @@ from hunt.http.response import JsonResponse
 def search_relation(request: Request, resource_key: str) -> JsonResponse:
     from hunt.admin.application import Admin
     from hunt.admin.fields.belongs_to import BelongsTo
+    from hunt.admin.fields.belongs_to_many import BelongsToMany
 
     resource_cls = Admin.find_resource(resource_key)
     if resource_cls is None:
@@ -19,6 +20,9 @@ def search_relation(request: Request, resource_key: str) -> JsonResponse:
     target_field = None
     for field in resource.fields():
         if isinstance(field, BelongsTo) and field.attribute == field_attr and field._searchable:
+            target_field = field
+            break
+        if isinstance(field, BelongsToMany) and field.attribute == field_attr:
             target_field = field
             break
 

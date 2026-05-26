@@ -11,10 +11,16 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.4.13] — 2026-05-26
+## [0.4.14] — 2026-05-26
+
+### Added
+
+- **`BelongsToMany` admin field** — new `BelongsToMany(name, RelatedResource, relation_method)` field for many-to-many relationships. Renders a searchable chip/tag multi-select widget on create/edit forms and displays linked chips on the detail view. Pivot table is synced automatically on save (detach-all then re-attach).
+- **HasMany panels on edit page** — the edit page now renders read-only relationship tables for `HasMany` fields below the form, consistent with the detail (show) view.
 
 ### Fixed
 
+- **`DataError: invalid input syntax for type integer: ""`** — optional `BelongsTo` FK fields that were left blank submitted an empty string to the database. `_collect_data` now converts empty-string values for `BelongsTo` attributes to `None` so the column receives `NULL`.
 - **`TypeError: can't access property "indexOf", n[i].href is null`** — the EasyMDE Font Awesome detection patch from 0.4.12 introduced a null-dereference. The original `n[i].href&&…` null guard only covered the first `indexOf`; due to operator precedence the appended `||n[i].href.indexOf(…)` evaluated outside the guard when a stylesheet with a null `href` was present (e.g. `<style>` elements injected via JS). Fixed by wrapping both `indexOf` calls in parentheses so the null guard applies to both: `n[i].href&&(…||…)`.
 
 ---

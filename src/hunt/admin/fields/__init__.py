@@ -1,5 +1,6 @@
 from hunt.admin.fields.badge import Badge
 from hunt.admin.fields.belongs_to import BelongsTo
+from hunt.admin.fields.belongs_to_many import BelongsToMany
 from hunt.admin.fields.boolean import Boolean
 from hunt.admin.fields.datetime_ import Date, DateTime
 from hunt.admin.fields.has_many import HasMany
@@ -15,6 +16,7 @@ from hunt.admin.fields.textarea import Textarea
 __all__ = [
     "Badge",
     "BelongsTo",
+    "BelongsToMany",
     "Boolean",
     "Currency",
     "Date",

@@ -82,4 +82,49 @@
     </form>
 </div>
 
+{% if has_many_panels %}
+{% for panel in has_many_panels %}
+<div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl mt-6">
+    <div class="px-4 py-5 sm:px-6">
+        <h3 class="text-sm font-semibold text-white">{{ panel.name }}</h3>
+    </div>
+    {% set rel_items = related_data.get(panel.attribute, []) %}
+    {% if rel_items %}
+    <div class="border-t border-white/10 overflow-x-auto">
+        <table class="min-w-full divide-y divide-white/15">
+            <thead>
+                <tr>
+                    {% for rf in panel.related_resource_class().fields() if rf._show_on_index %}
+                    <th scope="col" class="{% if loop.first %}py-3.5 pl-4 pr-3 sm:pl-6{% else %}px-3 py-3.5{% endif %} text-left text-sm font-semibold text-white">{{ rf.label }}</th>
+                    {% endfor %}
+                    <th scope="col" class="py-3.5 pr-4 pl-3 sm:pr-6"><span class="sr-only">View</span></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-white/10">
+                {% for rel_item in rel_items %}
+                <tr>
+                    {% for rf in panel.related_resource_class().fields() if rf._show_on_index %}
+                    <td class="{% if loop.first %}py-4 pl-4 pr-3 sm:pl-6 font-medium text-white{% else %}px-3 py-4 text-gray-400{% endif %} whitespace-nowrap text-sm">{{ rf.display_value(rel_item) }}</td>
+                    {% endfor %}
+                    <td class="py-4 pr-4 pl-3 text-right text-sm font-medium whitespace-nowrap sm:pr-6">
+                        <a href="{{ prefix }}/resources/{{ panel.related_resource_class.slug() }}/{{ rel_item._attributes.get('id') }}"
+                           class="text-indigo-400 hover:text-indigo-300">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="border-t border-white/10 py-12 text-center">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" class="mx-auto size-10 text-gray-500">
+            <path d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="mt-2 text-sm text-gray-400">No related {{ panel.name | lower }} found.</p>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
 {% endblock %}
