@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.10] — 2026-05-26
+
+### Fixed
+
+- **`DeprecationWarning` in JSON log formatter** — replaced `datetime.utcfromtimestamp()` with `datetime.fromtimestamp(..., datetime.UTC)` in `_JsonFormatter`. The deprecated form is scheduled for removal in Python 3.15.
+
+---
+
 ## [0.4.9] — 2026-05-26
 
 ### Added

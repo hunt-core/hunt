@@ -24,7 +24,7 @@ class _JsonFormatter(logging.Formatter):
         except Exception:
             rid = None
 
-        ts = datetime.datetime.utcfromtimestamp(record.created).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        ts = datetime.datetime.fromtimestamp(record.created, datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         payload: dict[str, Any] = {
             "ts": ts,
             "level": record.levelname.lower(),
