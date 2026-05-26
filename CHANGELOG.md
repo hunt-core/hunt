@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.7] — 2026-05-26
+
+### Fixed
+
+- **`tojson` filter HTML-escaped inside `<script>` tags** — the custom `tojson` filter returned a plain `str`, which Jinja2's auto-escaping converted to `&quot;` inside script blocks. This caused a `SyntaxError` in the browser and left `window._huntAdmin` undefined. Fixed by wrapping the output in `markupsafe.Markup` so Jinja2 treats it as already-safe content.
+
+---
+
 ## [0.4.6] — 2026-05-26
 
 ### Fixed

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import ChoiceLoader, Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 
 from hunt.http.response import Response
 
@@ -24,7 +25,7 @@ def _get_env() -> Environment:
         loader=ChoiceLoader(loaders),
         autoescape=select_autoescape(["html", "xml"]),
     )
-    env.filters["tojson"] = lambda value, **kw: json.dumps(value, default=str, **kw)
+    env.filters["tojson"] = lambda value, **kw: Markup(json.dumps(value, default=str, **kw))
     return env
 
 
