@@ -11,6 +11,16 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.5] — 2026-05-26
+
+### Added
+
+- **Bundled admin static assets** — all external CDN dependencies for the admin panel are now vendored and served locally from `<prefix>/assets/`. No outbound requests to `cdn.tailwindcss.com`, `unpkg.com`, or `maxcdn.bootstrapcdn.com` are made at runtime. Assets: Tailwind CSS (built from templates via CLI), Trix (CSS + JS), EasyMDE (CSS + JS), Font Awesome 4.7 (CSS + fonts). The EasyMDE CSS is patched at build time to remove its external Font Awesome `@import`, eliminating the CSP violation.
+- **Admin asset build pipeline** — `Makefile` with `make assets` (downloads/patches vendor files via `scripts/build_admin_assets.py`) and `make css` (runs Tailwind CLI). `package.json` declares `tailwindcss` and `@tailwindcss/typography` as dev dependencies. `tailwind.config.js` scans all admin templates so only used utility classes are emitted.
+- **Static asset serving controller** — `hunt.admin.controllers.static_assets` serves files from `src/hunt/admin/static/` at `<prefix>/assets/{filename}` outside the `AdminGate` middleware (no auth required for CSS/JS). Path traversal is blocked via an allowlist of extensions and `Path.resolve()` containment check.
+
+---
+
 ## [0.4.4] — 2026-05-26
 
 ### Added

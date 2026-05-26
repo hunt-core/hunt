@@ -303,12 +303,16 @@
         } else if (!window._huntMDELoading) {
             window._huntMDELoading = true;
             window._huntMDEQueue = [boot];
-            var lnk = document.createElement('link');
-            lnk.rel = 'stylesheet';
-            lnk.href = 'https://unpkg.com/easymde@2.18.0/dist/easymde.min.css';
-            document.head.appendChild(lnk);
+            var lnk1 = document.createElement('link');
+            lnk1.rel = 'stylesheet';
+            lnk1.href = '{{ prefix }}/assets/font-awesome.min.css';
+            document.head.appendChild(lnk1);
+            var lnk2 = document.createElement('link');
+            lnk2.rel = 'stylesheet';
+            lnk2.href = '{{ prefix }}/assets/easymde.min.css';
+            document.head.appendChild(lnk2);
             var scr = document.createElement('script');
-            scr.src = 'https://unpkg.com/easymde@2.18.0/dist/easymde.min.js';
+            scr.src = '{{ prefix }}/assets/easymde.min.js';
             scr.onload = function() { (window._huntMDEQueue || []).forEach(function(fn) { fn(); }); };
             document.head.appendChild(scr);
         } else {

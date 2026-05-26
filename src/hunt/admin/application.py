@@ -147,9 +147,14 @@ class _Admin:
         from hunt.admin.controllers import route_explorer as routes_ctrl
         from hunt.admin.controllers import schedule as schedule_ctrl
         from hunt.admin.controllers import search as search_ctrl
+        from hunt.admin.controllers import static_assets as static_ctrl
         from hunt.admin.middleware.gate import AdminGate
 
         self._router = router
+
+        # Static assets are public — served without authentication so the browser
+        # can load CSS/JS before the session is verified.
+        router.get(f"{self.prefix}/assets/{{filename:path}}", static_ctrl.serve)
 
         with router.group(prefix=self.prefix, middleware=[AdminGate]):
             # Dashboard

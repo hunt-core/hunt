@@ -1,0 +1,12 @@
+{
+  "name": "hunt-admin-assets",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss --input scripts/admin.css --output src/hunt/admin/static/admin.css --minify",
+    "build:css:watch": "tailwindcss --input scripts/admin.css --output src/hunt/admin/static/admin.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "tailwindcss": "^3.4.0"
+  }
+}
