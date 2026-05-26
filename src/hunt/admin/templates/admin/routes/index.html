@@ -1,0 +1,100 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li><a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300"><svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/></svg><span class="sr-only">Dashboard</span></a></li>
+        <li class="flex items-center gap-x-2"><svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg><span class="text-sm font-medium text-gray-400">Routes</span></li>
+    </ol>
+</nav>
+
+<div class="sm:flex sm:items-center mb-6 gap-x-4">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">Route Explorer</h1>
+        <p class="mt-1 text-sm text-gray-400">{{ total }} route{{ 's' if total != 1 else '' }} registered.</p>
+    </div>
+</div>
+
+{% if not router_available %}
+<div class="rounded-lg bg-yellow-500/10 ring-1 ring-inset ring-yellow-500/20 px-6 py-4 mb-6">
+    <p class="text-sm text-yellow-300">Router reference not available. Call <code class="font-mono text-xs">Admin.register_to(router)</code> before browsing routes.</p>
+</div>
+{% else %}
+
+{# Filters #}
+<form method="get" action="" class="mb-6 flex flex-wrap items-center gap-3">
+    <div class="relative flex-1 min-w-48">
+        <input type="search" name="search" value="{{ search }}" placeholder="Search path, name…"
+               class="block w-full rounded-md bg-white/5 border border-white/10 py-1.5 pl-3 pr-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    </div>
+    <div class="flex items-center gap-x-1.5 flex-wrap">
+        {% for m in ["GET", "POST", "PUT", "PATCH", "DELETE"] %}
+        <a href="?method={{ m }}&search={{ search }}"
+           class="rounded-full px-3 py-1 text-xs font-medium
+           {% if method_filter == m %}
+               {% if m == 'GET' %}bg-blue-500 text-white
+               {% elif m == 'POST' %}bg-green-500 text-white
+               {% elif m in ('PUT', 'PATCH') %}bg-yellow-500 text-gray-900
+               {% elif m == 'DELETE' %}bg-red-500 text-white
+               {% endif %}
+           {% else %}bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+            {{ m }}
+        </a>
+        {% endfor %}
+        {% if method_filter or search %}
+        <a href="?" class="rounded-full px-3 py-1 text-xs font-medium bg-white/5 text-gray-500 hover:text-white">Clear</a>
+        {% endif %}
+    </div>
+    <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Filter</button>
+</form>
+
+{% if not routes %}
+<div class="rounded-lg bg-white/5 ring-1 ring-inset ring-white/10 px-6 py-12 text-center">
+    <p class="text-sm text-gray-400">No routes match the current filters.</p>
+</div>
+{% else %}
+<div class="rounded-lg ring-1 ring-inset ring-white/10 overflow-hidden">
+    <table class="min-w-full divide-y divide-white/10 text-sm">
+        <thead class="bg-white/5">
+            <tr>
+                <th scope="col" class="py-2.5 pl-4 pr-3 text-left text-xs font-semibold text-gray-400 w-32">Method</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400">URI</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 w-48">Name</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 hidden xl:table-cell">Middleware</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5">
+            {% for route in routes %}
+            <tr class="hover:bg-white/[0.02]">
+                <td class="py-2.5 pl-4 pr-3 align-top">
+                    <div class="flex flex-wrap gap-1">
+                        {% for m in route.methods %}
+                        <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold font-mono
+                            {% if m == 'GET' %}bg-blue-500/20 text-blue-400
+                            {% elif m == 'POST' %}bg-green-500/20 text-green-400
+                            {% elif m == 'PUT' or m == 'PATCH' %}bg-yellow-500/20 text-yellow-400
+                            {% elif m == 'DELETE' %}bg-red-500/20 text-red-400
+                            {% else %}bg-gray-500/20 text-gray-400{% endif %}">{{ m }}</span>
+                        {% endfor %}
+                    </div>
+                </td>
+                <td class="px-3 py-2.5 font-mono text-xs text-gray-200 align-top">
+                    {{ route.uri }}
+                    {% if route.domain %}<div class="text-gray-600 text-xs">{{ route.domain }}</div>{% endif %}
+                </td>
+                <td class="px-3 py-2.5 font-mono text-xs text-indigo-400 align-top">{{ route.name }}</td>
+                <td class="px-3 py-2.5 align-top hidden xl:table-cell">
+                    <div class="flex flex-wrap gap-1">
+                        {% for mw in route.middleware %}
+                        <span class="inline-flex items-center rounded-full bg-white/5 px-2 py-0.5 text-xs text-gray-400">{{ mw }}</span>
+                        {% endfor %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

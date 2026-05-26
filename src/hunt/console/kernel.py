@@ -15,6 +15,8 @@ from hunt.console.commands.env_check import env_check_command
 from hunt.console.commands.job_list import job_list_command
 from hunt.console.commands.job_run import job_run_command
 from hunt.console.commands.key_generate import key_generate_command
+from hunt.console.commands.lodge_add import lodge_add_command
+from hunt.console.commands.lodge_install import lodge_install_command
 from hunt.console.commands.maintenance import down_command, up_command
 from hunt.console.commands.make.api_scaffold import make_api_command
 from hunt.console.commands.make.command import make_command_command
@@ -99,6 +101,8 @@ cli.add_command(route_export_command, name="route:export")
 cli.add_command(new_command, name="new")
 cli.add_command(upgrade_command, name="upgrade")
 cli.add_command(key_generate_command, name="key:generate")
+cli.add_command(lodge_install_command, name="lodge:install")
+cli.add_command(lodge_add_command, name="lodge:add")
 cli.add_command(queue_work_command, name="queue:work")
 cli.add_command(queue_failed_command, name="queue:failed")
 cli.add_command(queue_retry_command, name="queue:retry")

@@ -1,0 +1,139 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li>
+            <a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300">
+                <svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/>
+                </svg>
+                <span class="sr-only">Dashboard</span>
+            </a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-400">Logs</span>
+        </li>
+    </ol>
+</nav>
+
+{# Heading + controls #}
+<div class="sm:flex sm:items-start sm:justify-between mb-6 gap-x-4">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">Application Logs</h1>
+        <p class="mt-1 text-sm text-gray-400">Last 500 lines of <code class="font-mono text-xs text-gray-300">{{ log_path }}</code>, newest first.</p>
+    </div>
+</div>
+
+{# Filter bar #}
+<form method="get" action="" class="mb-6 flex flex-wrap items-center gap-3">
+    {# Search #}
+    <div class="relative flex-1 min-w-48">
+        <input type="search" name="search" value="{{ search }}" placeholder="Search messages…"
+               class="block w-full rounded-md bg-white/5 border border-white/10 py-1.5 pl-3 pr-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+    </div>
+
+    {# Level filter #}
+    <div class="flex items-center gap-x-1.5 flex-wrap">
+        <a href="?search={{ search }}"
+           class="rounded-full px-3 py-1 text-xs font-medium {% if not level_filter %}bg-indigo-500 text-white{% else %}bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+            All
+        </a>
+        {% for lvl in levels %}
+        <a href="?level={{ lvl }}&search={{ search }}"
+           class="rounded-full px-3 py-1 text-xs font-medium
+           {% if level_filter == lvl %}
+               {% if lvl == 'debug' %}bg-gray-500 text-white
+               {% elif lvl == 'info' %}bg-blue-500 text-white
+               {% elif lvl == 'warning' %}bg-yellow-500 text-gray-900
+               {% elif lvl == 'error' %}bg-red-500 text-white
+               {% elif lvl == 'critical' %}bg-rose-700 text-white
+               {% endif %}
+           {% else %}bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white{% endif %}">
+            {{ lvl }}
+        </a>
+        {% endfor %}
+    </div>
+
+    <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">
+        Filter
+    </button>
+</form>
+
+{% if missing %}
+<div class="rounded-lg bg-white/5 ring-1 ring-inset ring-white/10 px-6 py-12 text-center">
+    <svg class="mx-auto size-10 text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
+    </svg>
+    <p class="text-sm text-gray-400">No log file found at <code class="font-mono text-xs">{{ log_path }}</code>.</p>
+    <p class="mt-1 text-xs text-gray-600">Logs are written here once the application handles its first request.</p>
+</div>
+
+{% elif not entries %}
+<div class="rounded-lg bg-white/5 ring-1 ring-inset ring-white/10 px-6 py-12 text-center">
+    <svg class="mx-auto size-10 text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 15.803 7.5 7.5 0 0 0 15.803 15.803Z"/>
+    </svg>
+    <p class="text-sm text-gray-400">No log entries match the current filters.</p>
+</div>
+
+{% else %}
+<div class="rounded-lg ring-1 ring-inset ring-white/10 overflow-hidden">
+    <table class="min-w-full divide-y divide-white/10 text-sm">
+        <thead class="bg-white/5">
+            <tr>
+                <th scope="col" class="py-2.5 pl-4 pr-3 text-left text-xs font-semibold text-gray-400 w-44">Timestamp</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 w-24">Level</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400">Message</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 w-36 hidden xl:table-cell">Request ID</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5">
+            {% for entry in entries %}
+            <tr class="hover:bg-white/[0.02] {% if entry.exception %}cursor-pointer{% endif %}"
+                {% if entry.exception %}onclick="toggleException(this)"{% endif %}>
+                <td class="py-2.5 pl-4 pr-3 font-mono text-xs text-gray-500 whitespace-nowrap align-top">{{ entry.ts }}</td>
+                <td class="px-3 py-2.5 align-top">
+                    {% if entry.level == 'debug' %}
+                    <span class="inline-flex items-center rounded-full bg-gray-500/20 px-2 py-0.5 text-xs font-medium text-gray-400">debug</span>
+                    {% elif entry.level == 'info' %}
+                    <span class="inline-flex items-center rounded-full bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-400">info</span>
+                    {% elif entry.level == 'warning' %}
+                    <span class="inline-flex items-center rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-400">warning</span>
+                    {% elif entry.level == 'error' %}
+                    <span class="inline-flex items-center rounded-full bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-400">error</span>
+                    {% elif entry.level == 'critical' %}
+                    <span class="inline-flex items-center rounded-full bg-rose-700/30 px-2 py-0.5 text-xs font-medium text-rose-400">critical</span>
+                    {% else %}
+                    <span class="inline-flex items-center rounded-full bg-gray-500/20 px-2 py-0.5 text-xs font-medium text-gray-400">{{ entry.level }}</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2.5 text-gray-300 font-mono text-xs align-top max-w-0">
+                    <div class="truncate">{{ entry.message }}</div>
+                    {% if entry.exception %}
+                    <div class="exception-body hidden mt-2 p-3 rounded-md bg-black/30 text-red-300 whitespace-pre-wrap text-xs leading-relaxed overflow-x-auto">{{ entry.exception }}</div>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2.5 font-mono text-xs text-gray-600 align-top truncate hidden xl:table-cell">{{ entry.request_id }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<p class="mt-3 text-xs text-gray-600 text-right">Showing {{ entries|length }} entr{{ 'y' if entries|length == 1 else 'ies' }}.</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleException(row) {
+    var body = row.querySelector('.exception-body');
+    if (body) body.classList.toggle('hidden');
+}
+</script>
+{% endblock %}

@@ -29,9 +29,11 @@ class PasswordBroker:
         """
         token = os.urandom(32).hex()
         hashed = self._hash(token)
-        if not self._find_user(email):
-            return None
+        user = self._find_user(email)
+        # Always delete to equalise DB round-trips regardless of whether the email exists.
         self._delete_existing(email)
+        if not user:
+            return None
         self._insert_token(email, hashed)
         return token
 

@@ -85,16 +85,6 @@ def _build_panel(request: Request, response: Response, elapsed_ms: float) -> str
         session_data = {k: v for k, v in session_store.all().items() if k not in _PRIVATE_SESSION_KEYS}
 
     return f"""
-<script>
-(function(){{
-  if(window.__huntDbgLoaded)return;
-  window.__huntDbgLoaded=true;
-  // Tailwind CDN for panel styling
-  var s=document.createElement('script');
-  s.src='https://cdn.tailwindcss.com';
-  document.head.appendChild(s);
-}})();
-</script>
 <div id="_hunt_dbg" style="position:fixed;bottom:0;left:0;right:0;z-index:2147483647;font-family:ui-monospace,monospace;font-size:12px;">
   <div onclick="var b=document.getElementById('_hunt_dbg_body');b.style.display=b.style.display==='none'?'block':'none'"
        style="cursor:pointer;background:#111827;color:#fff;display:flex;align-items:center;gap:16px;padding:6px 16px;border-top:1px solid #374151;">

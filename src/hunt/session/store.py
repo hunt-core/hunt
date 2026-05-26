@@ -43,7 +43,12 @@ class FileSessionStore:
         self._id = session_id
         self._data = self._read(session_id)
         if random.random() < 0.01:
-            self._gc()
+            import asyncio
+
+            try:
+                asyncio.get_running_loop().run_in_executor(None, self._gc)
+            except RuntimeError:
+                self._gc()
 
     def age_flash(self) -> None:
         """Promote new flash data to old so it's readable this request."""

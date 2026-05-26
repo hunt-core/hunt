@@ -1,0 +1,78 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li><a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300"><svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/></svg><span class="sr-only">Dashboard</span></a></li>
+        <li class="flex items-center gap-x-2"><svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg><span class="text-sm font-medium text-gray-400">Schedule</span></li>
+    </ol>
+</nav>
+
+<div class="sm:flex sm:items-center mb-8">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">Scheduled Tasks</h1>
+        <p class="mt-1 text-sm text-gray-400">Tasks registered in <code class="font-mono text-xs text-gray-300">app/console/schedule.py</code>.</p>
+    </div>
+</div>
+
+{% if missing_schedule_file %}
+<div class="rounded-lg bg-white/5 ring-1 ring-inset ring-white/10 px-6 py-12 text-center">
+    <svg class="mx-auto size-10 text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>
+    </svg>
+    <p class="text-sm text-gray-400">No schedule file found at <code class="font-mono text-xs">app/console/schedule.py</code>.</p>
+</div>
+
+{% elif not tasks %}
+<div class="rounded-lg bg-white/5 ring-1 ring-inset ring-white/10 px-6 py-12 text-center">
+    <svg class="mx-auto size-10 text-gray-600 mb-3" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>
+    </svg>
+    <p class="text-sm text-gray-400">No tasks are scheduled yet.</p>
+</div>
+
+{% else %}
+<div class="rounded-lg ring-1 ring-inset ring-white/10 overflow-hidden">
+    <table class="min-w-full divide-y divide-white/10 text-sm">
+        <thead class="bg-white/5">
+            <tr>
+                <th scope="col" class="py-2.5 pl-4 pr-3 text-left text-xs font-semibold text-gray-400 w-40">Expression</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400">Description</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 w-36">Next Run</th>
+                <th scope="col" class="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 w-32">Flags</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5">
+            {% for task in tasks %}
+            <tr class="hover:bg-white/[0.02]">
+                <td class="py-2.5 pl-4 pr-3 font-mono text-xs text-indigo-300 align-top whitespace-nowrap">
+                    {{ task.expression }}
+                    {% if task.due_now %}
+                    <span class="ml-1 inline-flex items-center rounded-full bg-green-500/20 px-1.5 py-0.5 text-xs font-medium text-green-400">due</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2.5 text-xs text-gray-300 align-top">
+                    {{ task.description }}
+                    {% if task.name %}<span class="ml-1 text-gray-600">({{ task.name }})</span>{% endif %}
+                    {% if task.environments %}
+                    <div class="mt-0.5 text-gray-600">env: {{ task.environments | join(', ') }}</div>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2.5 font-mono text-xs text-gray-400 align-top whitespace-nowrap">{{ task.next_run }}</td>
+                <td class="px-3 py-2.5 align-top">
+                    <div class="flex flex-wrap gap-1">
+                        {% if task.without_overlapping %}
+                        <span class="inline-flex items-center rounded-full bg-yellow-500/15 px-1.5 py-0.5 text-xs font-medium text-yellow-400">no-overlap</span>
+                        {% endif %}
+                        {% if task.background %}
+                        <span class="inline-flex items-center rounded-full bg-blue-500/15 px-1.5 py-0.5 text-xs font-medium text-blue-400">background</span>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

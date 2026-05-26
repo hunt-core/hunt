@@ -44,6 +44,9 @@ class Response:
         secure: bool = False,
         same_site: str = "Lax",
     ) -> Response:
+        # Strip CRLF to prevent HTTP response splitting / header injection.
+        name = name.translate({ord("\r"): None, ord("\n"): None})
+        value = value.translate({ord("\r"): None, ord("\n"): None})
         cookie = f"{name}={value}; Path={path}; SameSite={same_site}"
         if max_age:
             cookie += f"; Max-Age={max_age}"
@@ -217,7 +220,8 @@ def _is_safe_redirect(url: str) -> bool:
     if not url:
         return False
     # `///evil.com` parses to netloc="" but still redirects off-host in browsers
-    if url.startswith("//"):
+    # `/\evil.com` and `\/evil.com` also resolve off-host in some browsers
+    if url.startswith("//") or url.startswith("/\\") or url.startswith("\\/"):
         return False
     parsed = urlparse(url)
     # Relative URLs have no scheme or netloc

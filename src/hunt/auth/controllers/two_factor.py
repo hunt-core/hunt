@@ -32,7 +32,7 @@ class TwoFactorSetupController(Controller):
             return self.redirect("/two-factor/setup")
         secret = TwoFactor.generate_secret()
         qr_url = TwoFactor.qr_code_url(secret, user._attributes.get("email", ""))
-        request.session().put("_2fa_pending_secret", secret)
+        request.session().put("_2fa_pending_secret", TwoFactor.encrypt_secret(secret))
         return self.view("auth.two_factor.confirm", {"qr_url": qr_url, "secret": secret})
 
     def confirm(self, request: Request) -> Response:
@@ -40,8 +40,13 @@ class TwoFactorSetupController(Controller):
         user = Auth.user()
         if user is None:
             return self.redirect("/login")
-        secret = request.session().get("_2fa_pending_secret")
-        if not secret:
+        encrypted = request.session().get("_2fa_pending_secret")
+        if not encrypted:
+            return self.redirect("/two-factor/setup")
+        try:
+            secret = TwoFactor.decrypt_secret(encrypted)
+        except Exception:
+            request.session().forget("_2fa_pending_secret")
             return self.redirect("/two-factor/setup")
         code = request.input("code", "")
         if not TwoFactor.verify(secret, code):
@@ -90,6 +95,13 @@ class TwoFactorChallengeController(Controller):
         if not pending_id:
             return self.redirect("/login")
 
+        attempts = request.session().get("_2fa_attempts", 0)
+        if attempts >= 5:
+            request.session().forget("_2fa_pending")
+            request.session().forget("_2fa_attempts")
+            request.session().flash("error", "Too many failed attempts. Please log in again.")
+            return self.redirect("/login")
+
         guard = Auth._default_guard
         if guard._model is None:
             return self.redirect("/login")
@@ -113,9 +125,13 @@ class TwoFactorChallengeController(Controller):
             )
             return self.redirect("/login")
 
-        if TwoFactor.verify(secret, code):
+        last_totp = request.session().get("_2fa_last_totp")
+        if TwoFactor.verify(secret, code) and code != last_totp:
             request.session().forget("_2fa_pending")
+            request.session().forget("_2fa_attempts")
+            request.session().forget("_2fa_last_totp")
             guard.login(user)
+            request.session().put("_2fa_last_totp", code)
             return self.redirect("/dashboard")
 
         # Try recovery codes. Recovery codes contain a hyphen ("aaaaa-bbbbb");
@@ -137,6 +153,7 @@ class TwoFactorChallengeController(Controller):
             request.session().flash("warning", "Recovery code used. Please regenerate your recovery codes.")
             return self.redirect("/dashboard")
 
+        request.session().put("_2fa_attempts", attempts + 1)
         request.session().flash("error", "Invalid code. Please try again.")
         return self.redirect("/two-factor/challenge")
 

@@ -11,6 +11,55 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.9] — 2026-05-25
+
+### Added
+
+- **Test suite expansion** — 174 new unit tests covering previously untested modules: log viewer controller (`_parse_line`, `_tail`, `_log_path`, `index`), health controller (`_storage_size`, `_check_database`, `_check_cache`, `_check_queue`), cache inspector controller (`_list_array`, `_list_file`, `_truncate`, `delete`, `flush`), schedule admin controller (`_next_run`, `_load_scheduler`), route explorer controller (`_middleware_name`, `index`), `ArrayStore` and `FileStore` cache backends (all operations: put/get/forget/flush/add/pull/increment/decrement/get_many/put_many/remember), log manager (`_JsonFormatter`, `_build_channel` all drivers, `_LogManager` multi-channel configuration), and `ThrottleRequests` sliding-window rate limiter (rate limiting, window expiry, per-IP/path isolation, response headers, 429 handling).
+
+### Fixed (security)
+
+- **CRLF injection in cookie headers** (`http/response.py`) — `with_cookie()` now strips `\r` and `\n` from name and value before interpolation, preventing HTTP response splitting.
+- **Open redirect via backslash** (`http/response.py`) — `_is_safe_redirect()` now rejects URLs beginning with `/\` or `\/`, which some browsers normalize to `//host`.
+- **TOTP secret stored plaintext in session** (`auth/controllers/two_factor.py`) — The pending secret is now encrypted with `TwoFactor.encrypt_secret()` before being stored and decrypted in `confirm()`, so a session leak does not expose the raw TOTP seed.
+- **TOTP replay attack** (`auth/controllers/two_factor.py`) — The last accepted TOTP code is tracked in the session (`_2fa_last_totp`); a re-submitted identical code is rejected for the full 30-second window.
+- **2FA brute-force lockout** (`auth/controllers/two_factor.py`) — After 5 consecutive failed challenge attempts the pending session is cleared and the user is redirected to `/login`, preventing online guessing.
+- **SQL injection via limit/offset** (`database/query_builder.py`) — `limit()` and `offset()` now cast their argument to `int`, raising `ValueError` on non-numeric input rather than interpolating a raw string into the query.
+- **Timing side-channel in password reset** (`auth/passwords.py`) — `send_reset_link()` now always executes `DELETE` against the reset table before checking whether the email exists, equalling the DB round-trip count for both known and unknown addresses.
+- **Session GC blocking the event loop** (`session/store.py`) — Probabilistic GC (1 % of requests) is now offloaded to the default thread-pool executor via `run_in_executor`, preventing synchronous directory scans from stalling async request handling.
+- **External CDN script in debug panel** (`http/middleware/debug_panel.py`) — Removed the `<script>` that injected `cdn.tailwindcss.com` when `APP_DEBUG=true`; the panel relied solely on inline styles so no functionality is lost.
+- **Hardcoded Mailpit dashboard port** (`console/commands/lodge_install.py`) — The compose binding for the Mailpit UI is now `${MAILPIT_DASHBOARD_PORT:-8025}:8025`, and `MAILPIT_DASHBOARD_PORT=8025` is written to `.env` on install so the port is overridable without editing the generated file.
+
+---
+
+## [0.3.7] — 2026-05-25
+
+### Added
+
+- **Lodge** — Docker Compose development environment tool inspired by Laravel Sail. `hunt lodge:install` scaffolds a complete local dev environment: a dev-optimised `docker/Dockerfile` (non-root user, build tools, layer-cached pip install), a `compose.yaml` for the app service, and a `lodge` bash wrapper script that abstracts `docker compose` with hunt-specific ergonomics. Optional services selectable with `--with`: `pgsql` (Postgres 16), `mysql` (MySQL 8), `redis` (Redis alpine), `mailpit` (email testing UI on port 8025), `minio` (S3-compatible object storage with console on port 9001). Each selected service is wired into `depends_on` with healthchecks, and the corresponding `.env` keys are updated automatically. `hunt lodge:add <service>` adds a service to an existing Lodge setup without regenerating from scratch. The `lodge` script supports: `up`, `down`, `stop`, `restart`, `build`, `shell`, `python`, `hunt <cmd>`, `test`, `pip`, `logs`, `share` (via cloudflared), and pass-through to `docker compose` for anything else. TTY is detected automatically so `exec` flags work correctly in both interactive terminals and CI pipelines.
+
+---
+
+## [0.3.6] — 2026-05-25
+
+### Added
+
+- **Health page** (`admin/controllers/health.py`, `admin/templates/admin/health/index.html`): live connectivity checks for the database (SELECT 1 with latency), cache (put/get/forget probe), and queue (pending job count). Shows overall Healthy/Degraded badge, plus system info panel (hunt version, Python version, platform, APP_ENV, debug mode, storage/log disk usage). Accessible at `/hunt-admin/health`.
+- **Cache inspector** (`admin/controllers/cache_inspector.py`, `admin/templates/admin/cache/index.html`): browse all keys in the active cache store with their TTL and truncated value. Supports Redis (SCAN over prefixed keys), file store (directory walk), and array store (in-memory dict). Individual keys can be deleted; a Flush All button clears the entire store. Accessible at `/hunt-admin/cache`.
+- **Schedule monitor** (`admin/controllers/schedule.py`, `admin/templates/admin/schedule/index.html`): loads `app/console/schedule.py` at request time and displays all registered tasks with their cron expression, description, next run timestamp (scanned forward up to 8 days), and flags (no-overlap, background, environment constraints). Due-now tasks are highlighted. Accessible at `/hunt-admin/schedule`.
+- **Route explorer** (`admin/controllers/route_explorer.py`, `admin/templates/admin/routes/index.html`): lists every registered route with method badge(s), URI, named route key, and middleware chain. Supports filtering by HTTP method and free-text search across URI/name. The router reference is captured when `Admin.register_to(router)` is called. Accessible at `/hunt-admin/routes`.
+- All four pages added to the System group in the admin sidebar navigation.
+
+---
+
+## [0.3.5] — 2026-05-25
+
+### Added
+
+- **Log viewer in Hunt Admin** (`admin/controllers/logs.py`, `admin/templates/admin/logs/index.html`): a read-only "Logs" page under the System group in the admin sidebar. Reads the last 500 lines of the application log file (default `storage/logs/hunt.log`, overridable via `LOG_PATH`), parses both JSON and text log formats, and renders a filterable table with level badges, timestamps, messages, and request IDs. Exception tracebacks embedded in JSON log entries are expandable inline. Supports filtering by level (debug/info/warning/error/critical) and free-text search across message and request ID.
+
+---
+
 ## [0.3.4] — 2026-05-25
 
 ### Fixed

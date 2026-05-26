@@ -1,0 +1,80 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li><a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300"><svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/></svg><span class="sr-only">Dashboard</span></a></li>
+        <li class="flex items-center gap-x-2"><svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg><span class="text-sm font-medium text-gray-400">Health</span></li>
+    </ol>
+</nav>
+
+<div class="sm:flex sm:items-center mb-8">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white flex items-center gap-x-2">
+            Health
+            {% if overall_ok %}
+            <span class="inline-flex items-center rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">Healthy</span>
+            {% else %}
+            <span class="inline-flex items-center rounded-full bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-400">Degraded</span>
+            {% endif %}
+        </h1>
+        <p class="mt-1 text-sm text-gray-400">Live connectivity checks and system information.</p>
+    </div>
+</div>
+
+{# Service checks #}
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-8">
+    {% for check in checks %}
+    <div class="rounded-lg bg-white/5 ring-1 ring-inset ring-white/10 p-5 flex items-start gap-x-4">
+        <div class="shrink-0 mt-0.5">
+            {% if check.ok == true %}
+            <span class="flex size-8 items-center justify-center rounded-full bg-green-500/20">
+                <svg class="size-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+            </span>
+            {% elif check.ok == false %}
+            <span class="flex size-8 items-center justify-center rounded-full bg-red-500/20">
+                <svg class="size-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+            </span>
+            {% else %}
+            <span class="flex size-8 items-center justify-center rounded-full bg-gray-500/20">
+                <svg class="size-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+            </span>
+            {% endif %}
+        </div>
+        <div class="min-w-0">
+            <p class="text-sm font-semibold text-white">{{ check.name }}</p>
+            <p class="text-xs {% if check.ok == true %}text-green-400{% elif check.ok == false %}text-red-400{% else %}text-gray-500{% endif %}">{{ check.label }}</p>
+            <p class="mt-0.5 text-xs text-gray-500 truncate">{{ check.detail }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{# System info #}
+<h2 class="text-sm font-semibold text-white mb-4">System Information</h2>
+<div class="rounded-lg ring-1 ring-inset ring-white/10 overflow-hidden">
+    <dl class="divide-y divide-white/5">
+        {% set rows = [
+            ("Hunt version", info.hunt_version),
+            ("Python version", info.python_version),
+            ("Platform", info.platform),
+            ("Environment", info.app_env),
+            ("Debug mode", "Enabled" if info.app_debug else "Disabled"),
+            ("Storage size", info.storage_size),
+            ("Log size", info.log_size),
+        ] %}
+        {% for label, value in rows %}
+        <div class="flex items-center px-5 py-3 {% if loop.index is even %}bg-white/[0.02]{% endif %}">
+            <dt class="w-48 shrink-0 text-xs font-medium text-gray-400">{{ label }}</dt>
+            <dd class="text-xs text-gray-200 font-mono">
+                {% if label == "Debug mode" and info.app_debug %}
+                <span class="text-yellow-400">{{ value }}</span>
+                {% else %}
+                {{ value }}
+                {% endif %}
+            </dd>
+        </div>
+        {% endfor %}
+    </dl>
+</div>
+{% endblock %}

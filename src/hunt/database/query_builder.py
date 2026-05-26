@@ -256,7 +256,7 @@ class QueryBuilder:
 
     def limit(self, n: int) -> QueryBuilder:
         qb = self._clone()
-        qb._limit_val = n
+        qb._limit_val = int(n)
         return qb
 
     def take(self, n: int) -> QueryBuilder:
@@ -264,7 +264,7 @@ class QueryBuilder:
 
     def offset(self, n: int) -> QueryBuilder:
         qb = self._clone()
-        qb._offset_val = n
+        qb._offset_val = int(n)
         return qb
 
     def skip(self, n: int) -> QueryBuilder:
