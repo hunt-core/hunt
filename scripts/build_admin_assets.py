@@ -69,7 +69,7 @@ easymde_js_raw = fetch("https://unpkg.com/easymde@2.18.0/dist/easymde.min.js").d
 # "font-awesome" so our local copy satisfies it.
 easymde_js_patched = easymde_js_raw.replace(
     'n[i].href.indexOf("//maxcdn.bootstrapcdn.com/font-awesome/")>-1',
-    'n[i].href.indexOf("//maxcdn.bootstrapcdn.com/font-awesome/")>-1||n[i].href.indexOf("font-awesome")>-1',
+    '(n[i].href.indexOf("//maxcdn.bootstrapcdn.com/font-awesome/")>-1||n[i].href.indexOf("font-awesome")>-1)',
 )
 write(STATIC / "easymde.min.js", easymde_js_patched)
 

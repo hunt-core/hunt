@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.13] — 2026-05-26
+
+### Fixed
+
+- **`TypeError: can't access property "indexOf", n[i].href is null`** — the EasyMDE Font Awesome detection patch from 0.4.12 introduced a null-dereference. The original `n[i].href&&…` null guard only covered the first `indexOf`; due to operator precedence the appended `||n[i].href.indexOf(…)` evaluated outside the guard when a stylesheet with a null `href` was present (e.g. `<style>` elements injected via JS). Fixed by wrapping both `indexOf` calls in parentheses so the null guard applies to both: `n[i].href&&(…||…)`.
+
+---
+
 ## [0.4.12] — 2026-05-26
 
 ### Fixed
