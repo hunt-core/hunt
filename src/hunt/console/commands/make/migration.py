@@ -23,9 +23,7 @@ def make_migration_command(name: str, create: str | None, table: str | None, dry
     output.finish()
 
 
-def _create_migration(
-    name: str, create: str | None = None, table: str | None = None, fields: str = ""
-) -> None:
+def _create_migration(name: str, create: str | None = None, table: str | None = None, fields: str = "") -> None:
     from hunt.console.commands.make._output import output
 
     timestamp = time.strftime("%Y_%m_%d_%H%M%S")

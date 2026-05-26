@@ -284,7 +284,7 @@ def _render_markdown(ctx: dict) -> str:
         lines.append(f"- **fillable:** {fill}")
         if m.get("hidden"):
             lines.append(f"- **hidden:** {', '.join(f'`{h}`' for h in m['hidden'])}")
-        if m.get("relations") :
+        if m.get("relations"):
             lines.append(f"- **relations:** {rels}")
         lines.append(f"- **file:** `{m['file']}`")
         lines.append("")
