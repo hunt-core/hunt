@@ -220,6 +220,30 @@
     </main>
 </div>
 
+<!-- Media Manager Modal -->
+<div id="_hunt-media-modal" style="display:none;position:fixed;inset:0;z-index:9999;overflow:hidden;">
+    <div id="_hunt-media-backdrop" style="position:absolute;inset:0;background:rgba(0,0,0,.75);" onclick="window._huntAdmin._closeMedia()"></div>
+    <div style="position:absolute;inset:1rem;top:4rem;bottom:4rem;max-width:1000px;margin:0 auto;background:#111827;border-radius:.75rem;border:1px solid rgba(255,255,255,.1);display:flex;flex-direction:column;overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.1);">
+            <h2 style="font-size:.9375rem;font-weight:600;color:#fff;margin:0;">Media Manager</h2>
+            <div style="display:flex;gap:.5rem;align-items:center;">
+                <label for="_hunt-media-upload" style="cursor:pointer;display:inline-flex;align-items:center;gap:.375rem;border-radius:.375rem;background:#6366f1;padding:.375rem .75rem;font-size:.8125rem;font-weight:600;color:#fff;">
+                    <svg style="width:1rem;height:1rem;" viewBox="0 0 20 20" fill="currentColor"><path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
+                    Upload
+                </label>
+                <input type="file" id="_hunt-media-upload" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" multiple style="display:none;">
+                <button type="button" onclick="window._huntAdmin._closeMedia()" style="display:flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:.375rem;background:rgba(255,255,255,.07);border:none;cursor:pointer;color:#9ca3af;">
+                    <svg style="width:1.125rem;height:1.125rem;" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+        </div>
+        <div id="_hunt-media-grid" style="flex:1;overflow-y:auto;padding:1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.75rem;align-content:start;">
+            <div id="_hunt-media-loading" style="grid-column:1/-1;text-align:center;padding:3rem 0;color:#6b7280;font-size:.875rem;">Loading…</div>
+        </div>
+        <div id="_hunt-media-status" style="padding:.5rem 1.25rem;border-top:1px solid rgba(255,255,255,.1);font-size:.75rem;color:#6b7280;min-height:2rem;"></div>
+    </div>
+</div>
+
 <script>
 function openMobileSidebar() { document.getElementById('mobile-sidebar').classList.add('open'); document.body.style.overflow = 'hidden'; }
 function closeMobileSidebar() { document.getElementById('mobile-sidebar').classList.remove('open'); document.body.style.overflow = ''; }
@@ -228,6 +252,106 @@ document.addEventListener('click', function(e) {
     var btn = document.getElementById('profile-btn'), menu = document.getElementById('profile-menu');
     if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) menu.classList.remove('open');
 });
+(function() {
+    var modal = document.getElementById('_hunt-media-modal');
+    var grid = document.getElementById('_hunt-media-grid');
+    var status = document.getElementById('_hunt-media-status');
+    var uploadInput = document.getElementById('_hunt-media-upload');
+    var _cb = null;
+    var _loaded = false;
+
+    function setStatus(msg) { if (status) status.textContent = msg; }
+
+    function buildCard(file) {
+        var card = document.createElement('div');
+        card.style.cssText = 'position:relative;aspect-ratio:1;background:rgba(255,255,255,.05);border-radius:.5rem;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;';
+        var img = document.createElement('img');
+        img.src = file.url;
+        img.alt = file.name;
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        img.onerror = function() {
+            img.style.display = 'none';
+            var ph = document.createElement('div');
+            ph.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#4b5563;';
+            ph.innerHTML = '<svg style="width:2rem;height:2rem;" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5M10.5 8.25h.008"/></svg>';
+            card.appendChild(ph);
+        };
+        card.appendChild(img);
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.6);opacity:0;transition:opacity .15s;display:flex;align-items:flex-end;padding:.375rem;';
+        var nameEl = document.createElement('span');
+        nameEl.style.cssText = 'font-size:.625rem;color:#fff;word-break:break-all;line-height:1.2;';
+        nameEl.textContent = file.name;
+        overlay.appendChild(nameEl);
+        card.appendChild(overlay);
+        card.addEventListener('mouseenter', function() { overlay.style.opacity = '1'; });
+        card.addEventListener('mouseleave', function() { overlay.style.opacity = '0'; });
+        card.addEventListener('click', function() {
+            if (typeof _cb === 'function') {
+                _cb(file.url, file.name);
+                window._huntAdmin._closeMedia();
+            }
+        });
+        return card;
+    }
+
+    function loadMedia() {
+        if (status) status.textContent = '';
+        grid.innerHTML = '<div id="_hunt-media-loading" style="grid-column:1/-1;text-align:center;padding:3rem 0;color:#6b7280;font-size:.875rem;">Loading…</div>';
+        fetch(window._huntAdmin.prefix + '/media/api')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                grid.innerHTML = '';
+                if (!data.files || !data.files.length) {
+                    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem 0;color:#6b7280;font-size:.875rem;">No media uploaded yet.</div>';
+                } else {
+                    data.files.forEach(function(f) { grid.appendChild(buildCard(f)); });
+                    setStatus(data.files.length + ' file' + (data.files.length !== 1 ? 's' : ''));
+                }
+            })
+            .catch(function() {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem 0;color:#f87171;font-size:.875rem;">Failed to load media.</div>';
+            });
+    }
+
+    function uploadFiles(files) {
+        var queue = Array.from(files);
+        function next() {
+            if (!queue.length) { loadMedia(); return; }
+            var file = queue.shift();
+            setStatus('Uploading ' + file.name + '…');
+            var fd = new FormData();
+            fd.append('file', file);
+            fetch(window._huntAdmin.prefix + '/media/upload', {method: 'POST', body: fd})
+                .then(function(r) { return r.json(); })
+                .then(function() { next(); })
+                .catch(function() { setStatus('Upload failed: ' + file.name); next(); });
+        }
+        next();
+    }
+
+    if (uploadInput) {
+        uploadInput.addEventListener('change', function() {
+            if (uploadInput.files.length) uploadFiles(uploadInput.files);
+            uploadInput.value = '';
+        });
+    }
+
+    window._huntAdmin.openMediaManager = function(cb) {
+        _cb = cb || null;
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        loadMedia();
+    };
+    window._huntAdmin._closeMedia = function() {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+        _cb = null;
+    };
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal.style.display !== 'none') window._huntAdmin._closeMedia();
+    });
+})();
 (function() {
     var inp = document.getElementById('global-search'), box = document.getElementById('search-results'), timer;
     if (!inp) return;

@@ -11,6 +11,18 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.8] — 2026-05-26
+
+### Added
+
+- **Admin media manager** — a global media manager at `<prefix>/media` for uploading, browsing, and deleting images. Supports JPEG, PNG, GIF, WebP, and SVG. Files are stored on a configurable storage disk (`Admin.media_disk`, default `"public"`, path `Admin.media_path`, default `"media"`). The page supports drag-and-drop upload, image grid view, URL copy on click, and per-file deletion.
+- **`MediaBrowser` field** — a new admin field type (`field_type = "media_browser"`) that renders a "Browse Media" button on create/edit forms. Clicking it opens the media manager modal and populates a read-only URL input that can be copied to the clipboard. The field does not save any value to the database.
+- **EasyMDE media toolbar button** — the Markdown field's EasyMDE editor now includes a media manager toolbar button (image icon) that opens the media manager modal and inserts the selected image as `![name](url)` at the cursor position.
+- **`/media/api` JSON endpoint** — `GET <prefix>/media/api` returns a JSON list of uploaded media files with `name`, `path`, `url`, and `size` fields.
+- **23 unit tests** for the media controller and `MediaBrowser` field, covering API listing, upload validation (MIME type guard), path traversal prevention on delete, and field visibility defaults.
+
+---
+
 ## [0.4.7] — 2026-05-26
 
 ### Fixed
