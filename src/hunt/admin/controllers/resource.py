@@ -330,10 +330,7 @@ def edit(request: Request, resource_key: str, id: str) -> Response:
             related_resource_inst = panel.related_resource_class()
             fk = panel.foreign_key or f"{type(instance).__name__.lower()}_id"
             related_data[panel.attribute] = (
-                related_resource_inst.model.query()
-                .where(fk, instance._attributes.get("id"))
-                .limit(20)
-                .get()
+                related_resource_inst.model.query().where(fk, instance._attributes.get("id")).limit(20).get()
             )
         except Exception:
             related_data[panel.attribute] = []
