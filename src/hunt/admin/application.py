@@ -218,11 +218,24 @@ class _Admin:
     # Rendering
     # ------------------------------------------------------------------
 
+    # CSP for admin pages: inline styles/scripts are required by the admin UI;
+    # img-src allows any origin so storage images (S3, CDN, local) always render.
+    _ADMIN_CSP = (
+        "default-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "img-src * data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'"
+    )
+
     def _render(self, template_name: str, context: dict, status: int = 200) -> Response:
         env = _get_env()
         template = env.get_template(template_name)
         html = template.render(**context)
-        return Response(html, status=status)
+        resp = Response(html, status=status)
+        resp.header("Content-Security-Policy", self._ADMIN_CSP)
+        return resp
 
     def _base_context(self, request: Any) -> dict:
         from hunt.auth.manager import Auth

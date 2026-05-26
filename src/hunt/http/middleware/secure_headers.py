@@ -48,7 +48,9 @@ class SecureHeaders(Middleware):
                 hsts += "; includeSubDomains"
             response.header("Strict-Transport-Security", hsts)
 
-        # Content-Security-Policy — restricts resource origins; override via env var
-        csp = os.environ.get("SECURE_CONTENT_SECURITY_POLICY", "default-src 'self'")
-        if csp:
-            response.header("Content-Security-Policy", csp)
+        # Content-Security-Policy — restricts resource origins; override via env var.
+        # Skip if the response already carries a CSP (e.g. set by a route-specific handler).
+        if "Content-Security-Policy" not in response._headers:
+            csp = os.environ.get("SECURE_CONTENT_SECURITY_POLICY", "default-src 'self'")
+            if csp:
+                response.header("Content-Security-Policy", csp)

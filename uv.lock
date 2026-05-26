@@ -558,7 +558,7 @@ wheels = [
 
 [[package]]
 name = "hunt-framework"
-version = "0.4.9"
+version = "0.4.11"
 source = { editable = "." }
 dependencies = [
     { name = "aiomysql" },

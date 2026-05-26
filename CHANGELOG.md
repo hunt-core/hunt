@@ -11,6 +11,15 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.12] — 2026-05-26
+
+### Fixed
+
+- **EasyMDE Font Awesome CDN injection** — EasyMDE's JS checks for Font Awesome by looking for the maxcdn CDN href; since hunt serves FA locally under a different path, the check failed and the browser attempted to load the CDN stylesheet, violating strict CSPs. Patched `easymde.min.js` (and updated `scripts/build_admin_assets.py`) to also accept any `href` containing `"font-awesome"`, so the locally-bundled file satisfies the check.
+- **Admin `img-src` CSP blocking storage images** — `Admin._render()` now sets an explicit CSP on every admin response with `img-src * data: blob:`, allowing images served from any storage backend (local, S3, CDN). `SecureHeaders` middleware was updated to skip setting the CSP header when the response already carries one, so the admin CSP is not overwritten by the global policy.
+
+---
+
 ## [0.4.11] — 2026-05-26
 
 ### Fixed
