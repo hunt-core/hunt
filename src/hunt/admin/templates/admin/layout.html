@@ -39,7 +39,7 @@
     <link rel="stylesheet" href="{{ prefix }}/assets/admin.css">
     <link rel="stylesheet" href="{{ prefix }}/assets/trix.css">
     <script type="text/javascript" src="{{ prefix }}/assets/trix.umd.min.js"></script>
-    <script>window._huntAdmin={prefix:{{ prefix | tojson }},resourceKey:{{ resource_key | default('') | tojson }}};</script>
+    <script>window._huntAdmin={prefix:{{ prefix | tojson }},resourceKey:{{ resource_key | default('') | tojson }},csrfToken:{{ csrf_token | tojson }}};</script>
     <style>
         /* Mobile sidebar slide transition */
         #mobile-sidebar { display: none; }
@@ -322,6 +322,7 @@ document.addEventListener('click', function(e) {
             setStatus('Uploading ' + file.name + '…');
             var fd = new FormData();
             fd.append('file', file);
+            fd.append('_token', window._huntAdmin.csrfToken);
             fetch(window._huntAdmin.prefix + '/media/upload', {method: 'POST', body: fd})
                 .then(function(r) { return r.json(); })
                 .then(function() { next(); })

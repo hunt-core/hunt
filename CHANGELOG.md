@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.11] — 2026-05-26
+
+### Fixed
+
+- **Media manager CSRF 419** — upload and delete `fetch` calls in both the modal and the standalone media page were missing the CSRF token. Added `_token` to `FormData` for uploads and `X-CSRF-TOKEN` header for delete requests. The token is now exposed via `window._huntAdmin.csrfToken` in the layout.
+
+---
+
 ## [0.4.10] — 2026-05-26
 
 ### Fixed

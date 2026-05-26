@@ -175,7 +175,7 @@
         if (!confirm('Delete this file?')) return;
         fetch(prefix + '/media/delete', {
             method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest'},
+            headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': window._huntAdmin.csrfToken},
             body: 'path=' + encodeURIComponent(path)
         })
         .then(function(r) { return r.json(); })
@@ -204,6 +204,7 @@
 
             var fd = new FormData();
             fd.append('file', file);
+            fd.append('_token', window._huntAdmin.csrfToken);
             fetch(prefix + '/media/upload', {method: 'POST', body: fd})
                 .then(function(r) {
                     if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || 'Upload failed'); });
