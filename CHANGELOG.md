@@ -15,6 +15,7 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Admin `BelongsTo` links on detail page** — `BelongsTo` field values on the resource detail (show) page are now rendered as clickable links to the related resource. Eager-loading of BelongsTo relations is also applied on the detail page so the linked label is resolved rather than the raw FK integer.
 - **`hunt context`** — new command that emits a compact snapshot of the current project (routes, models with fillable/relations, middleware, env keys, directory structure) in markdown or `--json`. Designed for AI coding assistants; uses AST-based model discovery so no database connection is required. `--no-routes` skips the app boot entirely for fast offline use.
 - **`hunt make:model` expanded flags** — `-f/--factory`, `-s/--seeder`, `-p/--policy` flags added alongside the existing `-m` and `-c`. `--all` is a shorthand for all five. `--fields "col:type …"` now accepted directly on `make:model`, populating `fillable` in the model stub and generating typed blueprint columns in the migration (previously only available via `make:crud`).
 - **`hunt make:test`** — new scaffold command. `--unit` (default) writes to `tests/unit/`, `--feature` writes to `tests/feature/`. Both stubs include correct pytest class structure and imports.
@@ -27,6 +28,7 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`RichText` sanitizer crash** — `nh3.clean` raised `ValueError` when `"rel"` was listed in allowed `<a>` attributes while `link_rel` was also set. Removed the redundant `"rel"` entry; `link_rel` already injects `noopener noreferrer nofollow` on every link.
 - **`make:crud --dry-run` idempotency** — the route-append step now uses a quoted-sentinel check (`"/<prefix>"`) instead of a bare substring match, preventing false positive skips and correctly respecting `--dry-run` mode.
 
 ---

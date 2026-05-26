@@ -146,6 +146,7 @@ def show(request: Request, resource_key: str, id: str) -> Response:
 
     instance = _get_instance(resource, id)
     detail_fields = [f for f in resource.fields() if f._show_on_detail]
+    _eager_load_belongs_to(detail_fields, [instance])
     has_many_panels = [f for f in resource.fields() if isinstance(f, HasMany)]
 
     related_data = {}

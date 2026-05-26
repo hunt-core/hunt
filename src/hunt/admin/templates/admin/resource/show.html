@@ -103,6 +103,15 @@
                         {% else %}
                         —
                         {% endif %}
+                    {% elif field.field_type == 'belongs_to' %}
+                        {% set fk_val = field.value_for(instance) %}
+                        {% set display_text = field.display_value(instance) %}
+                        {% if fk_val is not none and fk_val != '' %}
+                        <a href="{{ prefix }}/resources/{{ field.related_resource_class.slug() }}/{{ fk_val }}"
+                           class="text-indigo-400 hover:text-indigo-300">{{ display_text or fk_val }}</a>
+                        {% else %}
+                        —
+                        {% endif %}
                     {% else %}
                         {{ field.display_value(instance) or '—' }}
                     {% endif %}

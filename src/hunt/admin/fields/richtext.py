@@ -32,7 +32,7 @@ _ALLOWED_TAGS = {
     "strong",
     "ul",
 }
-_ALLOWED_ATTRS = {"a": {"href", "target", "rel"}}
+_ALLOWED_ATTRS = {"a": {"href", "target"}}
 
 
 def _sanitize_html(raw: str) -> str:
