@@ -47,8 +47,13 @@ class PasswordBroker:
             return False
         return self._verify(token, str(row["token"]))
 
-    def reset(self, credentials: dict[str, Any]) -> bool:
-        """Validate token then update the user's password. Returns True on success."""
+    def reset(self, credentials: dict[str, Any], *, revoke_sessions: bool = False) -> bool:
+        """Validate token then update the user's password. Returns True on success.
+
+        Pass ``revoke_sessions=True`` to invalidate all existing sessions for
+        the user immediately after the password is changed, forcing every
+        other logged-in device to re-authenticate.
+        """
         email = credentials.get("email", "")
         token = credentials.get("token", "")
         password = credentials.get("password", "")
@@ -66,6 +71,15 @@ class PasswordBroker:
         user.timestamps = False  # avoid touching updated_at unexpectedly
         user.save()
         self.delete_token(email)
+
+        if revoke_sessions:
+            try:
+                from hunt.session.registry import revoke_sessions_for
+
+                revoke_sessions_for(user._attributes.get("id"))
+            except Exception:
+                pass
+
         return True
 
     def delete_token(self, email: str) -> None:

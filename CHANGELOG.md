@@ -11,6 +11,31 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.17] — 2026-05-27
+
+### Added
+
+- **`hunt.support.crypt`** — new module exposing `encrypt(value)` and `decrypt(token)`, Fernet-based symmetric encryption keyed to `APP_KEY`. Intended for any service that needs to store sensitive strings at rest. `TwoFactor.encrypt_secret` / `decrypt_secret` now delegate to it.
+
+### Security
+
+- **TOTP replay protection** — `TwoFactor.mark_used(user_id, code)` / `is_used(user_id, code)` now prevent a verified TOTP code from being accepted a second time within the 90-second validity window. The challenge and setup-confirm controllers both check and record used codes. State is stored in Redis (key `hunt:2fa:used:{user_id}:{code}`, 90 s TTL) with a thread-safe in-memory fallback for installs without Redis.
+
+---
+
+## [0.4.15] — 2026-05-26
+
+### Added
+
+- **Session registry** (`hunt.session.registry`) — a `user_sessions` database table now tracks active authenticated sessions (session ID → user ID + guard + IP + user agent + last login time). Sessions are registered on `Auth.login()` / `Auth.attempt()` and deregistered on `Auth.logout()`. The table is opt-in: run `hunt session:table` then `hunt migrate` to create it; all registry writes are silently no-oped if the table does not exist.
+- **`hunt session:table`** — new CLI command that generates the `user_sessions` migration (mirrors `hunt queue:table`).
+- **Session revocation** — `revoke_sessions_for(user_id, guard=None)` (importable from `hunt.session`) and `SessionRegistry().revoke_for_user(user_id)` perform a targeted O(k) revocation: fetch session IDs from the registry, delete the corresponding session data (file or Redis), then remove the registry rows. No full-scan needed.
+- **`Password.reset(revoke_sessions=True)`** — the password broker's `reset()` method accepts an optional `revoke_sessions` keyword argument. When `True`, all active sessions for the user are revoked immediately after the password is changed.
+- **Admin sessions panel** — new `/hunt-admin/sessions` page in the System nav group. Admins can see all active sessions (user ID, guard, IP address, user agent, last login time) and revoke individual sessions or all sessions for a specific user with a single click.
+- **`ColumnDef.primary_key()`** — new fluent method on the Blueprint column definition to mark a non-integer column as a `PRIMARY KEY` (used by the `user_sessions` migration for its `VARCHAR(64)` PK).
+
+---
+
 ## [0.4.14] — 2026-05-26
 
 ### Added

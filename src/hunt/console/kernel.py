@@ -56,6 +56,7 @@ from hunt.console.commands.schedule_list import schedule_list_command
 from hunt.console.commands.schedule_run import schedule_run_command
 from hunt.console.commands.serve import serve_command
 from hunt.console.commands.serve_production import serve_production_command
+from hunt.console.commands.session_table import session_table_command
 from hunt.console.commands.storage_link import storage_link_command
 from hunt.console.commands.tinker import tinker_command
 from hunt.console.commands.upgrade import upgrade_command
@@ -111,6 +112,7 @@ cli.add_command(queue_failed_command, name="queue:failed")
 cli.add_command(queue_retry_command, name="queue:retry")
 cli.add_command(queue_flush_command, name="queue:flush")
 cli.add_command(queue_table_command, name="queue:table")
+cli.add_command(session_table_command, name="session:table")
 cli.add_command(job_list_command, name="job:list")
 cli.add_command(job_run_command, name="job:run")
 cli.add_command(db_seed_command, name="db:seed")

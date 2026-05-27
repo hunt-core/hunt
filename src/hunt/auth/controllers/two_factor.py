@@ -49,9 +49,11 @@ class TwoFactorSetupController(Controller):
             request.session().forget("_2fa_pending_secret")
             return self.redirect("/two-factor/setup")
         code = request.input("code", "")
-        if not TwoFactor.verify(secret, code):
+        user_id = user._attributes.get("id")
+        if not TwoFactor.verify(secret, code) or TwoFactor.is_used(user_id, code):
             request.session().flash("error", "Invalid verification code. Please try again.")
             return self.redirect("/two-factor/confirm")
+        TwoFactor.mark_used(user_id, code)
         recovery_codes = TwoFactor.generate_recovery_codes()
         hashed_codes = [TwoFactor.hash_recovery_code(c) for c in recovery_codes]
         user.update(
@@ -125,13 +127,11 @@ class TwoFactorChallengeController(Controller):
             )
             return self.redirect("/login")
 
-        last_totp = request.session().get("_2fa_last_totp")
-        if TwoFactor.verify(secret, code) and code != last_totp:
+        if TwoFactor.verify(secret, code) and not TwoFactor.is_used(pending_id, code):
+            TwoFactor.mark_used(pending_id, code)
             request.session().forget("_2fa_pending")
             request.session().forget("_2fa_attempts")
-            request.session().forget("_2fa_last_totp")
             guard.login(user)
-            request.session().put("_2fa_last_totp", code)
             return self.redirect("/dashboard")
 
         # Try recovery codes. Recovery codes contain a hyphen ("aaaaa-bbbbb");

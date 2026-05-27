@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -293,3 +293,133 @@ class TestEnsureTwoFactorMiddleware:
 
         await middleware.handle(request, next_fn)
         assert next_called
+
+
+# ---------------------------------------------------------------------------
+# TOTP replay protection
+# ---------------------------------------------------------------------------
+
+
+class TestTotpReplayProtection:
+    def setup_method(self):
+        import hunt.auth.two_factor as tf_mod
+
+        with tf_mod._used_codes_lock:
+            tf_mod._used_codes.clear()
+
+    def test_is_used_returns_false_initially(self):
+        assert TwoFactor.is_used(1, "123456") is False
+
+    def test_mark_then_is_used_returns_true(self):
+        TwoFactor.mark_used(1, "123456")
+        assert TwoFactor.is_used(1, "123456") is True
+
+    def test_different_user_same_code_not_blocked(self):
+        TwoFactor.mark_used(1, "123456")
+        assert TwoFactor.is_used(2, "123456") is False
+
+    def test_same_user_different_code_not_blocked(self):
+        TwoFactor.mark_used(1, "123456")
+        assert TwoFactor.is_used(1, "654321") is False
+
+    def test_mark_used_uses_redis_when_available(self):
+        mock_redis = MagicMock()
+        with patch("hunt.redis_connection.get_redis", return_value=mock_redis):
+            TwoFactor.mark_used(42, "999999")
+        mock_redis.set.assert_called_once_with("hunt:2fa:used:42:999999", "1", ex=90)
+
+    def test_is_used_checks_redis_when_available(self):
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = "1"
+        with patch("hunt.redis_connection.get_redis", return_value=mock_redis):
+            result = TwoFactor.is_used(42, "999999")
+        assert result is True
+        mock_redis.get.assert_called_once_with("hunt:2fa:used:42:999999")
+
+    def test_is_used_false_when_redis_returns_none(self):
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = None
+        with patch("hunt.redis_connection.get_redis", return_value=mock_redis):
+            result = TwoFactor.is_used(42, "999999")
+        assert result is False
+
+    def test_falls_back_to_memory_when_redis_unavailable(self):
+        with patch("hunt.redis_connection.get_redis", side_effect=Exception("no redis")):
+            TwoFactor.mark_used(7, "111111")
+            assert TwoFactor.is_used(7, "111111") is True
+
+    def test_memory_expiry(self):
+        import hunt.auth.two_factor as tf_mod
+
+        key = "hunt:2fa:used:5:222222"
+        with tf_mod._used_codes_lock:
+            tf_mod._used_codes[key] = tf_mod.time.monotonic() - 1
+
+        with patch("hunt.redis_connection.get_redis", side_effect=Exception("no redis")):
+            assert TwoFactor.is_used(5, "222222") is False
+
+    def test_challenge_controller_rejects_replayed_code(self):
+        from hunt.auth.controllers.two_factor import TwoFactorChallengeController
+
+        controller = TwoFactorChallengeController()
+
+        session = MagicMock()
+        session.get.side_effect = lambda key, default=None: {
+            "_2fa_pending": 10,
+            "_2fa_attempts": 0,
+        }.get(key, default)
+
+        request = MagicMock()
+        request.session.return_value = session
+        request.input.return_value = "123456"
+
+        user = MagicMock()
+        user._attributes = {"two_factor_secret": "encrypted"}
+
+        guard = MagicMock()
+        guard._model.find.return_value = user
+
+        with (
+            patch("hunt.auth.controllers.two_factor.Auth") as mock_auth,
+            patch("hunt.auth.controllers.two_factor.TwoFactor.decrypt_secret", return_value="SECRET"),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.verify", return_value=True),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.is_used", return_value=True),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.mark_used") as mock_mark,
+        ):
+            mock_auth._default_guard = guard
+            controller.store(request)
+
+        mock_mark.assert_not_called()
+
+    def test_challenge_controller_marks_used_on_success(self):
+        from hunt.auth.controllers.two_factor import TwoFactorChallengeController
+
+        controller = TwoFactorChallengeController()
+
+        session = MagicMock()
+        session.get.side_effect = lambda key, default=None: {
+            "_2fa_pending": 10,
+            "_2fa_attempts": 0,
+        }.get(key, default)
+
+        request = MagicMock()
+        request.session.return_value = session
+        request.input.return_value = "123456"
+
+        user = MagicMock()
+        user._attributes = {"two_factor_secret": "encrypted"}
+
+        guard = MagicMock()
+        guard._model.find.return_value = user
+
+        with (
+            patch("hunt.auth.controllers.two_factor.Auth") as mock_auth,
+            patch("hunt.auth.controllers.two_factor.TwoFactor.decrypt_secret", return_value="SECRET"),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.verify", return_value=True),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.is_used", return_value=False),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.mark_used") as mock_mark,
+        ):
+            mock_auth._default_guard = guard
+            controller.store(request)
+
+        mock_mark.assert_called_once_with(10, "123456")

@@ -1,0 +1,125 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex mb-6" aria-label="Breadcrumb">
+    <ol role="list" class="flex items-center gap-x-2">
+        <li>
+            <a href="{{ prefix }}/" class="text-gray-400 hover:text-gray-300">
+                <svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clip-rule="evenodd"/>
+                </svg>
+                <span class="sr-only">Dashboard</span>
+            </a>
+        </li>
+        <li class="flex items-center gap-x-2">
+            <svg class="size-5 shrink-0 text-gray-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>
+            </svg>
+            <span class="text-sm font-medium text-gray-400">Sessions</span>
+        </li>
+    </ol>
+</nav>
+
+{# Page heading #}
+<div class="sm:flex sm:items-center mb-8">
+    <div class="sm:flex-auto">
+        <h1 class="text-base font-semibold text-white">Sessions</h1>
+        <p class="mt-2 text-sm text-gray-400">
+            Active authenticated sessions. Revoking a session forces that device to log in again.
+            {{ pagination.total }} session{{ 's' if pagination.total != 1 else '' }} total.
+        </p>
+    </div>
+</div>
+
+{# Flash messages #}
+{% if flash.get('admin_success') %}
+<div class="rounded-md bg-green-500/10 p-4 outline outline-green-500/20 mb-6">
+    <p class="text-sm text-green-400">{{ flash.admin_success }}</p>
+</div>
+{% endif %}
+{% if flash.get('admin_error') %}
+<div class="rounded-md bg-red-500/10 p-4 outline outline-red-500/20 mb-6">
+    <p class="text-sm text-red-400">{{ flash.admin_error }}</p>
+</div>
+{% endif %}
+
+{% if sessions %}
+<div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl overflow-hidden">
+    <table class="min-w-full divide-y divide-white/10">
+        <thead>
+            <tr>
+                <th scope="col" class="py-3.5 pl-4 pr-3 sm:pl-6 text-left text-sm font-semibold text-white">User ID</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Guard</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">IP Address</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">User Agent</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-white">Last Login</th>
+                <th scope="col" class="py-3.5 pr-4 pl-3 sm:pr-6 text-right text-sm font-semibold text-white">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-white/10">
+            {% for sess in sessions %}
+            <tr>
+                <td class="py-4 pl-4 pr-3 sm:pl-6 whitespace-nowrap text-sm font-mono text-white">
+                    {{ sess.user_id }}
+                </td>
+                <td class="px-3 py-4 whitespace-nowrap text-sm">
+                    <span class="inline-flex items-center rounded-md bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/20">{{ sess.guard }}</span>
+                </td>
+                <td class="px-3 py-4 whitespace-nowrap text-sm font-mono text-gray-400">{{ sess.ip_address or '—' }}</td>
+                <td class="px-3 py-4 text-sm text-gray-400 max-w-xs truncate" title="{{ sess.user_agent or '' }}">{{ sess._short_ua }}</td>
+                <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-400">{{ sess._fmt_time }}</td>
+                <td class="py-4 pr-4 pl-3 sm:pr-6 whitespace-nowrap text-right text-sm font-medium">
+                    <div class="flex items-center justify-end gap-x-3">
+                        {# Revoke all for this user #}
+                        <form method="post" action="{{ prefix }}/sessions/user/{{ sess.user_id }}/revoke"
+                              onsubmit="return confirm('Revoke all sessions for user {{ sess.user_id }}?')">
+                            <input type="hidden" name="_token" value="{{ csrf_token }}">
+                            <button type="submit" class="text-yellow-400 hover:text-yellow-300 text-xs">Revoke all for user</button>
+                        </form>
+                        {# Revoke this single session #}
+                        <form method="post" action="{{ prefix }}/sessions/{{ sess.id }}/revoke"
+                              onsubmit="return confirm('Revoke this session?')">
+                            <input type="hidden" name="_token" value="{{ csrf_token }}">
+                            <button type="submit" class="text-red-400 hover:text-red-300">Revoke</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{# Pagination #}
+{% if pagination.last_page > 1 %}
+<nav class="flex items-center justify-between mt-4 px-1" aria-label="Pagination">
+    <p class="text-sm text-gray-400">
+        Showing {{ pagination.from }}–{{ pagination.to }} of {{ pagination.total }}
+    </p>
+    <div class="flex gap-x-2">
+        {% if pagination.current_page > 1 %}
+        <a href="?page={{ pagination.current_page - 1 }}"
+           class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10">Previous</a>
+        {% endif %}
+        {% if pagination.current_page < pagination.last_page %}
+        <a href="?page={{ pagination.current_page + 1 }}"
+           class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10">Next</a>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl py-16 text-center">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+         class="mx-auto size-10 text-gray-500">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
+    </svg>
+    <p class="mt-4 text-sm text-gray-400">No active sessions found.</p>
+    <p class="mt-1 text-xs text-gray-600">Sessions are recorded when users log in after the <code class="text-gray-500">user_sessions</code> table has been created.</p>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -85,6 +85,11 @@ class ColumnDef:
         self.after_column = column
         return self
 
+    def primary_key(self) -> ColumnDef:
+        """Mark this column as the table's PRIMARY KEY (for non-integer PKs)."""
+        self.primary = True
+        return self
+
 
 _VALID_FK_ACTIONS = frozenset({"CASCADE", "SET NULL", "RESTRICT", "NO ACTION", "SET DEFAULT"})
 

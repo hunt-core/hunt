@@ -106,6 +106,15 @@ class _SessionGuard:
             raise RuntimeError("Session middleware is not active.")
         session.regenerate()
         session.put(self._session_key, user._attributes["id"])
+        try:
+            from hunt.session.registry import SessionRegistry
+
+            req = _get_current_request()
+            ip = req.ip if req is not None else None
+            ua = (req.header("user-agent", "") or "") if req is not None else ""
+            SessionRegistry().register(session.id, user._attributes["id"], self._name, ip, ua)
+        except Exception:
+            pass
 
     def login_using_id(self, user_id: Any) -> Any | None:
         """Fetch a user by primary key and log them in. Returns the user or None."""
@@ -144,6 +153,14 @@ class _SessionGuard:
     def logout(self) -> None:
         session = _get_session()
         if session:
+            old_id = session.id
+            try:
+                from hunt.session.registry import SessionRegistry
+
+                if old_id:
+                    SessionRegistry().deregister(old_id)
+            except Exception:
+                pass
             session.forget(self._session_key)
             session.regenerate()
 
