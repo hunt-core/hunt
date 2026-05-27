@@ -1,4 +1,5 @@
 {% extends "admin/layout.html" %}
+{% from "admin/_macros.html" import pagination_nav %}
 
 {% block content %}
 {# Breadcrumb #}
@@ -91,24 +92,7 @@
     </table>
 </div>
 
-{# Pagination #}
-{% if pagination.last_page > 1 %}
-<nav class="flex items-center justify-between mt-4 px-1" aria-label="Pagination">
-    <p class="text-sm text-gray-400">
-        Showing {{ pagination.from }}–{{ pagination.to }} of {{ pagination.total }}
-    </p>
-    <div class="flex gap-x-2">
-        {% if pagination.current_page > 1 %}
-        <a href="?page={{ pagination.current_page - 1 }}"
-           class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10">Previous</a>
-        {% endif %}
-        {% if pagination.current_page < pagination.last_page %}
-        <a href="?page={{ pagination.current_page + 1 }}"
-           class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10">Next</a>
-        {% endif %}
-    </div>
-</nav>
-{% endif %}
+{{ pagination_nav(pagination) }}
 
 {% else %}
 <div class="bg-gray-800/50 inset-ring inset-ring-white/10 rounded-xl py-16 text-center">

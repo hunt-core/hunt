@@ -1,4 +1,5 @@
 {% extends "admin/layout.html" %}
+{% from "admin/_macros.html" import pagination_nav %}
 
 {% block content %}
 {# Breadcrumb #}
@@ -225,6 +226,8 @@
         </div>
     </div>
 
+    {{ pagination_nav(failed_pagination, page_param="failed_page", extra="pending_page=" ~ (pending_pagination.current_page | default(1))) }}
+
     {# Failed job detail modals #}
     {% for job in failed_jobs %}
     <dialog id="job-modal-{{ job.id }}"
@@ -330,5 +333,6 @@
         </div>
     </div>
     {% endif %}
+    {{ pagination_nav(pending_pagination, page_param="pending_page", extra="failed_page=" ~ (failed_pagination.current_page | default(1))) }}
 </div>
 {% endblock %}

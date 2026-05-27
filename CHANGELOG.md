@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.18] — 2026-05-27
+
+### Changed
+
+- **Admin panel pagination** — the Logs, Routes, Failed Jobs, and Pending Jobs admin pages now paginate their results. Logs and Routes show 50 rows per page (with search/filter params preserved across pages); Failed Jobs and Pending Jobs each show 25 rows per page with independent pagination controls (SQL-level `LIMIT`/`OFFSET` for queue tables). A shared `_macros.html` Jinja2 macro (`pagination_nav`) is used consistently across all paginated admin views, including Sessions. Logs `_MAX_LINES` raised from 500 to 2000 to support deeper history browsing.
+
+---
+
 ## [0.4.17] — 2026-05-27
 
 ### Added

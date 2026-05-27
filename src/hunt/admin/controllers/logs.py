@@ -10,7 +10,8 @@ from hunt.http.response import Response
 
 _TEXT_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] (\w+)\s+(.*)", re.DOTALL)
 _LEVELS = ("debug", "info", "warning", "error", "critical")
-_MAX_LINES = 500
+_MAX_LINES = 2000
+_PER_PAGE = 50
 
 
 def _log_path() -> Path:
@@ -71,8 +72,13 @@ def index(request: Request) -> Response:
         level_filter = ""
     search = (request.query("search") or "").strip().lower()
 
+    try:
+        page = max(1, int(request.query("page", "1") or "1"))
+    except (ValueError, TypeError):
+        page = 1
+
     log_path = _log_path()
-    entries: list[dict] = []
+    all_entries: list[dict] = []
     missing = not log_path.exists()
 
     if not missing:
@@ -85,12 +91,27 @@ def index(request: Request) -> Response:
                 continue
             if search and search not in entry["message"].lower() and search not in entry["request_id"].lower():
                 continue
-            entries.append(entry)
+            all_entries.append(entry)
+
+    total = len(all_entries)
+    last_page = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    page = min(page, last_page)
+    offset = (page - 1) * _PER_PAGE
+    entries = all_entries[offset : offset + _PER_PAGE]
+    pagination = {
+        "total": total,
+        "per_page": _PER_PAGE,
+        "current_page": page,
+        "last_page": last_page,
+        "from": offset + 1 if total else 0,
+        "to": min(offset + _PER_PAGE, total),
+    }
 
     ctx.update(
         {
             "title": "Logs",
             "entries": entries,
+            "pagination": pagination,
             "missing": missing,
             "log_path": str(log_path),
             "level_filter": level_filter,

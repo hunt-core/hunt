@@ -1,0 +1,27 @@
+{% macro pagination_nav(pag, page_param="page", extra="") %}
+{% if pag.last_page > 1 %}
+{% set _sep = "&" if extra else "" %}
+<nav class="flex items-center justify-between mt-4 px-1" aria-label="Pagination">
+    <p class="text-sm text-gray-400">
+        Showing {{ pag.from }}–{{ pag.to }} of {{ pag.total }}
+    </p>
+    <div class="flex items-center gap-x-1">
+        {% if pag.current_page > 1 %}
+        <a href="?{{ extra }}{{ _sep }}{{ page_param }}={{ pag.current_page - 1 }}"
+           class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10">&larr; Previous</a>
+        {% else %}
+        <span class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-600 cursor-not-allowed select-none">&larr; Previous</span>
+        {% endif %}
+
+        <span class="px-2 py-1.5 text-sm text-gray-500 tabular-nums">{{ pag.current_page }} / {{ pag.last_page }}</span>
+
+        {% if pag.current_page < pag.last_page %}
+        <a href="?{{ extra }}{{ _sep }}{{ page_param }}={{ pag.current_page + 1 }}"
+           class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10">Next &rarr;</a>
+        {% else %}
+        <span class="rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-600 cursor-not-allowed select-none">Next &rarr;</span>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}
+{% endmacro %}

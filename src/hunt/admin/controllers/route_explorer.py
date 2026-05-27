@@ -3,6 +3,8 @@ from __future__ import annotations
 from hunt.http.request import Request
 from hunt.http.response import Response
 
+_PER_PAGE = 50
+
 
 def _middleware_name(mw: object) -> str:
     if isinstance(mw, type):
@@ -17,7 +19,12 @@ def index(request: Request) -> Response:
     search = (request.query("search") or "").strip().lower()
     method_filter = (request.query("method") or "").upper()
 
-    rows = []
+    try:
+        page = max(1, int(request.query("page", "1") or "1"))
+    except (ValueError, TypeError):
+        page = 1
+
+    all_rows = []
     if router is not None:
         for route in router.routes():
             methods = [m for m in route.methods if m != "HEAD"]
@@ -31,7 +38,7 @@ def index(request: Request) -> Response:
                 search not in route.uri.lower() and search not in name.lower() and search not in method_str.lower()
             ):
                 continue
-            rows.append(
+            all_rows.append(
                 {
                     "methods": methods,
                     "uri": route.uri,
@@ -41,14 +48,29 @@ def index(request: Request) -> Response:
                 }
             )
 
+    total = len(all_rows)
+    last_page = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    page = min(page, last_page)
+    offset = (page - 1) * _PER_PAGE
+    rows = all_rows[offset : offset + _PER_PAGE]
+    pagination = {
+        "total": total,
+        "per_page": _PER_PAGE,
+        "current_page": page,
+        "last_page": last_page,
+        "from": offset + 1 if total else 0,
+        "to": min(offset + _PER_PAGE, total),
+    }
+
     ctx = Admin._base_context(request)
     ctx.update(
         {
             "title": "Routes",
             "routes": rows,
+            "pagination": pagination,
             "search": request.query("search") or "",
             "method_filter": method_filter,
-            "total": len(rows),
+            "total": total,
             "router_available": router is not None,
         }
     )

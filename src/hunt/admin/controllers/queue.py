@@ -7,6 +7,8 @@ from datetime import datetime
 from hunt.http.request import Request
 from hunt.http.response import HttpException, RedirectResponse, Response
 
+_PER_PAGE = 25
+
 
 def _raw():
     from hunt.database.connection import raw
@@ -59,6 +61,28 @@ def _format_payload(payload_json: str) -> str:
         return payload_json
 
 
+def _parse_page(request: Request, param: str) -> int:
+    try:
+        return max(1, int(request.query(param, "1") or "1"))
+    except (ValueError, TypeError):
+        return 1
+
+
+def _build_pagination(page: int, total: int) -> dict:
+    last_page = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    page = min(page, last_page)
+    offset = (page - 1) * _PER_PAGE
+    return {
+        "total": total,
+        "per_page": _PER_PAGE,
+        "current_page": page,
+        "last_page": last_page,
+        "from": offset + 1 if total else 0,
+        "to": min(offset + _PER_PAGE, total),
+        "offset": offset,
+    }
+
+
 def index(request: Request) -> Response:
     from hunt.admin.application import Admin
 
@@ -66,24 +90,25 @@ def index(request: Request) -> Response:
     ctx = Admin._base_context(request)
     now = int(time.time())
 
+    failed_page = _parse_page(request, "failed_page")
+    pending_page = _parse_page(request, "pending_page")
+
     pending_jobs: list[dict] = []
     failed_jobs: list[dict] = []
     jobs_table_missing = False
     failed_table_missing = False
+    failed_pagination: dict = {}
+    pending_pagination: dict = {}
 
     try:
-        rows = raw("SELECT * FROM jobs ORDER BY id DESC").fetchall()
-        for row in rows:
-            d = dict(row._mapping)
-            d["_status"] = _job_status(d)
-            d["_job_class"] = _extract_job_class(d.get("payload", ""))
-            d["_created_at_fmt"] = _fmt_time(d.get("created_at"))
-            pending_jobs.append(d)
-    except Exception:
-        jobs_table_missing = True
-
-    try:
-        rows = raw("SELECT * FROM jobs_failed ORDER BY id DESC").fetchall()
+        count_row = raw("SELECT COUNT(*) FROM jobs_failed").fetchone()
+        failed_total = int(count_row[0]) if count_row else 0
+        fp = _build_pagination(failed_page, failed_total)
+        failed_pagination = fp
+        rows = raw(
+            "SELECT * FROM jobs_failed ORDER BY id DESC LIMIT :lim OFFSET :off",
+            {"lim": _PER_PAGE, "off": fp["offset"]},
+        ).fetchall()
         for row in rows:
             d = dict(row._mapping)
             d["_job_class"] = _extract_job_class(d.get("payload", ""))
@@ -92,6 +117,24 @@ def index(request: Request) -> Response:
             failed_jobs.append(d)
     except Exception:
         failed_table_missing = True
+
+    try:
+        count_row = raw("SELECT COUNT(*) FROM jobs").fetchone()
+        pending_total = int(count_row[0]) if count_row else 0
+        pp = _build_pagination(pending_page, pending_total)
+        pending_pagination = pp
+        rows = raw(
+            "SELECT * FROM jobs ORDER BY id DESC LIMIT :lim OFFSET :off",
+            {"lim": _PER_PAGE, "off": pp["offset"]},
+        ).fetchall()
+        for row in rows:
+            d = dict(row._mapping)
+            d["_status"] = _job_status(d)
+            d["_job_class"] = _extract_job_class(d.get("payload", ""))
+            d["_created_at_fmt"] = _fmt_time(d.get("created_at"))
+            pending_jobs.append(d)
+    except Exception:
+        jobs_table_missing = True
 
     # ── Throughput (last 24 h from jobs_history) ──────────────────────
     throughput: list[dict] = []
@@ -166,6 +209,8 @@ def index(request: Request) -> Response:
             "failed_jobs": failed_jobs,
             "jobs_table_missing": jobs_table_missing,
             "failed_table_missing": failed_table_missing,
+            "failed_pagination": failed_pagination,
+            "pending_pagination": pending_pagination,
             "throughput": throughput,
             "queue_stats": queue_stats,
             "history_table_missing": history_table_missing,
