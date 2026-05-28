@@ -11,6 +11,31 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.20] — 2026-05-28
+
+### Added
+
+- **Boolean field toggle** — Boolean fields in the admin resource index table are now clickable toggles when the user has update permission. Clicking flips the value inline via `fetch()` (no page reload) through the new `POST /resources/{key}/{id}/field-toggle` endpoint.
+- **`AdminResource.title_attribute`** — Resources can now set `title_attribute = "slug"` (or any column name) as a class variable to explicitly control the display title used in relationships, form selects, breadcrumbs, and the show-page heading. Falls back to the existing auto-discovery (`name` → `title` → `id`) when not set.
+- **HasMany panel filter & sort** — Relationship panels on the resource show page now include a search input and sortable column headers. Sort/filter state is carried in URL query params (`rel_{attribute}_sort`, `rel_{attribute}_dir`, `rel_{attribute}_search`).
+
+### Changed
+
+- **BelongsTo values link in index table** — BelongsTo field cells in the resource index table are now rendered as links to the related record's show page (matching the existing behaviour on the detail page).
+- **HasMany first-cell link** — The first data cell in each HasMany relationship panel is now a link to the related record's show page, in addition to the existing "View →" action column.
+- **Sortable column icons** — Sortable columns in the resource index always show a bi-directional sort icon. The active sort column shows a directional ↑/↓ arrow in indigo.
+- **Debug panel Redis resilience** — `RedisSessionStore._read()` and `save()` now catch connection errors silently; the debug panel Session tab also catches errors and displays "session unavailable" instead of crashing.
+
+---
+
+## [0.4.19] — 2026-05-27
+
+### Added
+
+- **Router `head()` and `options()` methods** — `Router` now exposes dedicated `head(uri, action)` and `options(uri, action)` registration helpers, completing coverage of all standard HTTP verbs. `Router.any()` also now includes `OPTIONS` in its method list.
+
+---
+
 ## [0.4.18] — 2026-05-27
 
 ### Changed

@@ -178,6 +178,7 @@ class _Admin:
             # Use POST with hidden _method field for update/delete (HTML form compat)
             router.post("/resources/{resource_key}/{id}", _method_router)
             router.post("/resources/{resource_key}/{id}/delete", res_ctrl.destroy)
+            router.post("/resources/{resource_key}/{id}/field-toggle", res_ctrl.toggle_field)
 
             # Actions
             router.post("/resources/{resource_key}/actions/{action_slug}", action_ctrl.run)

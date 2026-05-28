@@ -168,7 +168,17 @@
                                    class="group inline-flex items-center gap-x-1 {% if sort == field.attribute %}text-indigo-400{% else %}text-white hover:text-gray-300{% endif %}">
                                     {{ field.label }}
                                     {% if sort == field.attribute %}
-                                    <span class="ml-1 text-gray-400">{% if dir == 'asc' %}↑{% else %}↓{% endif %}</span>
+                                    <svg class="size-3.5 shrink-0" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                        {% if dir == 'asc' %}
+                                        <path fill-rule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.22 2.22V2.75A.75.75 0 0 1 8 2Z" clip-rule="evenodd"/>
+                                        {% else %}
+                                        <path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L5.03 6.78a.75.75 0 0 1-1.06-1.06l3.5-3.5a.75.75 0 0 1 1.06 0l3.5 3.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd"/>
+                                        {% endif %}
+                                    </svg>
+                                    {% else %}
+                                    <svg class="size-3.5 shrink-0 text-gray-500" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                        <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06l3.25 3.25a.75.75 0 0 0 1.06 0l3.25-3.25a.75.75 0 0 0-1.06-1.06L8 7.19 5.28 4.22ZM5.28 11.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1-1.06 1.06L8 8.81l-2.72 2.97Z"/>
+                                    </svg>
                                     {% endif %}
                                 </a>
                                 {% else %}
@@ -200,10 +210,21 @@
                             {% for field in fields %}
                             <td class="{% if loop.first and not actions %}py-4 pl-4 pr-3 sm:pl-0 font-medium text-white group-has-checked:text-indigo-400{% else %}px-3 py-4 text-sm text-gray-400{% endif %} whitespace-nowrap text-sm">
                                 {% if field.field_type == 'boolean' %}
-                                    {% if field.value_for(item) %}
+                                    {% set bool_val = field.value_for(item) %}
+                                    {% if can_update %}
+                                    <button type="button"
+                                            data-toggle-url="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/field-toggle"
+                                            data-attribute="{{ field.attribute }}"
+                                            onclick="huntToggleField(this)"
+                                            class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset cursor-pointer transition-colors {% if bool_val %}bg-green-500/10 text-green-400 ring-green-500/20{% else %}bg-gray-400/10 text-gray-400 ring-gray-400/20{% endif %}">
+                                        {{ 'Yes' if bool_val else 'No' }}
+                                    </button>
+                                    {% else %}
+                                    {% if bool_val %}
                                     <span class="inline-flex items-center rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400 ring-1 ring-inset ring-green-500/20">Yes</span>
                                     {% else %}
                                     <span class="inline-flex items-center rounded-md bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">No</span>
+                                    {% endif %}
                                     {% endif %}
                                 {% elif field.field_type == 'badge' %}
                                     {% set val = field.value_for(item) %}
@@ -218,6 +239,15 @@
                                     <span class="inline-flex items-center rounded-md bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-400/20">{{ val }}</span>
                                     {% else %}
                                     <span class="inline-flex items-center rounded-md bg-gray-400/10 px-2 py-1 text-xs font-medium text-gray-400 ring-1 ring-inset ring-gray-400/20">{{ val }}</span>
+                                    {% endif %}
+                                {% elif field.field_type == 'belongs_to' %}
+                                    {% set fk_val = field.value_for(item) %}
+                                    {% set display_text = field.display_value(item) %}
+                                    {% if fk_val is not none and fk_val != '' %}
+                                    <a href="{{ prefix }}/resources/{{ field.related_resource_class.slug() }}/{{ fk_val }}"
+                                       class="text-indigo-400 hover:text-indigo-300">{{ display_text or fk_val }}</a>
+                                    {% else %}
+                                    —
                                     {% endif %}
                                 {% elif field.field_type == 'image' %}
                                     {% set img_url = field.url_for(item) %}
@@ -382,6 +412,21 @@
 
 {% block scripts %}
 <script>
+var _huntCsrf = {{ csrf_token | tojson }};
+function huntToggleField(btn) {
+    var url = btn.dataset.toggleUrl;
+    var attr = btn.dataset.attribute;
+    fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': _huntCsrf},
+        body: JSON.stringify({attribute: attr})
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        var val = data.value;
+        btn.textContent = val ? 'Yes' : 'No';
+        btn.className = 'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset cursor-pointer transition-colors ' +
+            (val ? 'bg-green-500/10 text-green-400 ring-green-500/20' : 'bg-gray-400/10 text-gray-400 ring-gray-400/20');
+    }).catch(function() {});
+}
 function getSelectedIds() {
     return Array.from(document.querySelectorAll('.row-select:checked')).map(function(el) { return el.value; }).join(',');
 }

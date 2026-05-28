@@ -82,7 +82,10 @@ def _build_panel(request: Request, response: Response, elapsed_ms: float) -> str
     session_store = getattr(request, "_session", None)
     session_data: dict = {}
     if session_store is not None:
-        session_data = {k: v for k, v in session_store.all().items() if k not in _PRIVATE_SESSION_KEYS}
+        try:
+            session_data = {k: v for k, v in session_store.all().items() if k not in _PRIVATE_SESSION_KEYS}
+        except Exception:
+            session_data = {"_error": "session unavailable"}
 
     return f"""
 <div id="_hunt_dbg" style="position:fixed;bottom:0;left:0;right:0;z-index:2147483647;font-family:ui-monospace,monospace;font-size:12px;">

@@ -136,6 +136,30 @@ def index(request: Request, resource_key: str) -> Response:
     return Admin._render("admin/resource/index.html", ctx)
 
 
+def toggle_field(request: Request, resource_key: str, id: str) -> Response:
+    from hunt.admin.fields.boolean import Boolean
+    from hunt.http.response import JsonResponse
+
+    resource = _get_resource(resource_key)
+    instance = _get_instance(resource, id)
+    if not resource.can_update(request, instance):
+        raise HttpException(403, "Forbidden.")
+
+    attribute = (request.input("attribute") or "").strip()
+    if not attribute:
+        raise HttpException(400, "Missing attribute.")
+
+    boolean_fields = {f.attribute for f in resource.fields() if isinstance(f, Boolean)}
+    if attribute not in boolean_fields:
+        raise HttpException(400, "Not a boolean field.")
+
+    new_value = not bool(instance._attributes.get(attribute))
+    instance.fill({attribute: new_value})
+    instance.save()
+
+    return JsonResponse({"value": new_value})
+
+
 def show(request: Request, resource_key: str, id: str) -> Response:
     from hunt.admin.application import Admin
     from hunt.admin.fields.has_many import HasMany
@@ -154,10 +178,29 @@ def show(request: Request, resource_key: str, id: str) -> Response:
         try:
             related_resource_inst = panel.related_resource_class()
             fk = panel.foreign_key or f"{type(instance).__name__.lower()}_id"
+            rel_attr = panel.attribute
+            rel_sort = request.query(f"rel_{rel_attr}_sort", "")
+            rel_dir = request.query(f"rel_{rel_attr}_dir", "asc")
+            rel_search = request.query(f"rel_{rel_attr}_search", "")
+            if rel_dir not in ("asc", "desc"):
+                rel_dir = "asc"
             rel_query = related_resource_inst.model.query().where(fk, instance._attributes.get("id"))
-            related_data[panel.attribute] = rel_query.limit(20).get()
+            if rel_search:
+                rel_query = related_resource_inst.apply_search(rel_query, rel_search)
+            sortable_cols = related_resource_inst._sortable_columns()
+            if rel_sort and rel_sort in sortable_cols:
+                rel_query = rel_query.order_by(rel_sort, rel_dir)
+            else:
+                rel_query = rel_query.order_by("id", "asc")
+            related_data[rel_attr] = {
+                "items": rel_query.limit(100).get(),
+                "sort": rel_sort,
+                "dir": rel_dir,
+                "search": rel_search,
+            }
         except Exception:
-            related_data[panel.attribute] = []
+            rel_attr = panel.attribute
+            related_data[rel_attr] = {"items": [], "sort": "", "dir": "asc", "search": ""}
 
     from hunt.admin.audit import AuditLog, _read_audit
 

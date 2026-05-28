@@ -26,6 +26,9 @@ class Router:
     def get(self, uri: str, action: Callable) -> Route:
         return self._add(["GET", "HEAD"], uri, action)
 
+    def head(self, uri: str, action: Callable) -> Route:
+        return self._add(["HEAD"], uri, action)
+
     def post(self, uri: str, action: Callable) -> Route:
         return self._add(["POST"], uri, action)
 
@@ -38,8 +41,11 @@ class Router:
     def delete(self, uri: str, action: Callable) -> Route:
         return self._add(["DELETE"], uri, action)
 
+    def options(self, uri: str, action: Callable) -> Route:
+        return self._add(["OPTIONS"], uri, action)
+
     def any(self, uri: str, action: Callable) -> Route:
-        return self._add(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], uri, action)
+        return self._add(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], uri, action)
 
     def match(self, methods: list[str], uri: str, action: Callable) -> Route:
         return self._add(methods, uri, action)

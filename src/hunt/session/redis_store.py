@@ -49,7 +49,10 @@ class RedisSessionStore:
         if not self._id:
             return
         lifetime = _session_lifetime()
-        self._redis().setex(self._key(self._id), lifetime, json.dumps(self._data))
+        try:
+            self._redis().setex(self._key(self._id), lifetime, json.dumps(self._data))
+        except Exception:
+            pass
 
     def regenerate(self) -> str:
         if self._id:
@@ -129,7 +132,10 @@ class RedisSessionStore:
     # ------------------------------------------------------------------
 
     def _read(self, session_id: str) -> dict[str, Any]:
-        raw = self._redis().get(self._key(session_id))
+        try:
+            raw = self._redis().get(self._key(session_id))
+        except Exception:
+            return {}
         if not raw:
             return {}
         try:

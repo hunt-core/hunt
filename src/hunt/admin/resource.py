@@ -19,6 +19,7 @@ class AdminResource:
     model: type  # set on subclass
     label: str | None = None
     label_plural: str | None = None
+    title_attribute: str | None = None
     per_page: int = 10
     per_page_options: ClassVar[list] = [10, 25, 50, 100]
     icon: str = (
@@ -74,6 +75,9 @@ class AdminResource:
     # ------------------------------------------------------------------
 
     def title(self, instance: Any) -> str:
+        if self.title_attribute:
+            val = instance._attributes.get(self.title_attribute)
+            return str(val) if val is not None else ""
         attrs = instance._attributes
         for key in ("name", "title", "id"):
             val = attrs.get(key)
