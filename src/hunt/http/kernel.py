@@ -22,6 +22,7 @@ def parsedate_to_datetime_safe(value: str) -> float | None:
     except (TypeError, ValueError):
         return None
 
+
 # Static files are served from an *allowlist* of safe web asset extensions —
 # anything not listed falls through to routing (and a 404) rather than being
 # served from disk. This is safer than a denylist: new/unknown extensions are
@@ -30,11 +31,36 @@ def parsedate_to_datetime_safe(value: str) -> float | None:
 # <script>); add it explicitly if you trust your asset pipeline.
 _DEFAULT_STATIC_EXTENSIONS = frozenset(
     {
-        ".html", ".htm", ".css", ".js", ".mjs", ".map", ".json", ".txt",
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".bmp",
-        ".woff", ".woff2", ".ttf", ".otf", ".eot",
-        ".pdf", ".mp4", ".webm", ".mp3", ".ogg", ".wav",
-        ".xml", ".webmanifest", ".csv",
+        ".html",
+        ".htm",
+        ".css",
+        ".js",
+        ".mjs",
+        ".map",
+        ".json",
+        ".txt",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".avif",
+        ".ico",
+        ".bmp",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".eot",
+        ".pdf",
+        ".mp4",
+        ".webm",
+        ".mp3",
+        ".ogg",
+        ".wav",
+        ".xml",
+        ".webmanifest",
+        ".csv",
     }
 )
 
@@ -45,6 +71,7 @@ def _static_extensions() -> frozenset[str]:
         return _DEFAULT_STATIC_EXTENSIONS
     exts = {("." + e.strip().lstrip(".")).lower() for e in raw.split(",") if e.strip()}
     return frozenset(exts) or _DEFAULT_STATIC_EXTENSIONS
+
 
 _SENSITIVE_FLASH_KEYS = frozenset(
     {

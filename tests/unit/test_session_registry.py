@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
-
+from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # SessionRegistry unit tests (DB calls mocked)
@@ -48,7 +47,6 @@ class TestSessionRegistryRegister:
         with patch("hunt.session.registry.connection") as mock_conn:
             mock_conn.return_value.connect.return_value = ctx
             SessionRegistry().register("sid", 1, user_agent=long_ua)
-        _, kwargs = conn.execute.call_args
         params = conn.execute.call_args[0][1]
         assert len(params["ua"]) == 512
 
@@ -89,7 +87,7 @@ class TestSessionRegistryGet:
     def test_get_returns_dict_when_found(self):
         from hunt.session.registry import SessionRegistry
 
-        ctx, conn = _make_conn_ctx(fetchone=(1, 2), keys=["a", "b"])
+        ctx, _conn = _make_conn_ctx(fetchone=(1, 2), keys=["a", "b"])
         with patch("hunt.session.registry.connection") as mock_conn:
             mock_conn.return_value.connect.return_value = ctx
             result = SessionRegistry().get("sid")
@@ -98,7 +96,7 @@ class TestSessionRegistryGet:
     def test_get_returns_none_when_not_found(self):
         from hunt.session.registry import SessionRegistry
 
-        ctx, conn = _make_conn_ctx(fetchone=None, keys=["id"])
+        ctx, _conn = _make_conn_ctx(fetchone=None, keys=["id"])
         with patch("hunt.session.registry.connection") as mock_conn:
             mock_conn.return_value.connect.return_value = ctx
             result = SessionRegistry().get("missing")
