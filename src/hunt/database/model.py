@@ -273,6 +273,34 @@ class Model(metaclass=ModelMeta):
         return cls.query().where(column, operator_or_value, value)
 
     @classmethod
+    def where_in(cls, column: str, values: list) -> QueryBuilder:
+        return cls.query().where_in(column, values)
+
+    @classmethod
+    def where_not_in(cls, column: str, values: list) -> QueryBuilder:
+        return cls.query().where_not_in(column, values)
+
+    @classmethod
+    def or_where(cls, column: str, operator_or_value: Any, value: Any = None) -> QueryBuilder:
+        return cls.query().or_where(column, operator_or_value, value)
+
+    @classmethod
+    def where_null(cls, column: str) -> QueryBuilder:
+        return cls.query().where_null(column)
+
+    @classmethod
+    def where_not_null(cls, column: str) -> QueryBuilder:
+        return cls.query().where_not_null(column)
+
+    @classmethod
+    def where_group(cls, callback: Callable[[QueryBuilder], QueryBuilder]) -> QueryBuilder:
+        return cls.query().where_group(callback)
+
+    @classmethod
+    def or_where_group(cls, callback: Callable[[QueryBuilder], QueryBuilder]) -> QueryBuilder:
+        return cls.query().or_where_group(callback)
+
+    @classmethod
     def create(cls, data: dict | None = None, **kwargs: Any) -> Model:
         attrs = {**(data or {}), **kwargs}
         instance = cls(attrs)

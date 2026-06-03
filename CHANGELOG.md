@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.22] — 2026-06-03
+
+### Added
+
+- **`Model` where classmethods** — The following query-builder methods are now available as classmethods directly on `Model`, matching the documented API: `where_in`, `where_not_in`, `or_where`, `where_null`, `where_not_null`, `where_group`, `or_where_group`.
+
+---
+
 ## [0.4.21] — 2026-06-02
 
 ### Added
