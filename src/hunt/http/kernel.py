@@ -4,7 +4,7 @@ import inspect
 import mimetypes
 import os
 import time
-from collections.abc import Callable
+from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,29 +14,37 @@ from hunt.http.response import HttpException, JsonResponse, RedirectResponse, Re
 from hunt.http.router import RouteNotFoundException, Router
 from hunt.validation.validator import ValidationException
 
-_BLOCKED_EXTENSIONS = frozenset(
+
+def parsedate_to_datetime_safe(value: str) -> float | None:
+    """Parse an HTTP-date header into a POSIX timestamp, or None if malformed."""
+    try:
+        return parsedate_to_datetime(value).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+# Static files are served from an *allowlist* of safe web asset extensions —
+# anything not listed falls through to routing (and a 404) rather than being
+# served from disk. This is safer than a denylist: new/unknown extensions are
+# refused by default. Override with the STATIC_EXTENSIONS env var (comma list,
+# leading dots optional). SVG is intentionally excluded (can carry inline
+# <script>); add it explicitly if you trust your asset pipeline.
+_DEFAULT_STATIC_EXTENSIONS = frozenset(
     {
-        ".py",
-        ".pyc",
-        ".pyo",
-        ".pyd",
-        ".pyw",
-        ".env",
-        ".sh",
-        ".bash",
-        ".cfg",
-        ".ini",
-        ".toml",
-        ".yaml",
-        ".yml",
-        ".htaccess",
-        ".htpasswd",
-        ".phar",
-        ".phtml",
-        ".php",
-        ".svg",  # SVG can contain inline <script> — serve as download if needed
+        ".html", ".htm", ".css", ".js", ".mjs", ".map", ".json", ".txt",
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".bmp",
+        ".woff", ".woff2", ".ttf", ".otf", ".eot",
+        ".pdf", ".mp4", ".webm", ".mp3", ".ogg", ".wav",
+        ".xml", ".webmanifest", ".csv",
     }
 )
+
+
+def _static_extensions() -> frozenset[str]:
+    raw = os.environ.get("STATIC_EXTENSIONS", "").strip()
+    if not raw:
+        return _DEFAULT_STATIC_EXTENSIONS
+    exts = {("." + e.strip().lstrip(".")).lower() for e in raw.split(",") if e.strip()}
+    return frozenset(exts) or _DEFAULT_STATIC_EXTENSIONS
 
 _SENSITIVE_FLASH_KEYS = frozenset(
     {
@@ -62,6 +70,7 @@ class HttpKernel:
         self._global_middleware: list[Any] = list(global_middleware or [])
         self._exception_handler = exception_handler
         self._app = app
+        self._offload_sync = os.environ.get("OFFLOAD_SYNC_HANDLERS", "false").lower() == "true"
 
         if os.environ.get("APP_ENV", "local") != "testing":
             from hunt.http.middleware.request_id import RequestId
@@ -79,13 +88,18 @@ class HttpKernel:
         if scope["type"] != "http":
             return
 
-        if await self._try_static(scope.get("path", "/"), send):
+        if await self._try_static(scope, send):
             return
 
         if scope.get("path") == "/health" and os.environ.get("HEALTH_CHECK_ENABLED", "true").lower() != "false":
-            from hunt import __version__
+            # Don't leak the framework version to anonymous probes by default;
+            # opt in with HEALTH_CHECK_VERBOSE=true for internal monitoring.
+            payload = {"status": "ok"}
+            if os.environ.get("HEALTH_CHECK_VERBOSE", "false").lower() == "true":
+                from hunt import __version__
 
-            resp = JsonResponse({"status": "ok", "version": __version__})
+                payload["version"] = __version__
+            resp = JsonResponse(payload)
             await resp(scope, receive, send)
             return
 
@@ -96,12 +110,16 @@ class HttpKernel:
         resp = await self._handle(request)
         elapsed_ms = (time.monotonic() - start) * 1000
 
-        from hunt.log.manager import Log
+        # Per-request access logging is opt-out: disable with ACCESS_LOG=false when
+        # a reverse proxy already records access logs. The write itself is routed
+        # off the event loop by the log manager (see _maybe_non_blocking).
+        if os.environ.get("ACCESS_LOG", "true").lower() != "false":
+            from hunt.log.manager import Log
 
-        Log.info(
-            f"{request.method} {request.path} {resp.status}",
-            ms=f"{elapsed_ms:.1f}",
-        )
+            Log.info(
+                f"{request.method} {request.path} {resp.status}",
+                ms=f"{elapsed_ms:.1f}",
+            )
 
         await resp(scope, receive, send)
 
@@ -130,7 +148,7 @@ class HttpKernel:
         request._debug_route_uri = route.uri  # type: ignore[attr-defined]
 
         all_middleware = [*self._global_middleware, *route._middleware]
-        handler = self._make_handler(route.action, params)
+        handler = self._make_handler(route, params)
         pipeline = self._build_pipeline(all_middleware, handler)
 
         try:
@@ -158,37 +176,78 @@ class HttpKernel:
         except Exception:
             return Response("", 204, {"Allow": allow_value})
 
-    def _make_handler(self, action: Callable, params: dict[str, str]) -> Next:
+    @staticmethod
+    def _binding_plan(route: Any, params: dict[str, str]) -> list[tuple[str, str, Any]]:
+        """Resolve how each handler parameter is supplied, computed once per route.
+
+        ``inspect.signature`` and the annotation checks are reflective and were
+        previously run on every request; the result is stable for a given route
+        (its URL params don't change), so we cache the plan on the route object.
+        Each entry is ``(name, kind, extra)``.
+        """
+        plan = getattr(route, "_binding_plan", None)
+        if plan is not None:
+            return plan
+
+        from hunt.database.model import Model
+        from hunt.validation.form_request import FormRequest
+
+        plan = []
+        for name, param in inspect.signature(route.action).parameters.items():
+            if name in ("request", "req"):
+                plan.append((name, "request", None))
+            elif name in params:
+                ann = param.annotation
+                if ann is not inspect.Parameter.empty and isinstance(ann, type) and issubclass(ann, Model):
+                    plan.append((name, "route_model", ann))
+                else:
+                    plan.append((name, "route_str", None))
+            elif param.default is not inspect.Parameter.empty:
+                plan.append((name, "default", param.default))
+            elif param.annotation is not inspect.Parameter.empty:
+                ann = param.annotation
+                if isinstance(ann, type) and issubclass(ann, FormRequest):
+                    plan.append((name, "form_request", ann))
+        route._binding_plan = plan
+        return plan
+
+    def _make_handler(self, route: Any, params: dict[str, str]) -> Next:
+        action = route.action
+        plan = self._binding_plan(route, params)
+        # A synchronous handler that does blocking DB/IO stalls the whole event
+        # loop while it runs. When OFFLOAD_SYNC_HANDLERS=true, run such handlers
+        # in a worker thread (asyncio.to_thread copies the contextvars the request
+        # context relies on) so other requests keep being served. Async handlers
+        # are never offloaded — they already yield to the loop.
+        offload = self._offload_sync and not inspect.iscoroutinefunction(action)
+
         async def handler(request: Request) -> Response:
-            from hunt.database.model import Model
-            from hunt.validation.form_request import FormRequest
-
-            sig = inspect.signature(action)
             kwargs: dict[str, Any] = {}
-            for name, param in sig.parameters.items():
-                if name in ("request", "req"):
+            for name, kind, extra in plan:
+                if kind == "request":
                     kwargs[name] = request
-                elif name in params:
-                    ann = param.annotation
-                    if ann is not inspect.Parameter.empty and isinstance(ann, type) and issubclass(ann, Model):
-                        try:
-                            kwargs[name] = ann.resolve_route_binding(params[name])
-                        except ValueError as exc:
-                            from hunt.http.exceptions import HttpException
+                elif kind == "route_str":
+                    kwargs[name] = params[name]
+                elif kind == "route_model":
+                    try:
+                        kwargs[name] = extra.resolve_route_binding(params[name])
+                    except ValueError as exc:
+                        from hunt.http.exceptions import HttpException
 
-                            raise HttpException(404, "Not Found.") from exc
-                    else:
-                        kwargs[name] = params[name]
-                elif param.default is not inspect.Parameter.empty:
-                    kwargs[name] = param.default
-                elif param.annotation is not inspect.Parameter.empty:
-                    ann = param.annotation
-                    if isinstance(ann, type) and issubclass(ann, FormRequest):
-                        form_req = ann(request)
-                        form_req.validated()  # raises ValidationException on failure
-                        kwargs[name] = form_req
+                        raise HttpException(404, "Not Found.") from exc
+                elif kind == "default":
+                    kwargs[name] = extra
+                elif kind == "form_request":
+                    form_req = extra(request)
+                    form_req.validated()  # raises ValidationException on failure
+                    kwargs[name] = form_req
 
-            result = action(**kwargs)
+            if offload:
+                import asyncio
+
+                result = await asyncio.to_thread(action, **kwargs)
+            else:
+                result = action(**kwargs)
             if inspect.iscoroutine(result):
                 result = await result
 
@@ -271,47 +330,105 @@ class HttpKernel:
 
                 logging.getLogger("hunt").error("Lifespan hook %r raised: %s", handler, exc)
 
-    @staticmethod
-    async def _try_static(path: str, send: Any) -> bool:
-        """Serve a file from public/ or storage/app/public/ if one exists at the path."""
-        cwd = Path.cwd()
-        file_path = await HttpKernel._resolve_static(path, cwd)
+    def _static_roots(self) -> list[tuple[str, Path]]:
+        """Existing static roots, resolved once and cached for the worker's lifetime.
+
+        Each entry is ``(kind, resolved_path)`` where kind is ``"public"`` or
+        ``"storage"`` — both directories are named ``public`` on disk, so the kind
+        tag is what distinguishes how a URL path maps onto them.
+        """
+        cached = getattr(self, "_static_roots_cache", None)
+        if cached is None:
+            cwd = Path.cwd()
+            candidates = [("public", cwd / "public"), ("storage", cwd / "storage" / "app" / "public")]
+            cached = [(kind, p.resolve()) for kind, p in candidates if p.is_dir()]
+            self._static_roots_cache = cached  # type: ignore[attr-defined]
+        return cached
+
+    async def _try_static(self, scope: dict, send: Any) -> bool:
+        """Serve a file from public/ or storage/app/public/ if one exists at the path.
+
+        Adds Cache-Control/ETag/Last-Modified and answers conditional requests
+        (If-None-Match / If-Modified-Since) with 304 — without reading the body.
+        """
+        path = scope.get("path", "/")
+        # Cheap pre-filter: only "/" or paths with an allowed extension can ever
+        # match a static asset, so dynamic routes skip all filesystem syscalls.
+        allowed = _static_extensions()
+        if path != "/" and os.path.splitext(path)[1].lower() not in allowed:
+            return False
+
+        roots = self._static_roots()
+        if not roots:
+            return False
+
+        file_path = self._resolve_static(path, roots, allowed)
         if file_path is None:
             return False
 
+        try:
+            stat = file_path.stat()
+        except OSError:
+            return False
+
+        etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+        last_modified = formatdate(stat.st_mtime, usegmt=True)
+        cache_control = os.environ.get("STATIC_CACHE_CONTROL", "public, max-age=3600")
+
+        base_headers: list[tuple[bytes, bytes]] = [
+            (b"etag", etag.encode()),
+            (b"last-modified", last_modified.encode()),
+            (b"cache-control", cache_control.encode()),
+        ]
+
+        if self._static_not_modified(scope, etag, stat.st_mtime):
+            await send({"type": "http.response.start", "status": 304, "headers": base_headers})
+            await send({"type": "http.response.body", "body": b""})
+            return True
+
         data = file_path.read_bytes()
         content_type, _ = mimetypes.guess_type(str(file_path))
-        content_type = (content_type or "application/octet-stream").encode()
-
-        await send(
-            {
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [
-                    (b"content-type", content_type),
-                    (b"content-length", str(len(data)).encode()),
-                ],
-            }
-        )
+        headers = [
+            (b"content-type", (content_type or "application/octet-stream").encode()),
+            (b"content-length", str(len(data)).encode()),
+            *base_headers,
+        ]
+        await send({"type": "http.response.start", "status": 200, "headers": headers})
         await send({"type": "http.response.body", "body": data})
         return True
 
     @staticmethod
-    async def _resolve_static(path: str, cwd: Path) -> Path | None:
+    def _static_not_modified(scope: dict, etag: str, mtime: float) -> bool:
+        """Return True if the client's cached copy is still fresh."""
+        headers = {k.lower(): v for k, v in scope.get("headers", [])}
+        inm = headers.get(b"if-none-match")
+        if inm is not None:
+            return etag.encode() in {t.strip() for t in inm.split(b",")}
+        ims = headers.get(b"if-modified-since")
+        if ims is not None:
+            parsed = parsedate_to_datetime_safe(ims.decode("latin-1"))
+            if parsed is not None:
+                return int(mtime) <= int(parsed)
+        return False
+
+    @staticmethod
+    def _resolve_static(path: str, roots: list[tuple[str, Path]], allowed: frozenset[str]) -> Path | None:
         """Return the Path to serve for the given URL path, or None."""
-        candidates: list[tuple[Path, str]] = [
-            (cwd / "public", path.lstrip("/") or "index.html"),
-            (cwd / "storage" / "app" / "public", path[len("/storage/") :] if path.startswith("/storage/") else ""),
-        ]
-        for root, rel in candidates:
-            if not rel or not root.is_dir():
+        for kind, root in roots:
+            if kind == "public":
+                rel = path.lstrip("/") or "index.html"
+            elif path.startswith("/storage/"):
+                rel = path[len("/storage/") :]
+            else:
+                continue
+            if not rel:
                 continue
             try:
                 resolved = (root / rel).resolve()
-                resolved.relative_to(root.resolve())
+                resolved.relative_to(root)
             except (ValueError, OSError):
                 continue
-            if resolved.suffix.lower() in _BLOCKED_EXTENSIONS:
+            if resolved.suffix.lower() not in allowed:
                 continue
             if resolved.is_file():
                 return resolved

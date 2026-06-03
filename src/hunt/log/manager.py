@@ -1,12 +1,53 @@
 from __future__ import annotations
 
+import atexit
 import datetime
 import json
 import logging
 import logging.handlers
 import os
+import queue
 from pathlib import Path
 from typing import Any
+
+# Background listeners owning the real (blocking) file handlers when logging is
+# run off-thread. Tracked so they can be flushed/stopped on reconfigure + exit.
+_listeners: list[logging.handlers.QueueListener] = []
+_atexit_registered = False
+
+
+def _stop_listeners() -> None:
+    """Flush and stop all background log listeners."""
+    while _listeners:
+        listener = _listeners.pop()
+        try:
+            listener.stop()
+        except Exception:
+            pass
+
+
+def _maybe_non_blocking(handler: logging.Handler) -> logging.Handler:
+    """Move file I/O for ``handler`` onto a background thread via a queue.
+
+    Synchronous file writes in a request handler block the async event loop;
+    routing the records through a ``QueueHandler`` lets the loop continue while a
+    listener thread does the disk write. Disabled under APP_ENV=testing (to avoid
+    thread churn across tests) and when LOG_NON_BLOCKING=false.
+    """
+    if os.environ.get("APP_ENV", "local") == "testing":
+        return handler
+    if os.environ.get("LOG_NON_BLOCKING", "true").lower() == "false":
+        return handler
+
+    global _atexit_registered
+    q: queue.Queue = queue.Queue(-1)
+    listener = logging.handlers.QueueListener(q, handler, respect_handler_level=True)
+    listener.start()
+    _listeners.append(listener)
+    if not _atexit_registered:
+        atexit.register(_stop_listeners)
+        _atexit_registered = True
+    return logging.handlers.QueueHandler(q)
 
 
 def _make_formatter(fmt: str = "[%(asctime)s] %(levelname)-8s %(message)s") -> logging.Formatter:
@@ -63,7 +104,7 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
             log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
         )
         handler.setFormatter(_JsonFormatter() if use_json else _make_formatter())
-        logger.addHandler(handler)
+        logger.addHandler(_maybe_non_blocking(handler))
 
     elif driver == "daily":
         log_path = config.get("path")
@@ -78,7 +119,7 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
             log_path, when="midnight", backupCount=days, encoding="utf-8"
         )
         handler.setFormatter(_JsonFormatter() if use_json else _make_formatter())
-        logger.addHandler(handler)
+        logger.addHandler(_maybe_non_blocking(handler))
 
     elif driver == "stderr":
         handler = logging.StreamHandler()
@@ -152,6 +193,8 @@ class _LogManager:
                 default="stack",
             )
         """
+        # Stop any listeners from a previous configuration before rebuilding.
+        _stop_listeners()
         if channels:
             for name, cfg in channels.items():
                 self._channels[name] = _build_channel(name, cfg, base_path=base_path)

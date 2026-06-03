@@ -50,7 +50,12 @@ class SecureHeaders(Middleware):
 
         # Content-Security-Policy — restricts resource origins; override via env var.
         # Skip if the response already carries a CSP (e.g. set by a route-specific handler).
+        # The default also forbids plugins (object-src) and framing (frame-ancestors),
+        # and pins base-uri to defend against <base> tag injection.
         if "Content-Security-Policy" not in response._headers:
-            csp = os.environ.get("SECURE_CONTENT_SECURITY_POLICY", "default-src 'self'")
+            csp = os.environ.get(
+                "SECURE_CONTENT_SECURITY_POLICY",
+                "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'",
+            )
             if csp:
                 response.header("Content-Security-Policy", csp)

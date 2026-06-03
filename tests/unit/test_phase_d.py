@@ -634,58 +634,112 @@ class TestSniffMime:
 
 
 class TestResolveStatic:
-    def test_serves_from_public(self, tmp_path):
-        import asyncio
+    @staticmethod
+    def _roots(tmp_path):
+        """Build the (kind, resolved_path) roots list for whichever dirs exist."""
+        candidates = [("public", tmp_path / "public"), ("storage", tmp_path / "storage" / "app" / "public")]
+        return [(kind, p.resolve()) for kind, p in candidates if p.is_dir()]
 
+    def _resolve(self, path, tmp_path):
+        from hunt.http.kernel import HttpKernel, _static_extensions
+
+        return HttpKernel._resolve_static(path, self._roots(tmp_path), _static_extensions())
+
+    def test_serves_from_public(self, tmp_path):
         public = tmp_path / "public"
         public.mkdir()
         (public / "style.css").write_bytes(b"body{}")
-        from hunt.http.kernel import HttpKernel
 
-        result = asyncio.run(HttpKernel._resolve_static("/style.css", tmp_path))
+        result = self._resolve("/style.css", tmp_path)
         assert result is not None
         assert result.read_bytes() == b"body{}"
 
     def test_serves_from_storage_app_public(self, tmp_path):
-        import asyncio
-
         storage_pub = tmp_path / "storage" / "app" / "public"
         storage_pub.mkdir(parents=True)
         (storage_pub / "photo.jpg").write_bytes(b"fakejpeg")
-        from hunt.http.kernel import HttpKernel
 
-        result = asyncio.run(HttpKernel._resolve_static("/storage/photo.jpg", tmp_path))
+        result = self._resolve("/storage/photo.jpg", tmp_path)
         assert result is not None
         assert result.read_bytes() == b"fakejpeg"
 
-    def test_blocked_extension_not_served(self, tmp_path):
-        import asyncio
-
+    def test_disallowed_extension_not_served(self, tmp_path):
         public = tmp_path / "public"
         public.mkdir()
         (public / "secret.env").write_bytes(b"SECRET=bad")
-        from hunt.http.kernel import HttpKernel
 
-        result = asyncio.run(HttpKernel._resolve_static("/secret.env", tmp_path))
-        assert result is None
+        # .env is not on the static allowlist → refused.
+        assert self._resolve("/secret.env", tmp_path) is None
+
+    def test_unknown_extension_refused_by_allowlist(self, tmp_path):
+        public = tmp_path / "public"
+        public.mkdir()
+        (public / "archive.tar").write_bytes(b"data")
+
+        # An extension absent from the allowlist is refused (denylist would miss this).
+        assert self._resolve("/archive.tar", tmp_path) is None
 
     def test_nonexistent_returns_none(self, tmp_path):
-        import asyncio
-
-        from hunt.http.kernel import HttpKernel
-
-        result = asyncio.run(HttpKernel._resolve_static("/missing.png", tmp_path))
-        assert result is None
+        (tmp_path / "public").mkdir()
+        assert self._resolve("/missing.png", tmp_path) is None
 
     def test_path_traversal_blocked(self, tmp_path):
+        public = tmp_path / "public"
+        public.mkdir()
+        assert self._resolve("/../etc/passwd", tmp_path) is None
+
+
+class TestStaticServingHeaders:
+    def _kernel(self):
+        from hunt.http.kernel import HttpKernel
+        from hunt.http.router import Router
+
+        return HttpKernel(Router())
+
+    def test_caching_headers_and_conditional_304(self, tmp_path, monkeypatch):
         import asyncio
 
         public = tmp_path / "public"
         public.mkdir()
-        from hunt.http.kernel import HttpKernel
+        (public / "app.css").write_bytes(b"body{}")
+        monkeypatch.chdir(tmp_path)
+        kernel = self._kernel()
 
-        result = asyncio.run(HttpKernel._resolve_static("/../etc/passwd", tmp_path))
-        assert result is None
+        sent: list = []
+
+        async def send(msg):
+            sent.append(msg)
+
+        # First request: full 200 with caching headers.
+        ok = asyncio.run(kernel._try_static({"type": "http", "path": "/app.css", "headers": []}, send))
+        assert ok
+        start = sent[0]
+        assert start["status"] == 200
+        headers = dict(start["headers"])
+        etag = headers[b"etag"]
+        assert b"cache-control" in headers
+        assert b"last-modified" in headers
+
+        # Second request with matching If-None-Match: 304, empty body, no read.
+        sent.clear()
+        scope = {"type": "http", "path": "/app.css", "headers": [(b"if-none-match", etag)]}
+        ok = asyncio.run(kernel._try_static(scope, send))
+        assert ok
+        assert sent[0]["status"] == 304
+        assert sent[1]["body"] == b""
+
+    def test_dynamic_path_skips_filesystem(self, tmp_path, monkeypatch):
+        import asyncio
+
+        (tmp_path / "public").mkdir()
+        monkeypatch.chdir(tmp_path)
+        kernel = self._kernel()
+
+        async def send(msg):  # pragma: no cover - must not be called
+            raise AssertionError("send should not be called for a dynamic route")
+
+        # No extension → never treated as static, returns False without serving.
+        assert asyncio.run(kernel._try_static({"type": "http", "path": "/users/42", "headers": []}, send)) is False
 
 
 # ---------------------------------------------------------------------------

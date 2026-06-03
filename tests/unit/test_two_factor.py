@@ -85,23 +85,23 @@ class TestTwoFactorService:
         assert TwoFactor.hash_recovery_code(code) != TwoFactor.hash_recovery_code(code)
 
     def test_encrypt_decrypt_secret_roundtrip(self, monkeypatch):
-        monkeypatch.setenv("APP_KEY", "test-app-key-for-unit-tests")
+        monkeypatch.setenv("APP_KEY", "test-app-key-for-unit-tests-0123456789")
         secret = TwoFactor.generate_secret()
         encrypted = TwoFactor.encrypt_secret(secret)
         assert encrypted != secret
         assert TwoFactor.decrypt_secret(encrypted) == secret
 
     def test_encrypt_secret_is_not_plaintext(self, monkeypatch):
-        monkeypatch.setenv("APP_KEY", "test-app-key-for-unit-tests")
+        monkeypatch.setenv("APP_KEY", "test-app-key-for-unit-tests-0123456789")
         secret = TwoFactor.generate_secret()
         encrypted = TwoFactor.encrypt_secret(secret)
         assert secret not in encrypted
 
     def test_decrypt_fails_with_wrong_key(self, monkeypatch):
-        monkeypatch.setenv("APP_KEY", "key-a")
+        monkeypatch.setenv("APP_KEY", "key-a-padded-to-the-32-char-minimum-aaaa")
         secret = TwoFactor.generate_secret()
         encrypted = TwoFactor.encrypt_secret(secret)
-        monkeypatch.setenv("APP_KEY", "key-b")
+        monkeypatch.setenv("APP_KEY", "key-b-padded-to-the-32-char-minimum-bbbb")
         from cryptography.fernet import InvalidToken
 
         with pytest.raises(InvalidToken):

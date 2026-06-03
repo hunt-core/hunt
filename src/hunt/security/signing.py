@@ -10,7 +10,13 @@ import os
 _MIN_KEY_LENGTH = 32
 
 
-def _get_app_key() -> bytes:
+def app_key_bytes() -> bytes:
+    """Return the decoded APP_KEY as raw bytes, validating its length.
+
+    Handles the ``base64:`` prefix written by ``hunt key:generate`` and enforces
+    a 32-byte minimum. This is the single source of truth for the application key
+    used by both HMAC signing and value encryption (``hunt.support.crypt``).
+    """
     key = os.environ.get("APP_KEY", "")
     if not key:
         raise RuntimeError("APP_KEY is not set. Run `hunt key:generate` to generate one.")
@@ -25,6 +31,10 @@ def _get_app_key() -> bytes:
             "or use `hunt key:generate` to generate a secure base64 key."
         )
     return key.encode()
+
+
+# Backwards-compatible private alias.
+_get_app_key = app_key_bytes
 
 
 def sign(payload: str) -> str:

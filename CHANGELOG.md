@@ -11,6 +11,30 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.21] — 2026-06-02
+
+### Added
+
+- **`CompressResponse` middleware** — Opt-in gzip compression for text/JSON responses when the client sends `Accept-Encoding: gzip`. Skips already-encoded, small (`GZIP_MIN_LENGTH`, default 1024 B), and non-text responses; sets `Vary: Accept-Encoding`. Tunable via `GZIP_ENABLED`, `GZIP_MIN_LENGTH`, `GZIP_LEVEL`.
+- **Non-blocking file logging** — File and daily log channels now route records through a `QueueHandler` to a background listener thread so disk writes no longer block the event loop. Enabled by default outside `APP_ENV=testing`; disable with `LOG_NON_BLOCKING=false`.
+- **Static asset caching** — Files served from `public/` and `storage/app/public/` now send `Cache-Control` (`STATIC_CACHE_CONTROL`, default `public, max-age=3600`), `ETag`, and `Last-Modified`, and answer conditional `If-None-Match` / `If-Modified-Since` requests with `304` without reading the body.
+- **`OFFLOAD_SYNC_HANDLERS`** — Optional flag to run synchronous route handlers in a worker thread (via `asyncio.to_thread`, preserving the request context) so blocking DB/IO doesn't stall the event loop. Async handlers are never offloaded.
+- **`HEALTH_CHECK_VERBOSE`** — Opt-in flag to include the framework version in the `/health` payload.
+
+### Changed
+
+- **Static file serving is now an allowlist** — Only known-safe web asset extensions are served from disk (override with `STATIC_EXTENSIONS`); anything else falls through to routing. Replaces the previous extension denylist, which could miss unanticipated types. SVG remains excluded by default. Dynamic routes now skip all filesystem syscalls.
+- **Route binding plan cached per route** — `inspect.signature()` and annotation resolution for handler parameters are now computed once per route instead of on every request.
+- **Per-request access logging is opt-out** — Set `ACCESS_LOG=false` to skip the per-request log line (e.g. when a reverse proxy already logs).
+- **Hardened default Content-Security-Policy** — Now `default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'` (override via `SECURE_CONTENT_SECURITY_POLICY`).
+- **`/health` no longer leaks the framework version** by default.
+
+### Security
+
+- **Unified application-key handling** — `hunt.support.crypt` now derives its Fernet key from the same validated loader as HMAC signing (`hunt.security.signing.app_key_bytes`): it respects the `base64:` prefix produced by `hunt key:generate` and enforces the 32-byte minimum length, which value encryption previously skipped. Values encrypted under the pre-0.4.21 derivation still decrypt via a legacy-key fallback.
+
+---
+
 ## [0.4.20] — 2026-05-28
 
 ### Added

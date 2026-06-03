@@ -121,19 +121,38 @@ class TestJsonFormatter:
 
 
 class TestBuildChannel:
-    def test_file_driver_creates_rotating_handler(self, tmp_path):
+    def test_file_driver_creates_rotating_handler(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LOG_NON_BLOCKING", "false")  # inspect the underlying handler directly
         log_file = tmp_path / "test.log"
         logger = _build_channel("test_file", {"driver": "file", "path": str(log_file)})
         assert isinstance(logger, logging.Logger)
         assert logger.name == "hunt.test_file"
         assert any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers)
 
-    def test_daily_driver_creates_timed_handler(self, tmp_path):
+    def test_daily_driver_creates_timed_handler(self, tmp_path, monkeypatch):
         import logging.handlers
 
+        monkeypatch.setenv("LOG_NON_BLOCKING", "false")
         log_file = tmp_path / "daily.log"
         logger = _build_channel("test_daily", {"driver": "daily", "path": str(log_file)})
         assert any(isinstance(h, logging.handlers.TimedRotatingFileHandler) for h in logger.handlers)
+
+    def test_file_driver_non_blocking_uses_queue_handler(self, tmp_path, monkeypatch):
+        import logging.handlers
+
+        from hunt.log import manager as log_manager
+
+        monkeypatch.setenv("LOG_NON_BLOCKING", "true")
+        monkeypatch.setenv("APP_ENV", "production")
+        log_file = tmp_path / "test.log"
+        try:
+            logger = _build_channel("test_nonblocking", {"driver": "file", "path": str(log_file)})
+            assert any(isinstance(h, logging.handlers.QueueHandler) for h in logger.handlers)
+            # The real rotating handler is owned by a background listener.
+            assert log_manager._listeners
+            assert isinstance(log_manager._listeners[-1].handlers[0], logging.handlers.RotatingFileHandler)
+        finally:
+            log_manager._stop_listeners()
 
     def test_stderr_driver_creates_stream_handler(self):
         logger = _build_channel("test_stderr", {"driver": "stderr"})
@@ -150,6 +169,7 @@ class TestBuildChannel:
 
     def test_json_formatter_used_when_env_set(self, tmp_path, monkeypatch):
         monkeypatch.setenv("LOG_FORMAT", "json")
+        monkeypatch.setenv("LOG_NON_BLOCKING", "false")  # inspect the underlying handler directly
         log_file = tmp_path / "test.log"
         logger = _build_channel("test_json", {"driver": "file", "path": str(log_file)})
         for handler in logger.handlers:
