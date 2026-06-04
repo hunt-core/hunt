@@ -147,3 +147,85 @@ async def test_async_pluck():
     await User.async_create({"name": "Pluck Target", "email": "pluck@example.com"})
     names = await User.query().where("name", "Pluck Target").async_pluck("name")
     assert "Pluck Target" in names
+
+
+# ------------------------------------------------------------------
+# insert / insert_get_id / async_insert — RETURNING behaviour
+# ------------------------------------------------------------------
+
+
+def test_insert_get_id_returns_id():
+    pk = User.query().insert_get_id({"name": "IGI", "email": "igi@example.com"})
+    assert pk is not None
+    assert isinstance(pk, int)
+
+
+async def test_async_insert_accepts_returning_kwarg():
+    # Before the fix this raised TypeError: async_insert() got an unexpected
+    # keyword argument 'returning'.
+    pk = await User.query().async_insert(
+        {"name": "AsyncRet", "email": "ar@example.com"}, returning="id"
+    )
+    # SQLite is not PostgreSQL so returning is ignored and lastrowid is used.
+    assert pk is not None
+
+
+def test_insert_pg_returning(monkeypatch):
+    """PostgreSQL dialect: RETURNING clause is appended and the pk comes from fetchone."""
+    from unittest.mock import MagicMock
+
+    import hunt.database.query_builder as qb_mod
+
+    captured_sql: list[str] = []
+
+    mock_result = MagicMock()
+    mock_result.fetchone.return_value = (42,)
+
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = lambda s: mock_conn
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    mock_engine = MagicMock()
+    mock_engine.dialect.name = "postgresql"
+    mock_engine.connect.return_value = mock_conn
+
+    def fake_timed_execute(conn, sql_text, bindings):
+        captured_sql.append(str(sql_text))
+        return mock_result
+
+    monkeypatch.setattr(qb_mod, "connection", lambda name=None: mock_engine)
+    monkeypatch.setattr("hunt.database.debug.timed_execute", fake_timed_execute)
+
+    from hunt.database.query_builder import QueryBuilder
+
+    pk = QueryBuilder("users").insert({"name": "PGUser"}, returning="id")
+
+    assert pk == 42
+    assert any("RETURNING" in sql for sql in captured_sql)
+
+
+def test_insert_get_id_pg(monkeypatch):
+    """insert_get_id uses RETURNING on PostgreSQL and returns the correct pk."""
+    from unittest.mock import MagicMock
+
+    import hunt.database.query_builder as qb_mod
+
+    mock_result = MagicMock()
+    mock_result.fetchone.return_value = (7,)
+
+    mock_conn = MagicMock()
+    mock_conn.__enter__ = lambda s: mock_conn
+    mock_conn.__exit__ = MagicMock(return_value=False)
+
+    mock_engine = MagicMock()
+    mock_engine.dialect.name = "postgresql"
+    mock_engine.connect.return_value = mock_conn
+
+    monkeypatch.setattr(qb_mod, "connection", lambda name=None: mock_engine)
+    monkeypatch.setattr("hunt.database.debug.timed_execute", lambda *a, **kw: mock_result)
+
+    from hunt.database.query_builder import QueryBuilder
+
+    pk = QueryBuilder("users").insert_get_id({"name": "PGUser2"})
+
+    assert pk == 7
