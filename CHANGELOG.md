@@ -11,11 +11,13 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.4.23] — 2026-06-04
+## [0.4.24] — 2026-06-04
 
 ### Fixed
 
 - **Model `id` populated after `create()` on PostgreSQL** — `INSERT` queries for PostgreSQL now use `RETURNING <pk>` so the auto-incremented primary key is set on the model instance immediately after `save()` / `create()`. SQLite and MySQL continue to use `lastrowid` as before.
+- **`insert_get_id()` now works on PostgreSQL** — previously returned `None` because PostgreSQL doesn't populate `cursor.lastrowid`; now uses `RETURNING id` (configurable via the `key` parameter).
+- **`async_insert()` supports `returning` keyword** — the async variant now accepts and forwards a `returning` column name, consistent with the sync `insert()` method.
 
 ---
 

@@ -619,8 +619,8 @@ class QueryBuilder:
     async def async_paginate(self, per_page: int = 15, page: int = 1) -> Any:
         return await _run_sync(self.paginate, per_page, page)
 
-    async def async_insert(self, data: dict) -> Any:
-        return await _run_sync(self.insert, data)
+    async def async_insert(self, data: dict, returning: str | None = None) -> Any:
+        return await _run_sync(self.insert, data, returning)
 
     async def async_insert_many(self, rows: list[dict]) -> None:
         return await _run_sync(self.insert_many, rows)
@@ -651,8 +651,8 @@ class QueryBuilder:
             conn.commit()
             return result.lastrowid
 
-    def insert_get_id(self, data: dict) -> Any:
-        return self.insert(data)
+    def insert_get_id(self, data: dict, key: str = "id") -> Any:
+        return self.insert(data, returning=key)
 
     def insert_many(self, rows: list[dict]) -> None:
         """Bulk-insert rows in a single SQL statement."""
