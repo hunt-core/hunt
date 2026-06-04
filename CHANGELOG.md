@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.23] — 2026-06-04
+
+### Fixed
+
+- **Model `id` populated after `create()` on PostgreSQL** — `INSERT` queries for PostgreSQL now use `RETURNING <pk>` so the auto-incremented primary key is set on the model instance immediately after `save()` / `create()`. SQLite and MySQL continue to use `lastrowid` as before.
+
+---
+
 ## [0.4.22] — 2026-06-03
 
 ### Added

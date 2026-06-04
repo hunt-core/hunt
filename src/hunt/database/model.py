@@ -126,7 +126,7 @@ class Model(metaclass=ModelMeta):
             self._fire_event("updated")
         else:
             self._fire_event("creating")
-            pk = self.query().insert(self._attributes)
+            pk = self.query().insert(self._attributes, returning=self.primary_key)
             self._attributes[self.primary_key] = pk
             self._exists = True
             self._fire_event("created")

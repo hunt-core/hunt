@@ -631,7 +631,7 @@ class QueryBuilder:
     async def async_delete(self) -> int:
         return await _run_sync(self.delete)
 
-    def insert(self, data: dict) -> Any:
+    def insert(self, data: dict, returning: str | None = None) -> Any:
         from hunt.database.debug import timed_execute
 
         cols = [_ident(k) for k in data.keys()]
@@ -639,8 +639,15 @@ class QueryBuilder:
         placeholders = ", ".join(f":{k}" for k in data.keys())
         sql = f"INSERT INTO {self._table} ({columns}) VALUES ({placeholders})"
         engine = connection(self._conn_name)
+        is_pg = engine.dialect.name == "postgresql"
+        if is_pg and returning:
+            sql += f" RETURNING {_ident(returning)}"
         with engine.connect() as conn:
             result = timed_execute(conn, text(sql), data)
+            if is_pg and returning:
+                row = result.fetchone()
+                conn.commit()
+                return row[0] if row else None
             conn.commit()
             return result.lastrowid
 

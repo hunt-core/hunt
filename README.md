@@ -187,6 +187,15 @@ Post.find_or_fail(1)
 Post.where("published", True).order_by("created_at", "desc").get()
 Post.where("views", ">", 100).limit(10).paginate(per_page=10, page=1)
 Post.first_or_create({"slug": "hello-world"}, {"title": "Hello World"})
+
+Post.where_in("status", ["draft", "published"]).get()
+Post.where_not_in("role", ["banned"]).get()
+Post.where_null("deleted_at").get()
+Post.where_not_null("published_at").get()
+Post.or_where("status", "archived").get()
+
+# Grouped conditions
+Post.where_group(lambda q: q.where("status", "draft").or_where("status", "review")).get()
 ```
 
 **Creating and saving:**
@@ -514,6 +523,7 @@ class AuthMiddleware(Middleware):
 | `SecureHeaders` | `hunt.http.middleware.secure_headers` | Add `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, opt-in HSTS and CSP |
 | `TrustProxies` | `hunt.http.middleware.trust_proxies` | Rewrite `request.ip` and `request.scheme` from `X-Forwarded-For` / `X-Forwarded-Proto` when behind a proxy or load balancer |
 | `MaintenanceMode` | `hunt.http.middleware.maintenance` | Return 503 with `Retry-After` when `.maintenance` sentinel file is present |
+| `CompressResponse` | `hunt.http.middleware.compress` | Gzip responses for clients that send `Accept-Encoding: gzip`; skips small, already-encoded, or non-text responses; sets `Vary: Accept-Encoding` |
 | `EnsureTwoFactorAuthenticated` | `hunt.http.middleware.two_factor` | Redirect users who have 2FA enabled but haven't completed the challenge |
 
 ---
@@ -616,6 +626,15 @@ hunt vendor:publish --force                # overwrite existing files
 | `MAX_BODY_SIZE` | `10485760` | Max request body in bytes (default 10 MB); requests over the limit return 413 |
 | `SECURE_HSTS_SECONDS` | `0` | Enable `Strict-Transport-Security` with this max-age; `0` disables |
 | `SECURE_CONTENT_SECURITY_POLICY` | — | Value for the `Content-Security-Policy` header |
+| `ACCESS_LOG` | `true` | Set to `false` to skip per-request access log lines (e.g. when a reverse proxy already logs) |
+| `STATIC_CACHE_CONTROL` | `public, max-age=3600` | `Cache-Control` header sent with static file responses |
+| `STATIC_EXTENSIONS` | *(built-in allowlist)* | Comma-separated list of file extensions to serve as static files; replaces the default allowlist |
+| `OFFLOAD_SYNC_HANDLERS` | `false` | Run synchronous route handlers in a worker thread via `asyncio.to_thread` to avoid blocking the event loop |
+| `HEALTH_CHECK_VERBOSE` | `false` | Include the framework version in the `/health` response payload |
+| `LOG_NON_BLOCKING` | `true` | Route file/daily log writes through a background thread queue so disk I/O doesn't block the event loop; set to `false` to disable |
+| `GZIP_ENABLED` | `true` | Enable gzip compression when `CompressResponse` middleware is in the stack |
+| `GZIP_MIN_LENGTH` | `1024` | Minimum response body size in bytes before gzip is applied |
+| `GZIP_LEVEL` | `6` | zlib compression level (1–9) used by `CompressResponse` |
 
 ---
 
