@@ -138,7 +138,7 @@ class TestMorphs:
         bp.morphs("commentable")
         id_col = next(c for c in bp.columns if c.name == "commentable_id")
         assert "BIGINT" in id_col.type
-        assert id_col.unsigned is True
+        assert id_col.is_unsigned is True
 
     def test_morphs_type_is_varchar(self):
         bp = Blueprint("comments")

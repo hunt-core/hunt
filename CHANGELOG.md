@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.27] — 2026-06-06
+
+### Fixed
+
+- **`ColumnDef.unsigned()` now chains correctly** — the instance attribute was named `unsigned` (a `bool`), which shadowed any method of the same name and made `.unsigned()` uncallable in a fluent chain. The attribute is now `is_unsigned` (consistent with `is_nullable` and `is_unique`) and the method is renamed from `unsigned_modifier()` to `unsigned()`, making `bp.big_integer("user_id").unsigned().nullable()` work as expected.
+
+---
+
 ## [0.4.26] — 2026-06-06
 
 ### Changed

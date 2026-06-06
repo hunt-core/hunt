@@ -36,7 +36,7 @@ class ColumnDef:
         self.default_value: Any = kwargs.get("default", None)
         self.primary: bool = kwargs.get("primary", False)
         self.is_unique: bool = kwargs.get("unique", False)
-        self.unsigned: bool = kwargs.get("unsigned", False)
+        self.is_unsigned: bool = kwargs.get("unsigned", False)
         self.auto_increment: bool = kwargs.get("auto_increment", False)
         self.length: int | None = kwargs.get("length", None)
         self.references_col: str | None = None
@@ -63,8 +63,8 @@ class ColumnDef:
         self.is_unique = True
         return self
 
-    def unsigned_modifier(self) -> ColumnDef:
-        self.unsigned = True
+    def unsigned(self) -> ColumnDef:
+        self.is_unsigned = True
         return self
 
     def references(self, column: str) -> ColumnDef:
@@ -387,7 +387,7 @@ class Blueprint:
             sql = f"{col.name} {col_type}({col.length})"
         else:
             sql = f"{col.name} {col_type}"
-        if col.unsigned and dialect == "mysql":
+        if col.is_unsigned and dialect == "mysql":
             sql += " UNSIGNED"
         if col.primary:
             sql += " PRIMARY KEY"
