@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.26] — 2026-06-06
+
+### Changed
+
+- **Admin sidebar groups are now collapsible** — each `NavGroup` header is a clickable button with a chevron indicator. Click to collapse or expand the group. The active group (containing the current page) is always kept open; all other groups restore their last state from `localStorage`.
+
+---
+
 ## [0.4.25] — 2026-06-06
 
 ### Fixed

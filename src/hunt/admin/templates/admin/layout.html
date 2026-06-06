@@ -19,8 +19,11 @@
 {% for item in nav %}
 {% if item.item_type == 'group' %}
 <li>
-    <div class="text-xs/6 font-semibold text-gray-400">{{ item.label }}</div>
-    <ul role="list" class="-mx-2 mt-2 space-y-1">
+    <button type="button" data-group="{{ item.label | lower | replace(' ', '-') }}" onclick="toggleNavGroup(this)" class="flex w-full items-center justify-between rounded px-1 text-xs/6 font-semibold text-gray-400 hover:text-gray-200 transition-colors">
+        <span>{{ item.label }}</span>
+        <svg class="nav-chevron size-3.5 shrink-0 transition-transform duration-200" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
+    </button>
+    <ul role="list" class="nav-group-items -mx-2 mt-2 space-y-1">
         {% for subitem in item.items %}<li>{{ nav_item(subitem, prefix, request) }}</li>{% endfor %}
     </ul>
 </li>
@@ -41,6 +44,9 @@
     <script type="text/javascript" src="{{ prefix }}/assets/trix.umd.min.js"></script>
     <script>window._huntAdmin={prefix:{{ prefix | tojson }},resourceKey:{{ resource_key | default('') | tojson }},csrfToken:{{ csrf_token | tojson }}};</script>
     <style>
+        /* Collapsible nav groups */
+        .nav-group-items { overflow: hidden; max-height: 600px; opacity: 1; transition: max-height .2s ease-out, opacity .15s ease, margin-top .2s ease; }
+        .nav-group-items.collapsed { max-height: 0 !important; opacity: 0; margin-top: 0 !important; }
         /* Mobile sidebar slide transition */
         #mobile-sidebar { display: none; }
         #mobile-sidebar.open { display: block; }
@@ -248,6 +254,30 @@
 function openMobileSidebar() { document.getElementById('mobile-sidebar').classList.add('open'); document.body.style.overflow = 'hidden'; }
 function closeMobileSidebar() { document.getElementById('mobile-sidebar').classList.remove('open'); document.body.style.overflow = ''; }
 function toggleProfileMenu() { document.getElementById('profile-menu').classList.toggle('open'); }
+function toggleNavGroup(btn) {
+    var key = btn.dataset.group;
+    var ul = btn.nextElementSibling;
+    var collapsed = ul.classList.toggle('collapsed');
+    btn.querySelector('.nav-chevron').style.transform = collapsed ? 'rotate(-90deg)' : '';
+    try {
+        var s = JSON.parse(localStorage.getItem('_hunt_nav') || '{}');
+        s[key] = collapsed;
+        localStorage.setItem('_hunt_nav', JSON.stringify(s));
+    } catch(e) {}
+}
+document.addEventListener('DOMContentLoaded', function() {
+    var s = {};
+    try { s = JSON.parse(localStorage.getItem('_hunt_nav') || '{}'); } catch(e) {}
+    document.querySelectorAll('[data-group]').forEach(function(btn) {
+        var key = btn.dataset.group;
+        var ul = btn.nextElementSibling;
+        var hasActive = ul.querySelector('a.text-white') !== null;
+        if (!hasActive && s[key] === true) {
+            ul.classList.add('collapsed');
+            btn.querySelector('.nav-chevron').style.transform = 'rotate(-90deg)';
+        }
+    });
+});
 document.addEventListener('click', function(e) {
     var btn = document.getElementById('profile-btn'), menu = document.getElementById('profile-menu');
     if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) menu.classList.remove('open');
