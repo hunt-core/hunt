@@ -3,6 +3,53 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
+# Admin._build_nav — custom navigation preserves System group
+# ---------------------------------------------------------------------------
+
+
+class TestAdminBuildNav:
+    def _fresh_admin(self):
+        from hunt.admin.application import _Admin
+
+        return _Admin()
+
+    def test_default_nav_includes_system_group(self):
+        admin = self._fresh_admin()
+        nav = admin._build_nav()
+        labels = [g.label for g in nav]
+        assert "System" in labels
+
+    def test_custom_nav_still_includes_system_group(self):
+        from hunt.admin.navigation import NavGroup, NavLink
+
+        admin = self._fresh_admin()
+        custom_link = NavLink("My Section", "/custom")
+        admin.navigation([NavGroup("Custom", [custom_link])])
+        nav = admin._build_nav()
+        labels = [g.label for g in nav]
+        assert "Custom" in labels
+        assert "System" in labels
+
+    def test_system_group_contains_health_and_queue(self):
+        admin = self._fresh_admin()
+        admin.navigation([])
+        nav = admin._build_nav()
+        system_group = next(g for g in nav if g.label == "System")
+        system_labels = [item.label for item in system_group.items]
+        assert "Health" in system_labels
+        assert "Queue" in system_labels
+
+    def test_custom_nav_items_come_before_system(self):
+        from hunt.admin.navigation import NavGroup, NavLink
+
+        admin = self._fresh_admin()
+        admin.navigation([NavGroup("First", [NavLink("X", "/x")])])
+        nav = admin._build_nav()
+        assert nav[0].label == "First"
+        assert nav[-1].label == "System"
+
+
+# ---------------------------------------------------------------------------
 # DateRangeFilter
 # ---------------------------------------------------------------------------
 

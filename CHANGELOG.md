@@ -11,6 +11,14 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.25] — 2026-06-06
+
+### Fixed
+
+- **Admin custom navigation no longer hides System routes** — `Admin.navigation()` previously caused an early return in `_build_nav()`, dropping the System group (Health, Queue, Cache, Schedule, Routes, Logs, Media, Sessions) from the sidebar. The System group is now always appended after any custom nav items.
+
+---
+
 ## [0.4.24] — 2026-06-04
 
 ### Fixed

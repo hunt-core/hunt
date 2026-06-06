@@ -87,11 +87,12 @@ class _Admin:
         from hunt.admin.navigation import _DEFAULT_TOOL_ICON, NavGroup, NavLink, NavResource
 
         if self._nav is not None:
-            return self._nav
-        items: list = []
-        if self._resources:
-            items.append(NavGroup("Resources", [NavResource(r) for r in self._resources]))
-        if self._tools:
+            items = list(self._nav)
+        else:
+            items = []
+            if self._resources:
+                items.append(NavGroup("Resources", [NavResource(r) for r in self._resources]))
+        if self._nav is None and self._tools:
             tool_links = [
                 NavLink(
                     t["label"],
