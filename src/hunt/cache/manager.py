@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -297,22 +298,32 @@ class _CacheManager:
         self,
         driver: str = "file",
         path: Path | None = None,
-        host: str = "127.0.0.1",
-        port: int = 6379,
-        db: int = 0,
+        host: str | None = None,
+        port: int | None = None,
+        db: int | None = None,
         password: str | None = None,
-        prefix: str = "hunt_cache:",
+        prefix: str | None = None,
     ) -> None:
+        """Configure the cache store. Redis connection settings not passed
+        explicitly fall back to the REDIS_* / CACHE_PREFIX env vars."""
         if driver == "array":
             self._store = ArrayStore()
         elif driver == "redis":
-            self._store = RedisStore(host=host, port=port, db=db, password=password, prefix=prefix)
+            self._store = RedisStore(
+                host=host or os.environ.get("REDIS_HOST", "127.0.0.1"),
+                port=port if port is not None else int(os.environ.get("REDIS_PORT", "6379")),
+                db=db if db is not None else int(os.environ.get("REDIS_DB", "0")),
+                password=password if password is not None else (os.environ.get("REDIS_PASSWORD") or None),
+                prefix=prefix or os.environ.get("CACHE_PREFIX", "hunt_cache:"),
+            )
         else:
-            self._store = FileStore(path or Path("storage/framework/cache"))
+            self._store = FileStore(path or Path(os.environ.get("CACHE_PATH", "storage/framework/cache")))
 
     def _get_store(self) -> ArrayStore | FileStore | RedisStore:
         if self._store is None:
-            self._store = ArrayStore()
+            # Unconfigured: honour CACHE_DRIVER, defaulting to the in-memory
+            # store so tests and scripts never touch disk or a server.
+            self.configure(os.environ.get("CACHE_DRIVER", "array"))
         return self._store
 
     def get(self, key: str, default: Any = None) -> Any:

@@ -101,36 +101,66 @@ def _backoff_delay(backoff: int | list[int], attempt: int) -> int:
 @click.option("--sleep", default=3, type=int, help="Seconds to sleep when no jobs are available")
 @click.option("--tries", default=3, type=int, help="Max attempts before marking a job as failed")
 @click.option("--once", is_flag=True, default=False, help="Process a single job and exit")
-def queue_work_command(queue: str, sleep: int, tries: int, once: bool) -> None:
+@click.option(
+    "--driver",
+    "driver_name",
+    default=None,
+    type=click.Choice(["database", "redis"]),
+    help="Queue driver to pull jobs from (defaults to QUEUE_DRIVER env)",
+)
+def queue_work_command(queue: str, sleep: int, tries: int, once: bool, driver_name: str | None) -> None:
     """Process queued jobs."""
-    from dotenv import load_dotenv
-
-    env_file = Path.cwd() / ".env"
-    if env_file.exists():
-        load_dotenv(env_file, override=False)
-
     sys.path.insert(0, str(Path.cwd()))
 
-    from hunt.queue.drivers.database import DatabaseDriver
+    # Boot the application so config/queue.py (and the other config files)
+    # configure the managers, and event listener allowlists are populated.
+    booted = False
+    if (Path.cwd() / "bootstrap" / "app.py").exists():
+        try:
+            importlib.import_module("bootstrap.app")
+            booted = True
+        except Exception as exc:
+            click.echo(f"  WARNING: failed to boot application: {exc}", err=True)
+    if not booted:
+        # No bootable app — load .env so the env-var fallbacks work.
+        from dotenv import load_dotenv
 
-    driver = DatabaseDriver()
+        env_file = Path.cwd() / ".env"
+        if env_file.exists():
+            load_dotenv(env_file, override=False)
+
+    from hunt.queue.drivers.sync import SyncDriver
+    from hunt.queue.manager import Queue, _build_driver
+
+    if driver_name:
+        driver = _build_driver(driver_name)
+    else:
+        driver = Queue._get_driver()
+        if isinstance(driver, SyncDriver):
+            # Sync jobs run inline at dispatch time and never reach a backend,
+            # so a worker polls the database queue instead.
+            driver = _build_driver("database")
+    name = "redis" if driver.__class__.__name__ == "RedisDriver" else "database"
 
     # Warn if queued-event allowlists are empty — QueuedEventListener jobs will
     # be rejected at runtime unless the app's EventServiceProvider is booted.
-    try:
-        from hunt.events.queued import _ALLOWED_EVENT_CLASSES, _ALLOWED_LISTENER_CLASSES
+    # When the app booted above, empty allowlists just mean no queued listeners
+    # are registered, which is not worth a warning.
+    if not booted:
+        try:
+            from hunt.events.queued import _ALLOWED_EVENT_CLASSES, _ALLOWED_LISTENER_CLASSES
 
-        if not _ALLOWED_LISTENER_CLASSES and not _ALLOWED_EVENT_CLASSES:
-            click.echo(
-                "  WARNING: Event listener allowlists are empty. "
-                "QueuedEventListener jobs will fail. "
-                "Boot your application before starting the worker to populate allowlists.",
-                err=True,
-            )
-    except ImportError:
-        pass
+            if not _ALLOWED_LISTENER_CLASSES and not _ALLOWED_EVENT_CLASSES:
+                click.echo(
+                    "  WARNING: Event listener allowlists are empty. "
+                    "QueuedEventListener jobs will fail. "
+                    "Boot your application before starting the worker to populate allowlists.",
+                    err=True,
+                )
+        except ImportError:
+            pass
 
-    click.echo(f"  Processing queue: {queue}. Press Ctrl+C to stop.")
+    click.echo(f"  Processing queue: {queue} (driver: {name}). Press Ctrl+C to stop.")
     try:
         while True:
             job_data = driver.pop(queue)

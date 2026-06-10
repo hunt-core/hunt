@@ -76,7 +76,7 @@ def app_info_command(as_json: bool) -> None:
             "session": os.environ.get("SESSION_DRIVER", "file"),
             "queue": os.environ.get("QUEUE_DRIVER", "sync"),
             "cache": os.environ.get("CACHE_DRIVER", "file"),
-            "mail": os.environ.get("MAIL_DRIVER", "(not set)"),
+            "mail": os.environ.get("MAIL_MAILER", "(not set)"),
         },
     }
 

@@ -79,6 +79,9 @@ def new_command(name: str, force: bool, starter: str | None) -> None:
     _write(target / "config" / "view.py", _CONFIG_VIEW)
     _write(target / "config" / "mail.py", _CONFIG_MAIL)
     _write(target / "config" / "filesystems.py", _CONFIG_FILESYSTEMS)
+    _write(target / "config" / "cache.py", _CONFIG_CACHE)
+    _write(target / "config" / "queue.py", _CONFIG_QUEUE)
+    _write(target / "config" / "logging.py", _CONFIG_LOGGING)
     _write(target / "routes" / "web.py", _ROUTES_WEB)
     _write(target / "routes" / "api.py", _ROUTES_API)
     _write(target / "routes" / "admin.py", _ROUTES_ADMIN)
@@ -400,6 +403,60 @@ config = {
 }
 """
 
+_CONFIG_CACHE = """\
+import os
+
+config = {
+    "driver": os.environ.get("CACHE_DRIVER", "file"),
+    # Used by the file driver. Relative paths resolve against the project root.
+    "path": "storage/framework/cache",
+    # Used by the redis driver.
+    "host": os.environ.get("REDIS_HOST", "127.0.0.1"),
+    "port": int(os.environ.get("REDIS_PORT", "6379")),
+    "db": int(os.environ.get("REDIS_DB", "0")),
+    "password": os.environ.get("REDIS_PASSWORD") or None,
+    "prefix": os.environ.get("CACHE_PREFIX", "hunt_cache:"),
+}
+"""
+
+_CONFIG_QUEUE = """\
+import os
+
+config = {
+    "driver": os.environ.get("QUEUE_DRIVER", "sync"),
+    # Used by the redis driver.
+    "host": os.environ.get("REDIS_HOST", "127.0.0.1"),
+    "port": int(os.environ.get("REDIS_PORT", "6379")),
+    "db": int(os.environ.get("REDIS_DB", "0")),
+    "password": os.environ.get("REDIS_PASSWORD") or None,
+    "prefix": "hunt_queue",
+}
+"""
+
+_CONFIG_LOGGING = """\
+import os
+
+config = {
+    "default": os.environ.get("LOG_CHANNEL", "file"),
+    "channels": {
+        "file": {
+            "driver": "file",
+            # Relative paths resolve against the project root.
+            "path": "storage/logs/hunt.log",
+            "level": os.environ.get("LOG_LEVEL", "debug"),
+        },
+        "stderr": {
+            "driver": "stderr",
+            "level": os.environ.get("LOG_LEVEL", "debug"),
+        },
+        "stack": {
+            "driver": "stack",
+            "channels": ["file", "stderr"],
+        },
+    },
+}
+"""
+
 _ROUTES_WEB = """\
 from hunt.http.router import Router
 
@@ -429,33 +486,15 @@ from hunt.http.middleware.session import StartSession
 from hunt.http.middleware.csrf import VerifyCsrfToken
 from hunt.view.factory import ViewFactory
 from hunt.exceptions.handler import ExceptionHandler
-from hunt.log.manager import Log
-from hunt.cache.manager import Cache
 from hunt.storage.manager import Storage
 from hunt.support.helpers import _set_app
 
 BASE_PATH = Path(__file__).resolve().parent.parent
 
+# Constructing the Application loads .env and the config/ directory, and
+# configures the log, cache, queue, mail and storage managers from it.
 application = Application(BASE_PATH)
 _set_app(application)
-
-# -- Logging
-Log.configure(
-    log_path=BASE_PATH / "storage" / "logs" / "hunt.log",
-    level=os.environ.get("LOG_LEVEL", "debug"),
-)
-
-# -- Cache
-Cache.configure(
-    driver=os.environ.get("CACHE_DRIVER", "file"),
-    path=BASE_PATH / "storage" / "framework" / "cache",
-    host=os.environ.get("REDIS_HOST", "127.0.0.1"),
-    port=int(os.environ.get("REDIS_PORT", "6379")),
-    password=os.environ.get("REDIS_PASSWORD") or None,
-)
-
-# -- Storage
-Storage.configure(application.config.get("filesystems", {}))
 
 # -- Service providers
 from app.providers.app_service_provider import AppServiceProvider
@@ -1101,8 +1140,16 @@ def register(router: Router) -> None:
 
 # Config files written by `hunt new` and added (never overwritten) by `hunt upgrade`.
 _NEW_CONFIG_FILES: dict[str, str] = {
+    "config/app.py": _CONFIG_APP,
     "config/auth.py": _CONFIG_AUTH,
+    "config/database.py": _CONFIG_DATABASE,
     "config/session.py": _CONFIG_SESSION,
+    "config/view.py": _CONFIG_VIEW,
+    "config/mail.py": _CONFIG_MAIL,
+    "config/filesystems.py": _CONFIG_FILESYSTEMS,
+    "config/cache.py": _CONFIG_CACHE,
+    "config/queue.py": _CONFIG_QUEUE,
+    "config/logging.py": _CONFIG_LOGGING,
 }
 
 # Canonical set of scaffold-managed files written by `hunt new`.

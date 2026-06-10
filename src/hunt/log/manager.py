@@ -97,6 +97,8 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
         if log_path is None:
             log_path = Path("storage/logs/hunt.log")
         log_path = Path(log_path)
+        if not log_path.is_absolute() and base_path is not None:
+            log_path = base_path / log_path
         log_path.parent.mkdir(parents=True, exist_ok=True)
         max_bytes = config.get("max_bytes", 10_485_760)
         backup_count = config.get("backup_count", 5)
@@ -113,6 +115,8 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
         if log_path is None:
             log_path = Path("storage/logs/hunt.log")
         log_path = Path(log_path)
+        if not log_path.is_absolute() and base_path is not None:
+            log_path = base_path / log_path
         log_path.parent.mkdir(parents=True, exist_ok=True)
         days = config.get("days", 7)
         handler = logging.handlers.TimedRotatingFileHandler(
@@ -168,7 +172,7 @@ class _LogManager:
     def configure(
         self,
         log_path: Path | str | None = None,
-        level: str = "debug",
+        level: str | None = None,
         max_bytes: int = 10_485_760,
         backup_count: int = 5,
         channels: dict[str, dict] | None = None,
@@ -198,14 +202,21 @@ class _LogManager:
         if channels:
             for name, cfg in channels.items():
                 self._channels[name] = _build_channel(name, cfg, base_path=base_path)
+            if default not in self._channels:
+                default = None
             self._default = default or next(iter(channels))
             self._default_logger = self._channels[self._default]
         else:
-            # Backward-compatible single-channel setup
+            # Backward-compatible single-channel setup. The channel driver
+            # comes from LOG_CHANNEL ("file", "daily" or "stderr"); "stack"
+            # needs a channels dict, so it falls back to "file" here.
+            driver = os.environ.get("LOG_CHANNEL", "file")
+            if driver == "stack":
+                driver = "file"
             cfg = {
-                "driver": "file",
+                "driver": driver,
                 "path": log_path,
-                "level": level,
+                "level": level or os.environ.get("LOG_LEVEL", "debug"),
                 "max_bytes": max_bytes,
                 "backup_count": backup_count,
             }
@@ -227,6 +238,11 @@ class _LogManager:
         return _ChannelProxy(logger)
 
     def _get(self) -> logging.Logger:
+        if self._default_logger is None and os.environ.get("LOG_CHANNEL"):
+            # Unconfigured but LOG_CHANNEL is set: build the channel from env.
+            # Without LOG_CHANNEL we keep the bare fallback logger so tests
+            # and scripts never create storage/logs as a side effect.
+            self.configure()
         if self._default_logger is not None:
             return self._default_logger
         return logging.getLogger("hunt")

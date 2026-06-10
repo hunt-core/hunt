@@ -257,3 +257,79 @@ class TestFileStore:
         cache_dir = tmp_path / "deeply" / "nested" / "cache"
         FileStore(cache_dir)
         assert cache_dir.exists()
+
+
+class TestCacheManagerEnv:
+    """The Cache manager configures itself from env vars when not configured explicitly."""
+
+    def _manager(self):
+        from hunt.cache.manager import _CacheManager
+
+        mgr = _CacheManager()
+        mgr._store = None
+        return mgr
+
+    def test_unconfigured_defaults_to_array(self, monkeypatch):
+        from hunt.cache.manager import ArrayStore
+
+        monkeypatch.delenv("CACHE_DRIVER", raising=False)
+        mgr = self._manager()
+        assert isinstance(mgr._get_store(), ArrayStore)
+
+    def test_cache_driver_env_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CACHE_DRIVER", "file")
+        monkeypatch.setenv("CACHE_PATH", str(tmp_path / "cache"))
+        mgr = self._manager()
+        store = mgr._get_store()
+        assert isinstance(store, FileStore)
+        assert store._path == tmp_path / "cache"
+
+    def test_cache_driver_env_redis(self, monkeypatch):
+        import sys
+        from unittest.mock import MagicMock, patch
+
+        from hunt.cache.manager import RedisStore
+
+        monkeypatch.setenv("CACHE_DRIVER", "redis")
+        monkeypatch.setenv("REDIS_HOST", "redis.example.com")
+        monkeypatch.setenv("REDIS_PORT", "6380")
+        monkeypatch.setenv("REDIS_DB", "3")
+        monkeypatch.setenv("REDIS_PASSWORD", "s3cret")
+        monkeypatch.setenv("CACHE_PREFIX", "myapp:")
+        mock_module = MagicMock()
+        with patch.dict(sys.modules, {"redis": mock_module}):
+            mgr = self._manager()
+            store = mgr._get_store()
+        assert isinstance(store, RedisStore)
+        assert store._prefix == "myapp:"
+        mock_module.Redis.assert_called_once_with(
+            host="redis.example.com", port=6380, db=3, password="s3cret", decode_responses=False
+        )
+
+    def test_explicit_args_override_env(self, monkeypatch):
+        import sys
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.setenv("REDIS_HOST", "from-env")
+        monkeypatch.setenv("REDIS_PASSWORD", "env-pass")
+        mock_module = MagicMock()
+        with patch.dict(sys.modules, {"redis": mock_module}):
+            mgr = self._manager()
+            mgr.configure("redis", host="explicit", port=7000, password="arg-pass")
+        mock_module.Redis.assert_called_once_with(
+            host="explicit", port=7000, db=0, password="arg-pass", decode_responses=False
+        )
+
+    def test_empty_redis_password_env_is_none(self, monkeypatch):
+        import sys
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.setenv("REDIS_PASSWORD", "")
+        mock_module = MagicMock()
+        with patch.dict(sys.modules, {"redis": mock_module}):
+            mgr = self._manager()
+            mgr.configure("redis")
+        mock_module.Redis.assert_called_once_with(
+            host="127.0.0.1", port=6379, db=0, password=None, decode_responses=False
+        )

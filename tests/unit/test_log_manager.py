@@ -270,3 +270,76 @@ class TestLogManager:
         manager.error("e")
         manager.critical("c")
         # No exception means all calls succeeded
+
+
+# ---------------------------------------------------------------------------
+# LOG_CHANNEL / LOG_LEVEL env handling
+# ---------------------------------------------------------------------------
+
+
+class TestLogChannelEnv:
+    def test_configure_honors_log_channel_stderr(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LOG_CHANNEL", "stderr")
+        manager = _LogManager()
+        log_file = tmp_path / "app.log"
+        manager.configure(log_path=str(log_file))
+        manager.info("hello")
+        assert not log_file.exists()
+
+    def test_configure_defaults_to_file_channel(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("LOG_CHANNEL", raising=False)
+        manager = _LogManager()
+        log_file = tmp_path / "app.log"
+        manager.configure(log_path=str(log_file))
+        assert log_file.exists()
+
+    def test_stack_env_falls_back_to_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LOG_CHANNEL", "stack")
+        manager = _LogManager()
+        log_file = tmp_path / "app.log"
+        manager.configure(log_path=str(log_file))
+        assert log_file.exists()
+
+    def test_lazy_configure_when_log_channel_set(self, monkeypatch):
+        monkeypatch.setenv("LOG_CHANNEL", "stderr")
+        manager = _LogManager()
+        assert manager._default_logger is None
+        manager.info("hello")
+        assert manager._default_logger is not None
+
+    def test_unconfigured_without_env_keeps_bare_logger(self, monkeypatch):
+        monkeypatch.delenv("LOG_CHANNEL", raising=False)
+        manager = _LogManager()
+        manager.info("hello")
+        assert manager._default_logger is None
+
+    def test_log_level_env_used_when_not_passed(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LOG_LEVEL", "warning")
+        manager = _LogManager()
+        manager.configure(log_path=str(tmp_path / "x.log"))
+        assert manager._default_logger.level == logging.WARNING
+
+    def test_explicit_level_overrides_env(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LOG_LEVEL", "warning")
+        manager = _LogManager()
+        manager.configure(log_path=str(tmp_path / "x.log"), level="error")
+        assert manager._default_logger.level == logging.ERROR
+
+
+class TestRelativeChannelPaths:
+    def test_relative_path_resolved_against_base_path(self, tmp_path):
+        logger = _build_channel(
+            "file",
+            {"driver": "file", "path": "storage/logs/app.log"},
+            base_path=tmp_path,
+        )
+        assert (tmp_path / "storage" / "logs" / "app.log").exists()
+        assert logger.handlers
+
+    def test_default_not_in_channels_falls_back_to_first(self, tmp_path):
+        manager = _LogManager()
+        manager.configure(
+            channels={"stderr": {"driver": "stderr"}},
+            default="daily",
+        )
+        assert manager._default == "stderr"

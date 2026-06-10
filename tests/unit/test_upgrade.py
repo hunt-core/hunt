@@ -224,3 +224,40 @@ def test_does_not_duplicate_patches(project, monkeypatch):
     bootstrap = (project / "bootstrap" / "app.py").read_text()
     assert bootstrap.count("auth_routes(router)") == 1
     assert bootstrap.count("admin_routes(router)") == 1
+
+
+# ---------------------------------------------------------------------------
+# Missing config files are added (never overwritten)
+# ---------------------------------------------------------------------------
+
+
+def test_writes_missing_config_files(project, monkeypatch):
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", {})
+
+    result = CliRunner().invoke(upgrade_command, [])
+
+    assert result.exit_code == 0
+    for rel in (
+        "config/app.py",
+        "config/cache.py",
+        "config/queue.py",
+        "config/logging.py",
+        "config/mail.py",
+        "config/database.py",
+        "config/filesystems.py",
+        "config/view.py",
+    ):
+        assert (project / rel).exists(), f"{rel} was not written"
+        assert f"+ {rel}" in result.output
+
+
+def test_never_overwrites_existing_config_files(project, monkeypatch):
+    monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", {})
+    custom = 'config = {"driver": "custom"}\n'
+    (project / "config").mkdir()
+    (project / "config" / "cache.py").write_text(custom)
+
+    result = CliRunner().invoke(upgrade_command, [])
+
+    assert result.exit_code == 0
+    assert (project / "config" / "cache.py").read_text() == custom

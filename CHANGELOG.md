@@ -11,6 +11,22 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.28] — 2026-06-10
+
+### Added
+
+- **Config files are now the single source of truth for manager configuration.** `Application` applies every `config/*.py` section to its manager at boot: `cache` → `Cache`, `queue` → `Queue`, `logging` → `Log`, `mail` → `Mail`, `filesystems` → `Storage`. Relative `path` values in the cache and logging sections resolve against the project root. Previously `config/mail.py` was loaded but never applied (so `MAIL_MAILER=smtp` was silently ignored), and cache/queue/logging had no config files at all — apps had to forward env vars to each manager by hand in `bootstrap/app.py`.
+- **New `config/cache.py`, `config/queue.py` and `config/logging.py` stubs** — `hunt new` generates them (reading `CACHE_DRIVER`/`QUEUE_DRIVER`/`LOG_CHANNEL`/`LOG_LEVEL`/`REDIS_*` and friends), and `hunt upgrade` now writes **any** missing config file into existing apps, never overwriting existing ones. The generated `bootstrap/app.py` no longer contains `Log.configure`/`Cache.configure`/`Storage.configure` blocks — constructing `Application` does it all.
+- **`queue:work` boots the application** — the worker imports `bootstrap/app.py` when present, so it uses exactly the driver from `config/queue.py` (Redis included) and queued-event allowlists are populated automatically. The `sync` driver falls back to polling the database queue (sync jobs run inline and never reach a backend). A new `--driver database|redis` option overrides the configured driver, and bare environments without a bootable app fall back to `.env`/env vars.
+- **Env-var fallbacks for unconfigured managers** — when no config file exists and the app never boots (scripts, tests), `Cache`, `Queue`, `Mail` and `Log` self-configure from `CACHE_DRIVER`/`CACHE_PREFIX`/`CACHE_PATH`, `QUEUE_DRIVER`, `MAIL_*`, `LOG_CHANNEL`/`LOG_LEVEL` and `REDIS_*` instead of silently using hardcoded defaults. Explicit `configure()` calls always take precedence.
+
+### Fixed
+
+- **`hunt app:info` reported mail as "(not set)"** — it read the nonexistent `MAIL_DRIVER` env var instead of `MAIL_MAILER`.
+- **`Log.configure(channels=...)` no longer crashes when `default` names a missing channel** — it falls back to the first channel.
+
+---
+
 ## [0.4.27] — 2026-06-06
 
 ### Fixed

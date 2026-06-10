@@ -624,3 +624,81 @@ class TestMakeMailCommand:
         out = tmp_path / "app" / "notifications" / "invoice_ready.py"
         assert out.exists()
         assert "InvoiceReady" in out.read_text()
+
+
+# ===========================================================================
+# _MailManager env-var fallback
+# ===========================================================================
+
+
+class TestMailManagerEnvConfig:
+    """An unconfigured Mail manager builds its config from MAIL_* env vars."""
+
+    def test_env_config_applied_on_send(self, monkeypatch):
+        monkeypatch.setenv("MAIL_MAILER", "array")
+        monkeypatch.setenv("MAIL_FROM_ADDRESS", "env@app.com")
+        monkeypatch.setenv("MAIL_FROM_NAME", "EnvApp")
+        mail = _MailManager()
+        m = Mailable().to("x@b.com").subject("Hi").html("<p></p>")
+        mail.send(m)
+        assert mail._array_driver.sent() == [m]
+        assert m._from_addr == "env@app.com"
+        assert m._from_name == "EnvApp"
+
+    def test_env_smtp_driver_selected(self, monkeypatch):
+        from hunt.mail.manager import _SmtpDriver
+
+        monkeypatch.setenv("MAIL_MAILER", "smtp")
+        monkeypatch.setenv("MAIL_HOST", "smtp.example.com")
+        monkeypatch.setenv("MAIL_PORT", "2525")
+        monkeypatch.setenv("MAIL_USERNAME", "user")
+        monkeypatch.setenv("MAIL_PASSWORD", "pass")
+        monkeypatch.setenv("MAIL_ENCRYPTION", "ssl")
+        mail = _MailManager()
+        mail._ensure_configured()
+        assert isinstance(mail._resolve_driver(), _SmtpDriver)
+        cfg = mail._driver_config()
+        assert cfg["host"] == "smtp.example.com"
+        assert cfg["port"] == 2525
+        assert cfg["username"] == "user"
+        assert cfg["password"] == "pass"
+        assert cfg["encryption"] == "ssl"
+
+    def test_unconfigured_defaults_to_log_transport(self, monkeypatch):
+        monkeypatch.delenv("MAIL_MAILER", raising=False)
+        mail = _MailManager()
+        mail._ensure_configured()
+        assert isinstance(mail._resolve_driver(), _LogDriver)
+
+    def test_explicit_configure_wins_over_env(self, monkeypatch):
+        monkeypatch.setenv("MAIL_MAILER", "smtp")
+        mail = _MailManager()
+        mail.configure({"default": "log", "mailers": {"log": {"transport": "log"}}})
+        mail._ensure_configured()
+        assert mail._default == "log"
+        assert isinstance(mail._resolve_driver(), _LogDriver)
+
+
+class TestApplicationMailWiring:
+    """Application boot forwards config/mail.py to the Mail manager."""
+
+    def test_config_mail_forwarded_to_manager(self, tmp_path):
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "mail.py").write_text(
+            'config = {"default": "array", "mailers": {"array": {"transport": "array"}}}\n'
+        )
+        from hunt.application import Application
+
+        with patch("hunt.mail.manager.Mail") as mock_mail:
+            Application(tmp_path)
+        mock_mail.configure.assert_called_once_with(
+            {"default": "array", "mailers": {"array": {"transport": "array"}}}
+        )
+
+    def test_missing_mail_config_leaves_manager_alone(self, tmp_path):
+        (tmp_path / "config").mkdir()
+        from hunt.application import Application
+
+        with patch("hunt.mail.manager.Mail") as mock_mail:
+            Application(tmp_path)
+        mock_mail.configure.assert_not_called()

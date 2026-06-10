@@ -144,6 +144,55 @@ class Application(Container):
         raw = load_config_directory(self.config_path())
         config = ConfigRepository(raw)
         self.instance("config", config)
+        self._configure_managers(config)
+
+    def _configure_managers(self, config: ConfigRepository) -> None:
+        """Apply the config/*.py sections to the framework managers.
+
+        The config files are the single source of truth: each section present
+        is forwarded to its manager here. Managers fall back to their env-var
+        defaults only when the corresponding config file is absent.
+        """
+        mail_cfg = config.get("mail")
+        if isinstance(mail_cfg, dict) and mail_cfg:
+            from hunt.mail.manager import Mail
+
+            Mail.configure(mail_cfg)
+
+        cache_cfg = config.get("cache")
+        if isinstance(cache_cfg, dict) and cache_cfg:
+            from hunt.cache.manager import Cache
+
+            allowed = {"driver", "path", "host", "port", "db", "password", "prefix"}
+            kwargs = {k: v for k, v in cache_cfg.items() if k in allowed}
+            path = kwargs.get("path")
+            if path is not None and not Path(path).is_absolute():
+                kwargs["path"] = self.base_path / path
+            Cache.configure(**kwargs)
+
+        queue_cfg = config.get("queue")
+        if isinstance(queue_cfg, dict) and queue_cfg:
+            from hunt.queue.manager import Queue
+
+            kwargs = dict(queue_cfg)
+            driver = kwargs.pop("driver", "sync")
+            Queue.configure(driver, **kwargs)
+
+        log_cfg = config.get("logging")
+        if isinstance(log_cfg, dict) and log_cfg.get("channels"):
+            from hunt.log.manager import Log
+
+            Log.configure(
+                channels=log_cfg["channels"],
+                default=log_cfg.get("default"),
+                base_path=self.base_path,
+            )
+
+        fs_cfg = config.get("filesystems")
+        if isinstance(fs_cfg, dict) and fs_cfg:
+            from hunt.storage.manager import Storage
+
+            Storage.configure(fs_cfg)
 
     def _setup_observability(self) -> None:
         dsn = os.environ.get("SENTRY_DSN", "")

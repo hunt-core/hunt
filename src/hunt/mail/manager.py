@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import smtplib
 import ssl
 from collections.abc import Callable
@@ -246,6 +247,29 @@ class _SendMailableJob:
 # ---------------------------------------------------------------------------
 
 
+def _env_config() -> dict[str, Any]:
+    """Mail config built from the MAIL_* env vars (same shape as config/mail.py)."""
+    return {
+        "default": os.environ.get("MAIL_MAILER", "log"),
+        "mailers": {
+            "smtp": {
+                "transport": "smtp",
+                "host": os.environ.get("MAIL_HOST", "127.0.0.1"),
+                "port": int(os.environ.get("MAIL_PORT", "587")),
+                "username": os.environ.get("MAIL_USERNAME") or None,
+                "password": os.environ.get("MAIL_PASSWORD") or None,
+                "encryption": os.environ.get("MAIL_ENCRYPTION", "tls"),
+            },
+            "log": {"transport": "log"},
+            "array": {"transport": "array"},
+        },
+        "from": {
+            "address": os.environ.get("MAIL_FROM_ADDRESS", ""),
+            "name": os.environ.get("MAIL_FROM_NAME", ""),
+        },
+    }
+
+
 class _MailManager:
     """Central mail dispatcher — configure once, call everywhere.
 
@@ -275,19 +299,27 @@ class _MailManager:
         self._from_name: str = ""
         self._fake: _MailFake | None = None
         self._array_driver = _ArrayDriver()
+        self._configured = False
 
     def configure(self, config: dict[str, Any]) -> None:
+        self._configured = True
         self._config = config
         self._default = config.get("default", config.get("driver", "log"))
         from_cfg = config.get("from", {})
         self._from_address = from_cfg.get("address", config.get("from_address", ""))
         self._from_name = from_cfg.get("name", config.get("from_name", ""))
 
+    def _ensure_configured(self) -> None:
+        """Fall back to MAIL_* env vars when configure() was never called."""
+        if not self._configured:
+            self.configure(_env_config())
+
     def to(self, address: str | list[str]) -> _PendingMail:
         addresses = [address] if isinstance(address, str) else list(address)
         return _PendingMail(self, addresses)
 
     def send(self, mailable: Mailable) -> None:
+        self._ensure_configured()
         global_from = (self._from_address, self._from_name)
         mailable._build_and_prepare(global_from)
 

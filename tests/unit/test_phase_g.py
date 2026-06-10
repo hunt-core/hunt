@@ -499,6 +499,98 @@ class TestQueueManager:
         mgr.configure("redis", host="localhost", port=6379)
         assert isinstance(mgr._driver, RedisDriver)
 
+    def test_default_driver_from_env(self, monkeypatch):
+        from hunt.queue.drivers.redis import RedisDriver
+        from hunt.queue.manager import _QueueManager
+
+        monkeypatch.setenv("QUEUE_DRIVER", "redis")
+        mgr = _QueueManager()
+        mgr._get_driver()
+        assert isinstance(mgr._driver, RedisDriver)
+
+    def test_redis_config_from_env(self, monkeypatch):
+        from hunt.queue.manager import _redis_config_from_env
+
+        monkeypatch.setenv("REDIS_HOST", "redis.example.com")
+        monkeypatch.setenv("REDIS_PORT", "6380")
+        monkeypatch.setenv("REDIS_DB", "2")
+        monkeypatch.setenv("REDIS_PASSWORD", "s3cret")
+        config = _redis_config_from_env()
+        assert config == {"host": "redis.example.com", "port": 6380, "db": 2, "password": "s3cret"}
+
+    def test_redis_config_from_env_omits_empty_password(self, monkeypatch):
+        from hunt.queue.manager import _redis_config_from_env
+
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.setenv("REDIS_PASSWORD", "")
+        config = _redis_config_from_env()
+        assert config == {"host": "127.0.0.1", "port": 6379, "db": 0}
+
+
+class TestQueueWorkDriverSelection:
+    def _run_once(self, args=(), env=None):
+        from click.testing import CliRunner
+
+        from hunt.console.commands.queue_work import queue_work_command
+        from hunt.queue.manager import Queue
+
+        captured = {}
+
+        def fake_build(name, **config):
+            if name == "sync":
+                from hunt.queue.drivers.sync import SyncDriver
+
+                return SyncDriver()
+            captured["driver"] = name
+            mock = MagicMock()
+            mock.pop.return_value = None
+            return mock
+
+        Queue._driver = None  # reset the singleton so env selection runs
+        try:
+            with patch("hunt.queue.manager._build_driver", side_effect=fake_build):
+                result = CliRunner().invoke(queue_work_command, ["--once", *args], env=env or {})
+        finally:
+            Queue._driver = None
+        return captured, result
+
+    def test_defaults_to_database(self):
+        captured, result = self._run_once(env={"QUEUE_DRIVER": None})
+        assert result.exit_code == 0
+        assert captured["driver"] == "database"
+
+    def test_env_selects_redis(self):
+        captured, result = self._run_once(env={"QUEUE_DRIVER": "redis"})
+        assert result.exit_code == 0
+        assert captured["driver"] == "redis"
+
+    def test_flag_overrides_env(self):
+        captured, result = self._run_once(args=["--driver", "redis"], env={"QUEUE_DRIVER": "database"})
+        assert result.exit_code == 0
+        assert captured["driver"] == "redis"
+
+    def test_sync_env_falls_back_to_database(self):
+        captured, result = self._run_once(env={"QUEUE_DRIVER": "sync"})
+        assert result.exit_code == 0
+        assert captured["driver"] == "database"
+
+    def test_configured_queue_driver_used_when_no_flag(self):
+        """The worker uses whatever driver the Queue manager was configured with."""
+        from click.testing import CliRunner
+
+        from hunt.console.commands.queue_work import queue_work_command
+        from hunt.queue.manager import Queue
+
+        configured = MagicMock()
+        configured.pop.return_value = None
+        Queue._driver = configured
+        try:
+            result = CliRunner().invoke(queue_work_command, ["--once"])
+        finally:
+            Queue._driver = None
+        assert result.exit_code == 0
+        configured.pop.assert_called()
+
 
 # ---------------------------------------------------------------------------
 # RedisDriver (mocked redis client)
