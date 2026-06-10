@@ -364,10 +364,14 @@ _CONFIG_SESSION = """\
 import os
 
 config = {
+    # Session storage backend: "file" or "redis"
+    "driver": os.environ.get("SESSION_DRIVER", "file"),
     # Session cookie lifetime in seconds (default: 7200 = 2 hours)
     "lifetime": int(os.environ.get("SESSION_LIFETIME", "7200")),
     # SameSite cookie attribute: "Strict", "Lax", or "None"
     "same_site": os.environ.get("SESSION_SAME_SITE", "Strict"),
+    # Force the Secure cookie flag (always set automatically on https)
+    "secure": os.environ.get("SESSION_SECURE", "").lower() == "true",
 }
 """
 
@@ -484,7 +488,6 @@ from hunt.http.router import Router
 from hunt.http.kernel import HttpKernel
 from hunt.http.middleware.session import StartSession
 from hunt.http.middleware.csrf import VerifyCsrfToken
-from hunt.view.factory import ViewFactory
 from hunt.exceptions.handler import ExceptionHandler
 from hunt.storage.manager import Storage
 from hunt.support.helpers import _set_app
@@ -525,11 +528,8 @@ for route in router.routes():
     if route.name:
         router._named[route.name] = route
 
-# -- View factory
-views_path = BASE_PATH / "resources" / "views"
-cache_path = BASE_PATH / "storage" / "framework" / "views"
-view_factory = ViewFactory(views_path, cache_path)
-application.instance("view", view_factory)
+# -- View factory (configured from config/view.py at boot)
+view_factory = application.make("view")
 
 def _storage_url(path: str | None) -> str:
     if not path:
@@ -572,7 +572,7 @@ view_factory.share("config", _config)
 
 # -- Exception handler
 debug = os.environ.get("APP_DEBUG", "false").lower() == "true"
-exc_handler = ExceptionHandler(debug=debug, views_path=views_path)
+exc_handler = ExceptionHandler(debug=debug, views_path=BASE_PATH / "resources" / "views")
 
 # -- Global middleware
 global_middleware = [

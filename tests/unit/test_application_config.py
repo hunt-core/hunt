@@ -79,3 +79,118 @@ class TestConfigureManagers:
         mocks = _boot(project)
         for mock in mocks.values():
             mock.configure.assert_not_called()
+
+
+class TestDatabaseAndViewWiring:
+    def test_database_section_forwarded_with_resolved_sqlite_path(self, project):
+        (project / "config" / "database.py").write_text(
+            'config = {"default": "sqlite", "connections": {'
+            '"sqlite": {"driver": "sqlite", "database": "database/db.sqlite"}}}\n'
+        )
+        with patch("hunt.database.connection.configure") as db_configure:
+            Application(project)
+        cfg = db_configure.call_args.args[0]
+        assert cfg["default"] == "sqlite"
+        assert cfg["connections"]["sqlite"]["database"] == str(project / "database/db.sqlite")
+
+    def test_database_memory_path_untouched(self, project):
+        (project / "config" / "database.py").write_text(
+            'config = {"default": "sqlite", "connections": {'
+            '"sqlite": {"driver": "sqlite", "database": ":memory:"}}}\n'
+        )
+        with patch("hunt.database.connection.configure") as db_configure:
+            Application(project)
+        assert db_configure.call_args.args[0]["connections"]["sqlite"]["database"] == ":memory:"
+
+    def test_view_section_binds_view_factory(self, project):
+        (project / "config" / "view.py").write_text(
+            'config = {"paths": ["resources/views"], "cache": "storage/framework/views", "extension": ".html"}\n'
+        )
+        app = Application(project)
+        factory = app.make("view")
+        assert factory._views_path == project / "resources/views"
+        assert factory._extension == ".html"
+
+
+class TestConnectionConfig:
+    def setup_method(self):
+        import importlib
+
+        conn = importlib.import_module("hunt.database.connection")
+
+        self._saved = (dict(conn._connections), dict(conn._config))
+        conn._connections.clear()
+        conn._config = {}
+
+    def teardown_method(self):
+        import importlib
+
+        conn = importlib.import_module("hunt.database.connection")
+
+        conn._connections.clear()
+        conn._connections.update(self._saved[0])
+        conn._config = self._saved[1]
+
+    def test_engine_built_from_config(self, monkeypatch, tmp_path):
+        import importlib
+
+        conn = importlib.import_module("hunt.database.connection")
+
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        db_file = tmp_path / "cfg.sqlite"
+        conn.configure({"default": "sqlite", "connections": {"sqlite": {"driver": "sqlite", "database": str(db_file)}}})
+        engine = conn.connection()
+        assert str(db_file) in str(engine.url)
+
+    def test_env_fallback_when_unconfigured(self, monkeypatch):
+        import importlib
+
+        conn = importlib.import_module("hunt.database.connection")
+
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setenv("DB_CONNECTION", "sqlite")
+        monkeypatch.setenv("DB_DATABASE", ":memory:")
+        engine = conn.connection()
+        assert "sqlite" in str(engine.url)
+
+    def test_named_connection_uses_its_own_config(self, monkeypatch):
+        import importlib
+
+        conn = importlib.import_module("hunt.database.connection")
+
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        conn.configure(
+            {
+                "default": "sqlite",
+                "connections": {
+                    "sqlite": {"driver": "sqlite", "database": ":memory:"},
+                    "mysql": {"driver": "mysql", "host": "db.example.com", "database": "app"},
+                },
+            }
+        )
+        engine = conn.connection("mysql")
+        assert "mysql" in str(engine.url)
+        assert "db.example.com" in str(engine.url)
+
+
+class TestSessionDriverResolution:
+    def test_config_wins_over_env(self, monkeypatch):
+        from hunt.session import session_driver
+
+        monkeypatch.setenv("SESSION_DRIVER", "file")
+        with patch("hunt.support.helpers.config", return_value="Redis"):
+            assert session_driver() == "redis"
+
+    def test_env_fallback_when_no_config(self, monkeypatch):
+        from hunt.session import session_driver
+
+        monkeypatch.setenv("SESSION_DRIVER", "REDIS")
+        with patch("hunt.support.helpers.config", return_value=None):
+            assert session_driver() == "redis"
+
+    def test_default_is_file(self, monkeypatch):
+        from hunt.session import session_driver
+
+        monkeypatch.delenv("SESSION_DRIVER", raising=False)
+        with patch("hunt.support.helpers.config", return_value=None):
+            assert session_driver() == "file"

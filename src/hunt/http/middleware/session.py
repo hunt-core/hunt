@@ -11,7 +11,9 @@ COOKIE_NAME = "hunt_session"
 
 
 def _make_session_store():
-    driver = os.environ.get("SESSION_DRIVER", "file").lower()
+    from hunt.session import session_driver
+
+    driver = session_driver()
     if driver == "redis":
         from hunt.session.redis_store import RedisSessionStore
 
@@ -35,15 +37,25 @@ class StartSession(Middleware):
         response = await next(request)
 
         store.save()
-        secure = (
-            os.environ.get("SESSION_SECURE", "").lower() == "true" or request._scope.get("scheme", "http") == "https"
-        )
+        secure = _session_secure() or request._scope.get("scheme", "http") == "https"
         same_site = _session_same_site()
         lifetime = _session_lifetime()
         _set_cookie(
             response, COOKIE_NAME, store.id, max_age=lifetime, http_only=True, secure=secure, same_site=same_site
         )
         return response
+
+
+def _session_secure() -> bool:
+    try:
+        from hunt.support.helpers import config as _cfg
+
+        val = _cfg("session.secure", None)
+        if val is not None:
+            return val if isinstance(val, bool) else str(val).lower() == "true"
+    except Exception:
+        pass
+    return os.environ.get("SESSION_SECURE", "").lower() == "true"
 
 
 def _session_lifetime() -> int:

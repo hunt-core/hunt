@@ -160,12 +160,26 @@ def queue_work_command(queue: str, sleep: int, tries: int, once: bool, driver_na
         except ImportError:
             pass
 
+    # Graceful drain: on SIGTERM (systemd/Docker stop) finish the job in
+    # flight, then exit instead of dying mid-job.
+    _stop = {"requested": False}
+
+    def _request_stop(signum, frame):
+        _stop["requested"] = True
+        click.echo("\n  SIGTERM received — finishing current job, then stopping.")
+
+    if hasattr(signal, "SIGTERM"):
+        try:
+            signal.signal(signal.SIGTERM, _request_stop)
+        except (ValueError, OSError):
+            pass  # not in the main thread
+
     click.echo(f"  Processing queue: {queue} (driver: {name}). Press Ctrl+C to stop.")
     try:
-        while True:
+        while not _stop["requested"]:
             job_data = driver.pop(queue)
             if job_data is None:
-                if once:
+                if once or _stop["requested"]:
                     break
                 time.sleep(sleep)
                 continue
@@ -230,6 +244,9 @@ def queue_work_command(queue: str, sleep: int, tries: int, once: bool, driver_na
 
             if once:
                 break
+
+        if _stop["requested"]:
+            click.echo("  Worker stopped.")
 
     except KeyboardInterrupt:
         click.echo("\n  Worker stopped.")

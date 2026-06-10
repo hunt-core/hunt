@@ -30,11 +30,18 @@ class _OldInput:
 
 
 class ViewFactory:
-    def __init__(self, views_path: Path, cache_path: Path | None = None) -> None:
-        self._views_path = views_path
+    def __init__(
+        self,
+        views_path: Path | str | list[Path | str],
+        cache_path: Path | None = None,
+        extension: str = ".html",
+    ) -> None:
+        paths = [Path(p) for p in (views_path if isinstance(views_path, (list, tuple)) else [views_path])]
+        self._views_path = paths[0]
         self._cache_path = cache_path
+        self._extension = extension if extension.startswith(".") else f".{extension}"
         _hunt_views = Path(__file__).parent.parent / "views"
-        loaders: list = [_TemplateLoader(views_path, cache_path)]
+        loaders: list = [_TemplateLoader(p, cache_path) for p in paths]
         if _hunt_views.is_dir():
             loaders.append(_TemplateLoader(_hunt_views, None))
         self._env = Environment(
@@ -54,7 +61,7 @@ class ViewFactory:
         self._composers.setdefault(view, []).append(callback)
 
     def make(self, name: str, data: dict | None = None) -> View:
-        path = name.replace(".", "/") + ".html"
+        path = name.replace(".", "/") + self._extension
         try:
             template = self._env.get_template(path)
         except TemplateNotFound as exc:
@@ -86,7 +93,7 @@ class ViewFactory:
         return View(template, context)
 
     def exists(self, name: str) -> bool:
-        path = name.replace(".", "/") + ".html"
+        path = name.replace(".", "/") + self._extension
         try:
             self._env.get_template(path)
             return True

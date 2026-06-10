@@ -240,14 +240,16 @@ class FileStore(ArrayStore):
     def put(self, key: str, value: Any, seconds: int = 0) -> None:
         f = self._cache_file(key)
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(
-            json.dumps(
-                {
-                    "value": value,
-                    "expires_at": time.time() + seconds if seconds else 0,
-                }
-            )
+        payload = json.dumps(
+            {
+                "value": value,
+                "expires_at": time.time() + seconds if seconds else 0,
+            }
         )
+        # Write-then-rename so concurrent readers never see a half-written file.
+        tmp = f.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(payload)
+        os.replace(tmp, f)
 
     def forever(self, key: str, value: Any) -> None:
         self.put(key, value, 0)

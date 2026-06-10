@@ -23,6 +23,30 @@ def _load_env() -> None:
         load_dotenv(env_file, override=False)
 
 
+def _drivers() -> dict:
+    """Report the configured drivers from config/*.py, falling back to env."""
+    cfg: dict = {}
+    try:
+        from hunt.config.loader import load_config_directory
+
+        cfg = load_config_directory(Path.cwd() / "config")
+    except Exception:
+        pass
+
+    def section(name: str) -> dict:
+        value = cfg.get(name)
+        return value if isinstance(value, dict) else {}
+
+    return {
+        "database": section("database").get("default") or os.environ.get("DB_CONNECTION", "(not set)"),
+        "session": section("session").get("driver") or os.environ.get("SESSION_DRIVER", "file"),
+        "queue": section("queue").get("driver") or os.environ.get("QUEUE_DRIVER", "sync"),
+        "cache": section("cache").get("driver") or os.environ.get("CACHE_DRIVER", "file"),
+        "mail": section("mail").get("default") or os.environ.get("MAIL_MAILER", "(not set)"),
+        "log": section("logging").get("default") or os.environ.get("LOG_CHANNEL", "file"),
+    }
+
+
 def _migration_summary() -> dict:
     try:
         from hunt.database.schema.migration import Migrator
@@ -71,13 +95,7 @@ def app_info_command(as_json: bool) -> None:
             "jobs": _count_py_files(cwd / "app" / "jobs"),
             "migrations": _migration_summary(),
         },
-        "drivers": {
-            "database": os.environ.get("DB_CONNECTION", "(not set)"),
-            "session": os.environ.get("SESSION_DRIVER", "file"),
-            "queue": os.environ.get("QUEUE_DRIVER", "sync"),
-            "cache": os.environ.get("CACHE_DRIVER", "file"),
-            "mail": os.environ.get("MAIL_MAILER", "(not set)"),
-        },
+        "drivers": _drivers(),
     }
 
     if as_json:
@@ -117,12 +135,8 @@ def _print_info(info: dict) -> None:
     _row("Migrations", f"{mig['ran']} ran / {mig['pending']} pending  ({mig['total']} total)")
 
     _section("Drivers")
-    d = info["drivers"]
-    _row("Database", d["database"])
-    _row("Session", d["session"])
-    _row("Queue", d["queue"])
-    _row("Cache", d["cache"])
-    _row("Mail", d["mail"])
+    for label, value in info["drivers"].items():
+        _row(label.capitalize(), value)
     click.echo("")
 
 

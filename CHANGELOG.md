@@ -11,6 +11,25 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.29] — 2026-06-10
+
+### Added
+
+- **`queue:work` drains gracefully on SIGTERM** — systemd/Docker stops now let the in-flight job finish before the worker exits, instead of killing it mid-job.
+- **`ViewFactory` supports multiple template paths and a configurable extension** — `ViewFactory(["resources/views", ...], cache, extension=".html")`; templates resolve across all paths in order.
+
+### Fixed
+
+- **Queued mail and notifications were silently lost on real queue backends** — `Mail.queue()`/`Mail.later()` and `notify()` with `should_queue` produced jobs whose state lived in private attributes, so the payload serialized empty and the worker could never reconstruct them (they also weren't `Job` subclasses, so the worker rejected them outright). The internal jobs now pickle their payload into the HMAC-signed envelope and rebuild on the worker; queued mail and notifications actually deliver via the `database`/`redis` queues. The fall-back-to-synchronous path now logs a warning instead of failing silently.
+- **`config/database.py` is now actually applied** — `Application` forwards it to the connection layer at boot; the `connections` dict configures the engines (with relative sqlite paths resolved against the project root), with `DATABASE_URL` still taking precedence and `DB_*` env vars as the fallback. Previously the file was loaded but ignored, and `connection("name")` even built the engine from `DB_CONNECTION` regardless of the requested name — named connections now use their own config.
+- **`config/view.py` is now actually applied** — `Application` builds the view factory from it (`paths`, `cache`, `extension`) and binds it as `view`; the bootstrap stub consumes `application.make("view")` instead of constructing its own. Previously the file had no effect whatsoever.
+- **Session settings unified into `config/session.py`** — the config file now owns `driver` and `secure` alongside `lifetime`/`same_site`, and the middleware and session registry resolve the driver through config first (env fallback). Previously `SESSION_DRIVER`/`SESSION_SECURE` were read from raw env in two different modules while the rest came from config.
+- **`hunt app:info` reports drivers from the config files** — the drivers section now reads `config/*.py` (env fallback) and also reports the log channel.
+- **`FileStore` cache writes are atomic** — entries are written to a temp file and `os.replace`d, so concurrent readers never see a half-written JSON file.
+- Removed the stale, unused `Application.VERSION` constant (it claimed `0.1.0`; the CLI reports `hunt.__version__`).
+
+---
+
 ## [0.4.28] — 2026-06-10
 
 ### Added

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from typing import Any
 
@@ -224,7 +223,9 @@ def _delete_session_redis(session_id: str) -> None:
 
 def _delete_session_data(session_id: str) -> None:
     """Delete the raw session data from file storage or Redis."""
-    driver = os.environ.get("SESSION_DRIVER", "file").lower()
+    from hunt.session import session_driver
+
+    driver = session_driver()
     try:
         if driver == "redis":
             _delete_session_redis(session_id)

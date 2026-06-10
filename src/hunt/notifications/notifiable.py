@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import pickle
 from typing import TYPE_CHECKING, Any, ClassVar
+
+from hunt.queue.job import Job
 
 if TYPE_CHECKING:
     from hunt.notifications.notification import Notification
@@ -163,7 +167,13 @@ class _NotificationSender:
             from hunt.queue.manager import Queue
 
             Queue.push(_SendNotificationJob(self._notification, self._notifiable, channel))
-        except Exception:
+        except Exception as exc:
+            try:
+                from hunt.log.manager import Log
+
+                Log.warning(f"Queueing notification failed — sending synchronously instead: {exc}")
+            except Exception:
+                pass
             driver = self._resolve(channel)
             if driver:
                 driver.send(self._notifiable, self._notification)
@@ -179,21 +189,36 @@ class _NotificationSender:
         return getattr(mod, cls_name)()
 
 
-class _SendNotificationJob:
-    """Delivers a single notification channel via the queue."""
+class _SendNotificationJob(Job):
+    """Delivers a single notification channel via the queue.
+
+    Notification and notifiable are pickled into a public ``payload``
+    attribute so the job survives the JSON round-trip to a real queue backend
+    and can be rebuilt on the worker. The pickle is only ever loaded from
+    inside the HMAC-signed job envelope, which the worker verifies before
+    deserialising anything.
+    """
 
     queue: str = "default"
     tries: int = 3
 
-    def __init__(self, notification: Any, notifiable: Any, channel: str) -> None:
-        self._notification = notification
-        self._notifiable = notifiable
-        self._channel = channel
+    def __init__(
+        self,
+        notification: Any = None,
+        notifiable: Any = None,
+        channel: str = "",
+        payload: str = "",
+    ) -> None:
+        if notification is not None:
+            payload = base64.b64encode(pickle.dumps((notification, notifiable))).decode()
+        self.payload = payload
+        self.channel = channel
 
     def handle(self) -> None:
-        driver = _NotificationSender(self._notification, self._notifiable)._resolve(self._channel)
+        notification, notifiable = pickle.loads(base64.b64decode(self.payload))
+        driver = _NotificationSender(notification, notifiable)._resolve(self.channel)
         if driver:
-            driver.send(self._notifiable, self._notification)
+            driver.send(notifiable, notification)
 
     def failed(self, exc: Exception) -> None:
         pass

@@ -9,16 +9,23 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
 _connections: dict[str, Engine] = {}
-_default: str = "sqlite"
+_config: dict[str, Any] = {}
 
 
 def configure(configs: dict[str, Any]) -> None:
-    global _default
-    _default = configs.get("default", "sqlite")
+    """Apply the `database` config section (config/database.py)."""
+    global _config
+    _config = configs or {}
+
+
+def _default_name() -> str:
+    if _config:
+        return _config.get("default") or "sqlite"
+    return os.environ.get("DB_CONNECTION", "sqlite")
 
 
 def connection(name: str | None = None) -> Engine:
-    name = name or _default
+    name = name or _default_name()
     if name not in _connections:
         _connections[name] = _make_engine(name)
     return _connections[name]
@@ -34,6 +41,22 @@ def _pool_kwargs() -> dict:
     }
 
 
+def _sqlite_engine(db_name: str) -> Engine:
+    if db_name == ":memory:":
+        return create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+    return create_engine(f"sqlite:///{db_name}", connect_args={"check_same_thread": False})
+
+
+def _server_engine(scheme: str, user: str, password: str, host: str, port: str, db: str) -> Engine:
+    return create_engine(
+        f"{scheme}://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{db}", **_pool_kwargs()
+    )
+
+
 def _make_engine(name: str) -> Engine:
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
@@ -42,30 +65,65 @@ def _make_engine(name: str) -> Engine:
             return create_engine(db_url, connect_args={"check_same_thread": False})
         return create_engine(db_url, **_pool_kwargs())
 
-    driver = os.environ.get("DB_CONNECTION", "sqlite")
+    cfg = _config.get("connections", {}).get(name) if _config else None
+    if isinstance(cfg, dict):
+        return _engine_from_config(name, cfg)
+
+    # No config for this connection — build from DB_* env vars, treating the
+    # connection name as the driver.
+    driver = name
     if driver == "sqlite":
-        db_name = os.environ.get("DB_DATABASE", ":memory:")
-        if db_name == ":memory:":
-            return create_engine(
-                "sqlite:///:memory:",
-                connect_args={"check_same_thread": False},
-                poolclass=StaticPool,
-            )
-        return create_engine(f"sqlite:///{db_name}", connect_args={"check_same_thread": False})
+        return _sqlite_engine(os.environ.get("DB_DATABASE", ":memory:"))
     if driver == "mysql":
-        user = quote_plus(os.environ.get("DB_USERNAME", "root"))
-        password = quote_plus(os.environ.get("DB_PASSWORD", ""))
-        host = os.environ.get("DB_HOST", "127.0.0.1")
-        port = os.environ.get("DB_PORT", "3306")
-        db = os.environ.get("DB_DATABASE", "hunt")
-        return create_engine(f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}", **_pool_kwargs())
+        return _server_engine(
+            "mysql+pymysql",
+            os.environ.get("DB_USERNAME", "root"),
+            os.environ.get("DB_PASSWORD", ""),
+            os.environ.get("DB_HOST", "127.0.0.1"),
+            os.environ.get("DB_PORT", "3306"),
+            os.environ.get("DB_DATABASE", "hunt"),
+        )
     if driver == "postgresql" or driver == "pgsql":
-        user = quote_plus(os.environ.get("DB_USERNAME", "postgres"))
-        password = quote_plus(os.environ.get("DB_PASSWORD", ""))
-        host = os.environ.get("DB_HOST", "127.0.0.1")
-        port = os.environ.get("DB_PORT", "5432")
-        db = os.environ.get("DB_DATABASE", "hunt")
-        return create_engine(f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}", **_pool_kwargs())
+        return _server_engine(
+            "postgresql+psycopg2",
+            os.environ.get("DB_USERNAME", "postgres"),
+            os.environ.get("DB_PASSWORD", ""),
+            os.environ.get("DB_HOST", "127.0.0.1"),
+            os.environ.get("DB_PORT", "5432"),
+            os.environ.get("DB_DATABASE", "hunt"),
+        )
+
+    raise ValueError(f"Unsupported DB driver: {driver}")
+
+
+def _engine_from_config(name: str, cfg: dict[str, Any]) -> Engine:
+    if "url" in cfg:
+        url = str(cfg["url"])
+        if url.startswith("sqlite"):
+            return create_engine(url, connect_args={"check_same_thread": False})
+        return create_engine(url, **_pool_kwargs())
+
+    driver = cfg.get("driver", name)
+    if driver == "sqlite":
+        return _sqlite_engine(str(cfg.get("database", ":memory:")))
+    if driver == "mysql":
+        return _server_engine(
+            "mysql+pymysql",
+            str(cfg.get("username", "root")),
+            str(cfg.get("password", "")),
+            str(cfg.get("host", "127.0.0.1")),
+            str(cfg.get("port", "3306")),
+            str(cfg.get("database", "hunt")),
+        )
+    if driver == "postgresql" or driver == "pgsql":
+        return _server_engine(
+            "postgresql+psycopg2",
+            str(cfg.get("username", "postgres")),
+            str(cfg.get("password", "")),
+            str(cfg.get("host", "127.0.0.1")),
+            str(cfg.get("port", "5432")),
+            str(cfg.get("database", "hunt")),
+        )
 
     raise ValueError(f"Unsupported DB driver: {driver}")
 

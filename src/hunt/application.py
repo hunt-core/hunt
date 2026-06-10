@@ -17,8 +17,6 @@ from hunt.container.provider import ServiceProvider
 class Application(Container):
     """Central application class — bootstraps providers, config, and env."""
 
-    VERSION = "0.1.0"
-
     def __init__(self, base_path: Path | str | None = None) -> None:
         super().__init__()
         self.base_path = Path(base_path) if base_path else Path.cwd()
@@ -193,6 +191,40 @@ class Application(Container):
             from hunt.storage.manager import Storage
 
             Storage.configure(fs_cfg)
+
+        db_cfg = config.get("database")
+        if isinstance(db_cfg, dict) and db_cfg:
+            from hunt.database.connection import configure as db_configure
+
+            cfg = dict(db_cfg)
+            connections = cfg.get("connections")
+            if isinstance(connections, dict):
+                resolved: dict[str, Any] = {}
+                for name, conn in connections.items():
+                    conn = dict(conn)
+                    database = conn.get("database")
+                    if (
+                        conn.get("driver", name) == "sqlite"
+                        and isinstance(database, str)
+                        and database != ":memory:"
+                        and not Path(database).is_absolute()
+                    ):
+                        conn["database"] = str(self.base_path / database)
+                    resolved[name] = conn
+                cfg["connections"] = resolved
+            db_configure(cfg)
+
+        view_cfg = config.get("view")
+        if isinstance(view_cfg, dict) and view_cfg.get("paths"):
+            from hunt.view.factory import ViewFactory
+
+            paths = [Path(p) if Path(p).is_absolute() else self.base_path / p for p in view_cfg["paths"]]
+            cache = view_cfg.get("cache")
+            cache_path = (Path(cache) if Path(cache).is_absolute() else self.base_path / cache) if cache else None
+            self.instance(
+                "view",
+                ViewFactory(paths, cache_path, extension=view_cfg.get("extension", ".html")),
+            )
 
     def _setup_observability(self) -> None:
         dsn = os.environ.get("SENTRY_DSN", "")

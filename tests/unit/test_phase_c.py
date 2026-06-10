@@ -702,3 +702,76 @@ class TestApplicationMailWiring:
         with patch("hunt.mail.manager.Mail") as mock_mail:
             Application(tmp_path)
         mock_mail.configure.assert_not_called()
+
+
+# ===========================================================================
+# Queued mailable / notification jobs survive the queue round trip
+# ===========================================================================
+
+
+class _PickleableNotification:
+    """Minimal notification stand-in; module-level so pickle can import it."""
+
+    greeting = "hello"
+
+    def via(self, notifiable):
+        return ["mail"]
+
+
+class TestQueuedJobRoundTrip:
+    def test_mailable_job_survives_json_round_trip(self):
+        import json as _json
+
+        from hunt.console.commands.queue_work import _safe_import
+        from hunt.mail.manager import Mail, _SendMailableJob
+        from hunt.queue.drivers.database import _serialize_job
+        from hunt.queue.job import Job as _Job
+
+        m = Mailable().to("x@b.com").subject("Hi").html("<p>Hi</p>")
+        job = _SendMailableJob(m)
+
+        # Same round trip a real backend performs: serialize → JSON → rebuild.
+        body = _json.loads(_json.dumps(_serialize_job(job)))
+        cls = _safe_import(body["class"], _Job)
+        rebuilt = cls(**body["data"])
+
+        fake = Mail.fake()
+        try:
+            rebuilt.handle()
+        finally:
+            Mail.stop_faking()
+        assert len(fake.sent()) == 1
+        assert "x@b.com" in fake.sent()[0]._to_addresses
+
+    def test_notification_job_survives_json_round_trip(self):
+        import json as _json
+
+        from hunt.console.commands.queue_work import _safe_import
+        from hunt.notifications.notifiable import _NotificationSender, _SendNotificationJob
+        from hunt.queue.drivers.database import _serialize_job
+        from hunt.queue.job import Job as _Job
+
+        notification = _PickleableNotification()
+        notifiable = {"id": 7}
+        job = _SendNotificationJob(notification, notifiable, "mail")
+
+        body = _json.loads(_json.dumps(_serialize_job(job)))
+        cls = _safe_import(body["class"], _Job)
+        rebuilt = cls(**body["data"])
+
+        delivered = []
+        driver = MagicMock()
+        driver.send.side_effect = lambda n, notif: delivered.append((n, notif))
+        with patch.object(_NotificationSender, "_resolve", return_value=driver):
+            rebuilt.handle()
+        assert len(delivered) == 1
+        assert delivered[0][0] == {"id": 7}
+        assert delivered[0][1].greeting == "hello"
+
+    def test_jobs_are_job_subclasses(self):
+        from hunt.mail.manager import _SendMailableJob
+        from hunt.notifications.notifiable import _SendNotificationJob
+        from hunt.queue.job import Job as _Job
+
+        assert issubclass(_SendMailableJob, _Job)
+        assert issubclass(_SendNotificationJob, _Job)

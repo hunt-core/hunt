@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import os
+import pickle
 import smtplib
 import ssl
 from collections.abc import Callable
@@ -11,13 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from hunt.mail.mailable import Mailable
+from hunt.queue.job import Job
 
 try:
-    from hunt.log.manager import Log as _Log
+    from hunt.log.manager import Log
 except Exception:
     import logging as _logging
 
-    _Log = _logging.getLogger("hunt.mail")  # type: ignore[assignment]
+    Log = _logging.getLogger("hunt.mail")  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -47,9 +50,6 @@ class _SmtpDriver:
             if username and password:
                 server.login(username, password)
             server.send_message(msg)
-
-
-Log = _Log
 
 
 class _LogDriver:
@@ -224,19 +224,27 @@ class _MailFake:
 # ---------------------------------------------------------------------------
 
 
-class _SendMailableJob:
-    """Wraps a Mailable so it can be pushed to the queue without a lambda."""
+class _SendMailableJob(Job):
+    """Wraps a Mailable so it can be pushed to the queue.
+
+    The mailable is pickled into a public ``payload`` attribute so the job
+    survives the JSON round-trip to a real queue backend and can be rebuilt
+    on the worker. The pickle is only ever loaded from inside the HMAC-signed
+    job envelope, which the worker verifies before deserialising anything.
+    """
 
     queue: str = "default"
     tries: int = 3
     backoff: int = 0
 
-    def __init__(self, mailable: Mailable, manager: Any) -> None:
-        self._mailable = mailable
-        self._manager = manager
+    def __init__(self, mailable: Mailable | None = None, payload: str = "") -> None:
+        if mailable is not None:
+            payload = base64.b64encode(pickle.dumps(mailable)).decode()
+        self.payload = payload
 
     def handle(self) -> None:
-        self._manager.send(self._mailable)
+        mailable = pickle.loads(base64.b64decode(self.payload))
+        Mail.send(mailable)
 
     def failed(self, exc: Exception) -> None:
         pass
@@ -341,8 +349,9 @@ class _MailManager:
         try:
             from hunt.queue.manager import Queue
 
-            Queue.push(_SendMailableJob(mailable, self))
-        except Exception:
+            Queue.push(_SendMailableJob(mailable))
+        except Exception as exc:
+            Log.warning(f"Queueing mailable failed — sending synchronously instead: {exc}")
             self.send(mailable)
 
     def later(self, delay: int, mailable: Mailable) -> None:
@@ -350,8 +359,9 @@ class _MailManager:
         try:
             from hunt.queue.manager import Queue
 
-            Queue.later(delay, _SendMailableJob(mailable, self))
-        except Exception:
+            Queue.later(delay, _SendMailableJob(mailable))
+        except Exception as exc:
+            Log.warning(f"Queueing mailable failed — sending synchronously instead: {exc}")
             self.send(mailable)
 
     def raw(self, text: str, callback: Callable[[Mailable], None]) -> None:
