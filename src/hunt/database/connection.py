@@ -52,9 +52,7 @@ def _sqlite_engine(db_name: str) -> Engine:
 
 
 def _server_engine(scheme: str, user: str, password: str, host: str, port: str, db: str) -> Engine:
-    return create_engine(
-        f"{scheme}://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{db}", **_pool_kwargs()
-    )
+    return create_engine(f"{scheme}://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{db}", **_pool_kwargs())
 
 
 def _make_engine(name: str) -> Engine:
