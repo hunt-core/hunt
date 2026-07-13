@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hunt-framework"
-version = "0.4.29"
-description = "A Python web framework"
+version = "0.4.35"
+description = "A batteries-included Python web framework with Active Record ORM, auth, admin, queues, and AI-agent tooling"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "syk0" }]
-keywords = ["web", "framework", "orm", "routing", "asgi"]
+keywords = ["python", "web", "framework", "asgi", "orm", "active-record", "authentication", "admin", "queues", "ai-agents"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",

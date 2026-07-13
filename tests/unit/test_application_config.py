@@ -95,8 +95,7 @@ class TestDatabaseAndViewWiring:
 
     def test_database_memory_path_untouched(self, project):
         (project / "config" / "database.py").write_text(
-            'config = {"default": "sqlite", "connections": {'
-            '"sqlite": {"driver": "sqlite", "database": ":memory:"}}}\n'
+            'config = {"default": "sqlite", "connections": {"sqlite": {"driver": "sqlite", "database": ":memory:"}}}\n'
         )
         with patch("hunt.database.connection.configure") as db_configure:
             Application(project)

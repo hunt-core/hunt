@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import io
 import os
 import subprocess
@@ -12,6 +11,51 @@ from pathlib import Path
 from typing import Any
 
 from hunt.scheduling.cron import matches
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - only exercised on non-POSIX platforms
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - only exercised on Windows
+    msvcrt = None
+
+
+def _acquire_lock(fh: io.TextIOWrapper) -> bool:
+    """Acquire a non-blocking exclusive lock for the schedule task."""
+    if fcntl is not None:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+
+    if msvcrt is not None:
+        try:
+            fh.seek(0)
+            fh.write("\0")
+            fh.flush()
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+
+    # If the platform exposes neither locking primitive, run conservatively.
+    return False
+
+
+def _release_lock(fh: io.TextIOWrapper) -> None:
+    """Release a previously acquired schedule lock."""
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        return
+
+    if msvcrt is not None:
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 class ScheduledTask:
@@ -288,14 +332,15 @@ class ScheduledTask:
                 lock_dir.mkdir(parents=True, exist_ok=True)
                 lock_file = lock_dir / f"{self._name or id(self)}.lock"
                 fh = lock_file.open("w")
+                acquired = False
                 try:
-                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except OSError:
-                    return None
-                try:
+                    acquired = _acquire_lock(fh)
+                    if not acquired:
+                        return None
                     return self._execute()
                 finally:
-                    fcntl.flock(fh, fcntl.LOCK_UN)
+                    if acquired:
+                        _release_lock(fh)
                     fh.close()
             return self._execute()
 

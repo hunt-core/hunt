@@ -190,8 +190,10 @@ class TestLogsIndexController:
 
         log_file = tmp_path / "hunt.log"
         log_file.write_text(
-            json.dumps({"level": "error", "message": "an error", "ts": "t"}) + "\n"
-            + json.dumps({"level": "info", "message": "an info", "ts": "t"}) + "\n"
+            json.dumps({"level": "error", "message": "an error", "ts": "t"})
+            + "\n"
+            + json.dumps({"level": "info", "message": "an info", "ts": "t"})
+            + "\n"
         )
         monkeypatch.setenv("LOG_PATH", str(log_file))
         base_ctx = MagicMock(return_value={})
@@ -230,8 +232,10 @@ class TestLogsIndexController:
 
         log_file = tmp_path / "hunt.log"
         log_file.write_text(
-            json.dumps({"level": "info", "message": "database connection", "ts": "t"}) + "\n"
-            + json.dumps({"level": "info", "message": "user logged in", "ts": "t"}) + "\n"
+            json.dumps({"level": "info", "message": "database connection", "ts": "t"})
+            + "\n"
+            + json.dumps({"level": "info", "message": "user logged in", "ts": "t"})
+            + "\n"
         )
         monkeypatch.setenv("LOG_PATH", str(log_file))
         base_ctx = MagicMock(return_value={})
@@ -252,8 +256,10 @@ class TestLogsIndexController:
 
         log_file = tmp_path / "hunt.log"
         log_file.write_text(
-            json.dumps({"level": "info", "message": "first", "ts": "2024-01-01T00:00:00Z"}) + "\n"
-            + json.dumps({"level": "info", "message": "second", "ts": "2024-01-02T00:00:00Z"}) + "\n"
+            json.dumps({"level": "info", "message": "first", "ts": "2024-01-01T00:00:00Z"})
+            + "\n"
+            + json.dumps({"level": "info", "message": "second", "ts": "2024-01-02T00:00:00Z"})
+            + "\n"
         )
         monkeypatch.setenv("LOG_PATH", str(log_file))
         base_ctx = MagicMock(return_value={})

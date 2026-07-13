@@ -89,7 +89,7 @@ def _load_app_commands(cli: click.Group) -> None:
 @click.group()
 @click.version_option(version=__version__, prog_name="hunt")
 def cli() -> None:
-    """hunt — A Python web framework."""
+    """hunt - A batteries-included Python web framework."""
 
 
 # Top-level

@@ -10,7 +10,17 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/hunt-core/hunt" alt="License"></a>
 </p>
 
-A Python web framework. Routing, ORM, templates, migrations, validation, authentication, admin panel, and a CLI — all in one package.
+A batteries-included Python web framework with Active Record ORM, authentication, admin, queues, migrations, templates, and CLI tooling.
+
+Hunt is built for database-backed web applications that want a cohesive full-stack experience without assembling the stack from separate packages. It also includes first-class tooling for coding agents through `hunt context`, `--json` scaffolding output, and `llms.txt` documentation exports.
+
+## Why Hunt
+
+- ASGI-native request handling with expressive routing and middleware
+- Active Record ORM with migrations, relationships, factories, and seeders
+- Built-in authentication, sessions, admin panel, queues, mail, and scheduling
+- Jinja2-powered templating with Hunt directives and reusable UI components
+- CLI workflows for scaffolding, upgrades, diagnostics, and agent-friendly context
 
 ---
 
@@ -51,44 +61,46 @@ hunt migrate
 hunt serve
 ```
 
-Visit [http://localhost:8000](http://localhost:8000) — you should see the welcome page.
+Visit [http://localhost:8000](http://localhost:8000) - you should see the welcome page.
+
+From there you can add models, authenticated routes, admin resources, queued jobs, and tests without leaving the framework.
 
 ---
 
 ## Project structure
 
-```
+```text
 myapp/
-├── app/
-│   ├── admin/             # Admin resources
-│   ├── controllers/       # HTTP controllers
-│   │   └── auth/          # Login, register, password controllers
-│   ├── middleware/        # Middleware classes
-│   ├── models/            # Database models
-│   └── providers/         # Service providers
-├── bootstrap/
-│   └── app.py             # Application bootstrap (ASGI entry point)
-├── config/
-│   ├── app.py             # Application settings
-│   ├── auth.py            # Auth feature flags
-│   ├── database.py        # Database connections
-│   ├── filesystems.py     # Storage disks
-│   ├── mail.py            # Mail transport
-│   └── view.py            # View/template settings
-├── database/
-│   └── migrations/        # Migration files
-├── resources/
-│   └── views/             # hunt-style HTML templates
-├── routes/
-│   ├── admin.py           # Admin panel routes
-│   ├── api.py             # API routes
-│   ├── auth.py            # Auth routes
-│   └── web.py             # Web routes
-├── storage/               # Logs, compiled views, cache
-├── tests/                 # Test suite
-├── .env                   # Environment variables (not committed)
-├── .env.example           # Environment template
-└── pyproject.toml         # Project dependencies
+|-- app/
+|   |-- admin/             # Admin resources
+|   |-- controllers/       # HTTP controllers
+|   |   `-- auth/          # Login, register, password controllers
+|   |-- middleware/        # Middleware classes
+|   |-- models/            # Database models
+|   `-- providers/         # Service providers
+|-- bootstrap/
+|   `-- app.py             # Application bootstrap (ASGI entry point)
+|-- config/
+|   |-- app.py             # Application settings
+|   |-- auth.py            # Auth feature flags
+|   |-- database.py        # Database connections
+|   |-- filesystems.py     # Storage disks
+|   |-- mail.py            # Mail transport
+|   `-- view.py            # View/template settings
+|-- database/
+|   `-- migrations/        # Migration files
+|-- resources/
+|   `-- views/             # hunt-style HTML templates
+|-- routes/
+|   |-- admin.py           # Admin panel routes
+|   |-- api.py             # API routes
+|   |-- auth.py            # Auth routes
+|   `-- web.py             # Web routes
+|-- storage/               # Logs, compiled views, cache
+|-- tests/                 # Test suite
+|-- .env                   # Environment variables (not committed)
+|-- .env.example           # Environment template
+`-- pyproject.toml         # Project dependencies
 ```
 
 ---
@@ -255,7 +267,7 @@ class CreatePostsTable(Migration):
 Schema.table("posts", lambda bp: [
     bp.string("subtitle").nullable(),        # add column
     bp.drop_column("legacy_field"),          # drop column (raises if absent)
-    bp.drop_column_if_exists("old_field"),   # safe drop — idempotent
+    bp.drop_column_if_exists("old_field"),   # safe drop - idempotent
     bp.rename_column("body", "content"),     # rename column
 ])
 ```
@@ -338,7 +350,7 @@ Files are copied to `resources/views/`. Any file present there takes priority ov
 
 ## Authentication
 
-`hunt new` scaffolds a complete auth system: login, registration, and password reset — all wired up and ready to use.
+`hunt new` scaffolds a complete auth system: login, registration, and password reset - all wired up and ready to use.
 
 ```python
 from hunt.auth.manager import Auth
@@ -599,7 +611,7 @@ hunt make:2fa-controllers            # 2FA routes, controllers, templates, migra
 hunt admin:publish                   # copy admin templates to resources/views/admin/
 
 # Views
-hunt vendor:publish                        # all framework views → resources/views/
+hunt vendor:publish                        # all framework views -> resources/views/
 hunt vendor:publish --tag views:auth       # auth views only
 hunt vendor:publish --tag views:components # UI components only
 hunt vendor:publish --force                # overwrite existing files
@@ -615,17 +627,17 @@ hunt vendor:publish --force                # overwrite existing files
 | `APP_ENV` | `production` | Environment (`local`, `production`) |
 | `APP_DEBUG` | `false` | Enable debug mode |
 | `APP_URL` | `http://localhost:8000` | Application URL |
-| `APP_KEY` | — | Encryption key (auto-generated by `hunt new`) |
+| `APP_KEY` | - | Encryption key (auto-generated by `hunt new`) |
 | `DB_CONNECTION` | `sqlite` | Driver (`sqlite`, `mysql`, `postgresql`) |
 | `DB_HOST` | `127.0.0.1` | Database host |
 | `DB_PORT` | `3306` / `5432` | Database port |
-| `DB_DATABASE` | — | Database name / SQLite file path |
-| `DB_USERNAME` | — | Database username |
-| `DB_PASSWORD` | — | Database password |
-| `TRUSTED_PROXIES` | — | Comma-separated IPs/CIDRs to trust for `X-Forwarded-*` headers; `*` to trust all (dev only) |
+| `DB_DATABASE` | - | Database name / SQLite file path |
+| `DB_USERNAME` | - | Database username |
+| `DB_PASSWORD` | - | Database password |
+| `TRUSTED_PROXIES` | - | Comma-separated IPs/CIDRs to trust for `X-Forwarded-*` headers; `*` to trust all (dev only) |
 | `MAX_BODY_SIZE` | `10485760` | Max request body in bytes (default 10 MB); requests over the limit return 413 |
 | `SECURE_HSTS_SECONDS` | `0` | Enable `Strict-Transport-Security` with this max-age; `0` disables |
-| `SECURE_CONTENT_SECURITY_POLICY` | — | Value for the `Content-Security-Policy` header |
+| `SECURE_CONTENT_SECURITY_POLICY` | - | Value for the `Content-Security-Policy` header |
 | `ACCESS_LOG` | `true` | Set to `false` to skip per-request access log lines (e.g. when a reverse proxy already logs) |
 | `STATIC_CACHE_CONTROL` | `public, max-age=3600` | `Cache-Control` header sent with static file responses |
 | `STATIC_EXTENSIONS` | *(built-in allowlist)* | Comma-separated list of file extensions to serve as static files; replaces the default allowlist |
@@ -634,7 +646,7 @@ hunt vendor:publish --force                # overwrite existing files
 | `LOG_NON_BLOCKING` | `true` | Route file/daily log writes through a background thread queue so disk I/O doesn't block the event loop; set to `false` to disable |
 | `GZIP_ENABLED` | `true` | Enable gzip compression when `CompressResponse` middleware is in the stack |
 | `GZIP_MIN_LENGTH` | `1024` | Minimum response body size in bytes before gzip is applied |
-| `GZIP_LEVEL` | `6` | zlib compression level (1–9) used by `CompressResponse` |
+| `GZIP_LEVEL` | `6` | zlib compression level (1-9) used by `CompressResponse` |
 
 ---
 
@@ -666,4 +678,6 @@ pytest
 
 ## Documentation
 
-Full documentation at [hunt-framework.com](https://hunt-framework.com)
+- Quick start: [hunt-framework.com/docs/installation](https://hunt-framework.com/docs/installation)
+- AI agents: [hunt-framework.com/docs/ai-agents](https://hunt-framework.com/docs/ai-agents)
+- Full docs: [hunt-framework.com](https://hunt-framework.com)

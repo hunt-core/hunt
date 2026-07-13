@@ -691,9 +691,7 @@ class TestApplicationMailWiring:
 
         with patch("hunt.mail.manager.Mail") as mock_mail:
             Application(tmp_path)
-        mock_mail.configure.assert_called_once_with(
-            {"default": "array", "mailers": {"array": {"transport": "array"}}}
-        )
+        mock_mail.configure.assert_called_once_with({"default": "array", "mailers": {"array": {"transport": "array"}}})
 
     def test_missing_mail_config_leaves_manager_alone(self, tmp_path):
         (tmp_path / "config").mkdir()

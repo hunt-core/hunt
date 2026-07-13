@@ -1,5 +1,5 @@
 """
-hunt — A Python web framework.
+hunt - A batteries-included Python web framework.
 
 Quick start:
     from hunt.application import Application
@@ -12,4 +12,4 @@ Quick start:
     from hunt.validation.validator import Validator
 """
 
-__version__ = "0.4.29"
+__version__ = "0.4.35"

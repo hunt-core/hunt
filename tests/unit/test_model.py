@@ -163,9 +163,7 @@ def test_insert_get_id_returns_id():
 async def test_async_insert_accepts_returning_kwarg():
     # Before the fix this raised TypeError: async_insert() got an unexpected
     # keyword argument 'returning'.
-    pk = await User.query().async_insert(
-        {"name": "AsyncRet", "email": "ar@example.com"}, returning="id"
-    )
+    pk = await User.query().async_insert({"name": "AsyncRet", "email": "ar@example.com"}, returning="id")
     # SQLite is not PostgreSQL so returning is ignored and lastrowid is used.
     assert pk is not None
 

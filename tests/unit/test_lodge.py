@@ -283,15 +283,7 @@ class TestServicesInCompose:
 
 class TestInsertService:
     def _base_compose(self):
-        return (
-            "services:\n"
-            "  app:\n"
-            "    image: x\n"
-            "\n"
-            "networks:\n"
-            "  lodge:\n"
-            "    driver: bridge\n"
-        )
+        return "services:\n  app:\n    image: x\n\nnetworks:\n  lodge:\n    driver: bridge\n"
 
     def test_inserts_before_networks(self):
         result = _insert_service(self._base_compose(), "redis")
@@ -317,24 +309,13 @@ class TestInsertService:
 
 class TestAddDependsOn:
     def test_adds_to_existing_depends_on(self):
-        content = (
-            "  app:\n"
-            "    image: x\n"
-            "    depends_on:\n"
-            "      pgsql:\n"
-            "        condition: service_healthy\n"
-        )
+        content = "  app:\n    image: x\n    depends_on:\n      pgsql:\n        condition: service_healthy\n"
         result = _add_depends_on(content, "redis")
         assert "redis:" in result
         assert "pgsql:" in result
 
     def test_creates_depends_on_when_absent(self):
-        content = (
-            "  app:\n"
-            "    volumes:\n"
-            '      - ".:/app"\n'
-            '      - "/app/.venv"\n'
-        )
+        content = '  app:\n    volumes:\n      - ".:/app"\n      - "/app/.venv"\n'
         result = _add_depends_on(content, "redis")
         assert "depends_on:" in result
         assert "redis:" in result
