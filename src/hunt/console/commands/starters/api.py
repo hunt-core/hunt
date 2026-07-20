@@ -7,7 +7,7 @@ from pathlib import Path
 
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
 
 
 def apply(target: Path) -> None:
@@ -138,6 +138,7 @@ _API_AUTH_MIDDLEWARE = """\
 Replace the stub token store with a real tokens table once you wire up
 actual token issuance (e.g. POST /api/v1/auth/login).
 \"\"\"
+from hunt.auth.manager import Auth
 from hunt.http.middleware import Middleware, Next
 from hunt.http.request import Request
 from hunt.http.response import Response
@@ -149,7 +150,7 @@ class ApiAuth(Middleware):
         if not auth_header.startswith("Bearer "):
             return Response(
                 '{"error": "Unauthenticated"}',
-                status_code=401,
+                status=401,
                 content_type="application/json",
             )
 
@@ -158,11 +159,11 @@ class ApiAuth(Middleware):
         if user is None:
             return Response(
                 '{"error": "Invalid token"}',
-                status_code=401,
+                status=401,
                 content_type="application/json",
             )
 
-        request.set_user(user)
+        Auth.login(user)
         return await next(request)
 
     def _resolve_user(self, token: str):

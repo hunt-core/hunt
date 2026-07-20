@@ -14,7 +14,7 @@ _SENTINEL = ".maintenance"
 def down_command(message: str, retry: int) -> None:
     """Put the application into maintenance mode (returns 503 to all visitors)."""
     sentinel = Path.cwd() / _SENTINEL
-    sentinel.write_text(json.dumps({"message": message, "retry_after": retry}, indent=2))
+    sentinel.write_text(json.dumps({"message": message, "retry_after": retry}, indent=2), encoding="utf-8")
     click.echo("  Application is now in maintenance mode.")
     click.echo(f"  Message : {message}")
     click.echo(f"  Retry-After : {retry}s")

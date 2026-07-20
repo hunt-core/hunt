@@ -138,7 +138,7 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
         output.echo(f"  [dry-run] Updated Routes: routes/web.py  (/{route_prefix})")
         return
 
-    routes_file.write_text(existing.rstrip() + "\n\n" + block + "\n")
+    routes_file.write_text(existing.rstrip() + "\n\n" + block + "\n", encoding="utf-8")
     output.echo(f"  Updated Routes:     routes/web.py  (/{route_prefix})")
 
 

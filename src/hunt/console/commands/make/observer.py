@@ -68,5 +68,5 @@ def make_observer_command(name: str, model: str | None) -> None:
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Observer: {out.relative_to(Path.cwd())}")

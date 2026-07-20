@@ -29,5 +29,5 @@ def key_generate_command(show: bool) -> None:
     else:
         content += f"\nAPP_KEY={key}\n"
 
-    env_file.write_text(content)
+    env_file.write_text(content, encoding="utf-8")
     click.echo(f"  Application key set: {key}")

@@ -63,6 +63,6 @@ def queue_table_command() -> None:
     filename = f"{ts}_create_jobs_tables.py"
     out = Path.cwd() / "database" / "migrations" / filename
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(_MIGRATION_STUB)
+    out.write_text(_MIGRATION_STUB, encoding="utf-8")
     click.echo(f"  Created migration: database/migrations/{filename}")
     click.echo("  Run `hunt migrate` to apply it.")

@@ -18,7 +18,7 @@ def make_notification_command(name: str) -> None:
 
     out = Path.cwd() / "app" / "notifications" / f"{Str.snake(name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Notification: {out.relative_to(Path.cwd())}")
 
 

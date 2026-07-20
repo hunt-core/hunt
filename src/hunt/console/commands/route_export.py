@@ -81,7 +81,7 @@ def route_export_command(fmt: str, output: str | None, title: str, api_version: 
     content = json.dumps(spec, indent=2)
 
     if output:
-        Path(output).write_text(content)
+        Path(output).write_text(content, encoding="utf-8")
         click.echo(f"  Exported {len(router.routes())} routes to {output}")
     else:
         click.echo(content)

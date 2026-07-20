@@ -11,6 +11,25 @@ hunt uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.36] — 2026-07-20
+
+### Added
+
+- **`Blueprint.uuid()` column type** — `table.uuid("public_id")` builds a portable `CHAR(36)` column that works across SQLite, MySQL and PostgreSQL. The `:uuid` field type was already advertised by the `make:model`/`make:migration` scaffolding, but no backing method existed, so generated migrations crashed with `AttributeError` on `hunt migrate`.
+- **`S3Disk` now implements the full disk interface** — `mime_type()`, `directories()`, `append()` and `prepend()` were forwarded by the `Storage` facade but missing on the S3 driver, so any of them raised `AttributeError` whenever the default disk was S3. All four are implemented, so code written against the local disk behaves identically on S3.
+
+### Fixed
+
+- **Boolean column defaults are rendered correctly on PostgreSQL** — `table.boolean("x").default(0)` emitted `DEFAULT 0`, which Postgres rejects on a boolean column. Default rendering is now column-type-aware: a non-boolean default on a boolean column (`0`/`1`/`"true"`/`"false"`) is coerced to a real boolean literal (`true`/`false` on Postgres, `1`/`0` elsewhere). The generated `hunt new` skeleton also uses `.default(False)` instead of `.default(0)`.
+- **Admin dashboard trend metrics no longer take down the page** — a `TrendMetric` card read `metric.values` in the template, which Jinja resolved to the `dict.values` method rather than the data, raising `TypeError` and crashing the entire dashboard render. The template now subscripts the payload explicitly.
+- **Uploads are never stored without an extension** — `Storage.put_file()` derived the extension purely from magic-byte sniffing, which cannot distinguish `.xlsx` from `.docx` (both ZIP containers) and stored OOXML files with no extension at all. It now honours the client-supplied extension when it is allowlisted **and** consistent with the sniffed content, falling back to the sniffed type and finally to `.bin`. The local and S3 disks now name uploads identically (UUID plus a safe extension; an explicit name is reduced to its basename).
+- **Pluralisation of `-sis` nouns** — `Str.plural("analysis")` produced `analysises`; it now returns `analyses` (likewise `crisis` → `crises`, `diagnosis` → `diagnoses`), so `make:model PocAnalysis` infers the `poc_analyses` table. `Str.singular` was also mangling every regular noun ending in `-e` (`files` → `fil`, `names` → `nam`) and now returns the correct singular.
+- **Maintenance mode returned 500 instead of 503** — the `MaintenanceMode` middleware built its `Response` with the wrong keyword (`status_code=`), so every request during `hunt down` raised `TypeError`, was swallowed by the kernel, and returned a 500 with no maintenance page or `Retry-After` header.
+- **Code generation writes UTF-8 explicitly** — `hunt new`, the starter kits and every `make:*` command wrote generated files using the platform default encoding, so non-ASCII characters (e.g. `—`, `→`) crashed the command on Windows or produced files that would not import as UTF-8. All generated files are now written as UTF-8.
+- **Starter kits shipped code that failed against the real API** — the `api`/`saas`/`blog` starters imported a non-existent `hunt.http.middleware.auth`, constructed `Response(status_code=...)`, called `.all()` on a query builder (the materialiser is `.get()`), and set the authenticated user via a non-existent `request.set_user()`. All corrected against the current framework API.
+
+---
+
 ## [0.4.35] — 2026-06-10
 
 ### Added

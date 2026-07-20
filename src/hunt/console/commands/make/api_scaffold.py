@@ -38,7 +38,7 @@ def _make_model(class_name: str, table: str, fields: list[tuple[str, str]]) -> N
     content = _MODEL_STUB.replace("{{class}}", class_name).replace("{{table}}", table).replace("{{fillable}}", fill)
     out = Path.cwd() / "app" / "models" / f"{Str.snake(class_name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Model:      {out.relative_to(Path.cwd())}")
 
 
@@ -53,7 +53,7 @@ def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) 
     filename = f"{timestamp}_create_{table}_table"
     out = Path.cwd() / "database" / "migrations" / f"{filename}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Migration:  {out.relative_to(Path.cwd())}")
 
 
@@ -68,7 +68,7 @@ def _make_resource_class(class_name: str, snake: str, fields: list[tuple[str, st
     )
     out = Path.cwd() / "app" / "resources" / f"{snake}_resource.py"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Resource:   {out.relative_to(Path.cwd())}")
 
 
@@ -89,7 +89,7 @@ def _make_controller(class_name: str, snake: str, route_prefix: str, fields: lis
     )
     out = Path.cwd() / "app" / "controllers" / f"{snake}_controller.py"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Controller: {out.relative_to(Path.cwd())}")
 
 
@@ -106,7 +106,7 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
     if f"/{route_prefix}" in existing:
         click.echo(f"  Skipped Routes:     /api/{route_prefix} already in routes/api.py")
         return
-    routes_file.write_text(existing.rstrip() + "\n\n" + block + "\n")
+    routes_file.write_text(existing.rstrip() + "\n\n" + block + "\n", encoding="utf-8")
     click.echo(f"  Updated Routes:     routes/api.py  (/api/{route_prefix})")
 
 

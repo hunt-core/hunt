@@ -165,6 +165,14 @@ class Blueprint:
         self.columns.append(col)
         return col
 
+    def uuid(self, name: str) -> ColumnDef:
+        # CHAR(36) stores the canonical hyphenated form and is accepted by every
+        # supported dialect; Postgres' native UUID type is intentionally avoided
+        # to keep the schema portable.
+        col = ColumnDef(name, "CHAR", length=36)
+        self.columns.append(col)
+        return col
+
     def char(self, name: str, length: int = 1) -> ColumnDef:
         col = ColumnDef(name, "CHAR", length=length)
         self.columns.append(col)
@@ -403,7 +411,7 @@ class Blueprint:
         if col.default_value is not None:
             from hunt.database.schema.builder import _safe_default
 
-            sql += f" DEFAULT {_safe_default(col.default_value, dialect)}"
+            sql += f" DEFAULT {_safe_default(col.default_value, dialect, col.type)}"
         if col.is_unique and not col.primary:
             sql += " UNIQUE"
         if col.enum_values:

@@ -23,6 +23,11 @@ def _sniff_mime(data: bytes) -> str:
         return "image/bmp"
     if data[:4] == b"%PDF":
         return "application/pdf"
+    if data[:4] in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
+        # OOXML (.xlsx/.docx/.pptx), ODF and plain .zip all share this
+        # container. The bytes cannot tell them apart — callers that need the
+        # specific format must disambiguate via the filename.
+        return "application/zip"
     stripped = data[:512].lstrip()
     if stripped[:4] == b"<svg" or stripped[:5] == b"<?xml":
         return "image/svg+xml"

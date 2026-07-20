@@ -46,6 +46,6 @@ def make_listener_command(name: str, event_name: str, queued: bool) -> None:
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(stub.format(class_name=name))
+    out.write_text(stub.format(class_name=name), encoding="utf-8")
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")
     click.echo("  Register it in app/providers/event_service_provider.py")

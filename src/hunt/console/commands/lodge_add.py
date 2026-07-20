@@ -94,7 +94,7 @@ def lodge_add_command(service: str) -> None:
     if service in _SERVICE_VOLUMES:
         content = _add_volume(content, _SERVICE_VOLUMES[service])
 
-    compose_file.write_text(content)
+    compose_file.write_text(content, encoding="utf-8")
     click.echo(f"  ✓  Added '{service}' to compose.yaml")
 
     for env_file in (cwd / ".env", cwd / ".env.example"):
@@ -102,7 +102,7 @@ def lodge_add_command(service: str) -> None:
             env_content = env_file.read_text()
             for key, value in _ENV_UPDATES[service].items():
                 env_content = _set_env(env_content, key, value)
-            env_file.write_text(env_content)
+            env_file.write_text(env_content, encoding="utf-8")
 
     click.echo(f"  ✓  .env updated for {service}")
     click.echo("\n  Rebuild with: ./lodge build\n  Then restart: ./lodge up -d\n")

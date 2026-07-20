@@ -45,7 +45,7 @@ class MaintenanceMode(Middleware):
 
         response = Response(
             _MAINTENANCE_HTML.replace("{{message}}", message),
-            status_code=503,
+            status=503,
         )
         response.header("Content-Type", "text/html; charset=utf-8")
         response.header("Retry-After", str(retry_after))

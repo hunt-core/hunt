@@ -24,7 +24,7 @@ def _write_lock(root: Path, hashes: dict[str, str]) -> None:
     lock_dir = root / ".hunt"
     lock_dir.mkdir(exist_ok=True)
     lock = {"version": 1, "files": hashes}
-    (lock_dir / "scaffold.lock").write_text(json.dumps(lock, indent=2))
+    (lock_dir / "scaffold.lock").write_text(json.dumps(lock, indent=2), encoding="utf-8")
 
 
 def _patch_auth_model(content: str) -> str:
@@ -96,7 +96,7 @@ def _patch_bootstrap(root: Path) -> list[str]:
             patches.append(label)
 
     if content != original:
-        bootstrap.write_text(content)
+        bootstrap.write_text(content, encoding="utf-8")
 
     return patches
 
@@ -152,7 +152,7 @@ def upgrade_command() -> None:
 
         if not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(content)
+            dest.write_text(content, encoding="utf-8")
             updated_hashes[rel] = canonical_hash
             added.append(rel)
             click.echo(f"  + {rel}")
@@ -176,7 +176,7 @@ def upgrade_command() -> None:
             continue
 
         # File is unmodified from the last scaffold write — safe to update.
-        dest.write_text(content)
+        dest.write_text(content, encoding="utf-8")
         updated_hashes[rel] = canonical_hash
         upgraded.append(rel)
         click.echo(f"  ↑ {rel}")
@@ -185,7 +185,7 @@ def upgrade_command() -> None:
         dest = root / rel
         if not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(content)
+            dest.write_text(content, encoding="utf-8")
             added.append(rel)
             click.echo(f"  + {rel}")
 

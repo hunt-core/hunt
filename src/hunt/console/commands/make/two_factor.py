@@ -23,7 +23,7 @@ def make_two_factor_command() -> None:
 def _write_controllers(cwd: Path) -> None:
     dest = cwd / "app" / "controllers" / "two_factor_controller.py"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(_CONTROLLER_STUB)
+    dest.write_text(_CONTROLLER_STUB, encoding="utf-8")
     click.echo(f"  Created Controller: {dest.relative_to(cwd)}")
 
 
@@ -40,7 +40,7 @@ def _write_templates(cwd: Path) -> None:
 def _write_routes_snippet(cwd: Path) -> None:
     dest = cwd / "routes" / "two_factor.py"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(_ROUTES_STUB)
+    dest.write_text(_ROUTES_STUB, encoding="utf-8")
     click.echo(f"  Created Routes:     {dest.relative_to(cwd)}")
 
 
@@ -50,7 +50,7 @@ def _write_migration(cwd: Path) -> None:
     stamp = str(int(time.time()))
     dest = cwd / "database" / "migrations" / f"{stamp}_add_two_factor_to_users_table.py"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(_MIGRATION_STUB)
+    dest.write_text(_MIGRATION_STUB, encoding="utf-8")
     click.echo(f"  Created Migration:  {dest.relative_to(cwd)}")
 
 

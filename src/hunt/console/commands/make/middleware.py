@@ -18,7 +18,7 @@ def make_middleware_command(name: str) -> None:
 
     out = Path.cwd() / "app" / "middleware" / f"{Str.snake(name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Middleware: {out.relative_to(Path.cwd())}")
 
 

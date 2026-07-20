@@ -25,7 +25,7 @@ def make_admin_resource_command(model: str) -> None:
         )
 
     # Read the class name directly from the file
-    model_source = model_file.read_text()
+    model_source = model_file.read_text(encoding="utf-8")
     match = _CLASS_RE.search(model_source)
     if not match:
         raise click.ClickException(f"No class definition found in app/models/{model_slug}.py")
@@ -36,7 +36,7 @@ def make_admin_resource_command(model: str) -> None:
 
     # Check not already registered
     routes_file = Path.cwd() / "routes" / "admin.py"
-    if routes_file.exists() and f"Admin.resource({class_name})" in routes_file.read_text():
+    if routes_file.exists() and f"Admin.resource({class_name})" in routes_file.read_text(encoding="utf-8"):
         raise click.ClickException(f"{class_name} is already registered in routes/admin.py")
 
     target_dir = Path.cwd() / "app" / "admin"
@@ -85,7 +85,7 @@ def make_admin_resource_command(model: str) -> None:
         .replace("{{model_slug}}", model_slug)
     )
 
-    file_path.write_text(content)
+    file_path.write_text(content, encoding="utf-8")
     click.echo(f"  AdminResource created: app/admin/{snake_name}.py")
 
     _inject_into_routes(model_slug, class_name)
@@ -96,7 +96,7 @@ def _inject_into_routes(model_slug: str, class_name: str) -> None:
     if not routes_file.exists():
         return
 
-    source = routes_file.read_text()
+    source = routes_file.read_text(encoding="utf-8")
 
     import_stmt = f"from app.admin.{Str.snake(class_name)} import {class_name}"
     register_stmt = f"Admin.resource({class_name})"
@@ -145,5 +145,5 @@ def _inject_into_routes(model_slug: str, class_name: str) -> None:
     else:
         lines.append(register_stmt)
 
-    routes_file.write_text("\n".join(lines) + "\n")
+    routes_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     click.echo("  Registered in:        routes/admin.py")

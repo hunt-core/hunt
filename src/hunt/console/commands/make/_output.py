@@ -49,7 +49,7 @@ class _OutputContext:
             return False
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
         self._records.append({"action": "created", "file": rel})
         if not self.as_json:
             click.echo(f"  {label}: {rel}")

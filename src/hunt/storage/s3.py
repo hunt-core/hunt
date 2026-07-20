@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from hunt.storage._naming import upload_filename
+
 
 class S3Disk:
     """S3-compatible disk via boto3 (optional dependency).
@@ -41,10 +43,24 @@ class S3Disk:
         return True
 
     def put_file(self, directory: str, file: Any, name: str | None = None) -> str:
-        filename = name or file.filename
+        filename = upload_filename(file, name)
         stored_path = f"{directory.rstrip('/')}/{filename}"
         self.put(stored_path, file.content)
         return stored_path
+
+    def append(self, path: str, contents: str | bytes) -> bool:
+        """Append via read-modify-write (S3 has no native append)."""
+        existing = self.get(path) if self.exists(path) else b""
+        if isinstance(contents, str):
+            contents = contents.encode()
+        return self.put(path, existing + contents)
+
+    def prepend(self, path: str, contents: str | bytes) -> bool:
+        """Prepend via read-modify-write (S3 has no native prepend)."""
+        existing = self.get(path) if self.exists(path) else b""
+        if isinstance(contents, str):
+            contents = contents.encode()
+        return self.put(path, contents + existing)
 
     def get(self, path: str) -> bytes:
         response = self._boto().get_object(Bucket=self._bucket, Key=path)
@@ -93,9 +109,22 @@ class S3Disk:
         pages = paginator.paginate(Bucket=self._bucket, Prefix=prefix)
         return [obj["Key"] for page in pages for obj in page.get("Contents", []) if not obj["Key"].endswith("/")]
 
+    def directories(self, directory: str = "") -> list[str]:
+        """Return immediate sub-directories (S3 common prefixes), no trailing slash."""
+        prefix = directory.rstrip("/") + "/" if directory else ""
+        response = self._boto().list_objects_v2(Bucket=self._bucket, Prefix=prefix, Delimiter="/")
+        return [cp["Prefix"].rstrip("/") for cp in response.get("CommonPrefixes", [])]
+
     def size(self, path: str) -> int:
         response = self._boto().head_object(Bucket=self._bucket, Key=path)
         return response["ContentLength"]
+
+    def mime_type(self, path: str) -> str:
+        """Best-guess MIME type from the key's extension (matches LocalDisk)."""
+        import mimetypes
+
+        mt, _ = mimetypes.guess_type(path)
+        return mt or "application/octet-stream"
 
     def last_modified(self, path: str) -> int:
         response = self._boto().head_object(Bucket=self._bucket, Key=path)

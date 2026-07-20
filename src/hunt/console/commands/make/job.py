@@ -37,5 +37,5 @@ def make_job_command(name: str) -> None:
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
     job_name = "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
-    out.write_text(load_stub("job", _STUB).format(class_name=name, job_name=job_name))
+    out.write_text(load_stub("job", _STUB).format(class_name=name, job_name=job_name), encoding="utf-8")
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")

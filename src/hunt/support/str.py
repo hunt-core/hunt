@@ -47,6 +47,11 @@ class Str:
         lower = value.lower()
         if lower in irregular:
             return irregular[lower]
+        # Greek/Latin -sis nouns replace the ending rather than appending:
+        # analysis -> analyses, crisis -> crises.  Must precede the sibilant
+        # rule below, which would otherwise see the trailing "s".
+        if lower.endswith("sis"):
+            return value[:-2] + "es"
         if lower.endswith(("s", "x", "z", "ch", "sh")):
             return value + "es"
         if lower.endswith("y") and lower[-2] not in "aeiou":
@@ -57,8 +62,33 @@ class Str:
     def singular(value: str) -> str:
         if value.endswith("ies"):
             return value[:-3] + "y"
-        if value.endswith("es"):
+        # Mirror of the -sis rule in plural().  Matched against an explicit list
+        # because a general -ses rule would mangle regular words (houses, roses).
+        # "bases" and "axes" are omitted: they collide with base/axe.
+        if value.lower().endswith(
+            (
+                "analyses",
+                "theses",
+                "crises",
+                "hypotheses",
+                "syntheses",
+                "diagnoses",
+                "prognoses",
+                "parentheses",
+                "ellipses",
+            )
+        ):
+            return value[:-2] + "is"
+        # True sibilant plurals gained a whole "es" (box->boxes, class->classes,
+        # match->matches).  Only these may have the "es" stripped.
+        if value.endswith(("sses", "shes", "ches", "xes", "zzes")):
             return value[:-2]
+        # Everything else ending in "s" simply had an "s" appended, including
+        # regular nouns whose singular ends in "e" (file->files, house->houses).
+        # A blanket "es"-strip here would mangle the base (files->fil).  Words
+        # ending in "ss" (class, boss) are already singular, so leave them.
+        # Limitation: single-sibilant bases (bus->buses, quiz->quizes) cannot be
+        # recovered by suffix alone — "buses" is indistinguishable from "houses".
         if value.endswith("s") and not value.endswith("ss"):
             return value[:-1]
         return value

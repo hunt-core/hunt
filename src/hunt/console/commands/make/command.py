@@ -43,7 +43,7 @@ def make_command_command(name: str, command_name: str | None) -> None:
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     click.echo(f"  Created Command: {out.relative_to(Path.cwd())}")
 
     # Auto-register the new command in app/console/kernel.py
@@ -70,5 +70,5 @@ def make_command_command(name: str, command_name: str | None) -> None:
                 f"{register_line}\n",
                 1,
             )
-            kernel_file.write_text(src)
+            kernel_file.write_text(src, encoding="utf-8")
             click.echo("  Registered in: app/console/kernel.py")

@@ -250,6 +250,7 @@ class CreatePostsTable(Migration):
     def up(self) -> None:
         Schema.create("posts", lambda bp: [
             bp.id(),
+            bp.uuid("public_id"),
             bp.string("title"),
             bp.text("body").nullable(),
             bp.boolean("published").default(False),

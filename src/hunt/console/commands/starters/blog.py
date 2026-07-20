@@ -7,7 +7,7 @@ from pathlib import Path
 
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
 
 
 def apply(target: Path) -> None:
@@ -76,7 +76,7 @@ class Category(Model):
 
     def posts(self):
         from app.models.post import Post
-        return Post.where("category_id", self._attributes.get("id")).all()
+        return Post.where("category_id", self._attributes.get("id")).get()
 """
 
 _TAG_MODEL = """\
@@ -109,7 +109,7 @@ def _slugify(text: str) -> str:
 
 class PostController(Controller):
     def index(self, request: Request) -> Response:
-        posts = Post.where("published", True).all()
+        posts = Post.where("published", True).get()
         return self.view("posts.index", {"posts": posts})
 
     def show(self, request: Request, id: int) -> Response:

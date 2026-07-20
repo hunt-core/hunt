@@ -401,11 +401,57 @@ class TestS3DiskInterface:
         files = self.disk.all_files()
         assert set(files) == {"a.txt", "b.txt", "c.txt"}
 
-    def test_put_file(self):
-        f = _FakeFile(filename="upload.jpg", _data=b"imgdata")
+    def test_put_file_generates_unique_name(self):
+        # Parity with LocalDisk: with no explicit name a UUID name is generated
+        # rather than reusing the raw client filename (avoids overwrites and
+        # unpredictable, guessable keys). The extension is kept only because the
+        # content type matches it.
+        f = _FakeFile(filename="upload.jpg", content_type="image/jpeg", _data=b"imgdata")
         stored = self.disk.put_file("photos", f)
-        assert stored == "photos/upload.jpg"
+        assert stored.startswith("photos/")
+        assert stored != "photos/upload.jpg"
+        assert stored.endswith(".jpg")
         self._mock_client.put_object.assert_called_once()
+        assert self._mock_client.put_object.call_args[1]["Key"] == stored
+
+    def test_put_file_explicit_name_uses_basename(self):
+        # An explicit name is reduced to its basename so it cannot escape the
+        # target directory (same as LocalDisk).
+        f = _FakeFile(filename="upload.jpg", _data=b"imgdata")
+        stored = self.disk.put_file("photos", f, name="a/b/avatar.png")
+        assert stored == "photos/avatar.png"
+
+    def test_mime_type(self):
+        assert self.disk.mime_type("dir/photo.png") == "image/png"
+
+    def test_directories(self):
+        self._mock_client.list_objects_v2.return_value = {
+            "CommonPrefixes": [{"Prefix": "dir/sub1/"}, {"Prefix": "dir/sub2/"}]
+        }
+        assert self.disk.directories("dir") == ["dir/sub1", "dir/sub2"]
+
+    def test_append_read_modify_write(self):
+        self._mock_client.head_object.return_value = {
+            "ContentLength": 3,
+            "LastModified": MagicMock(timestamp=lambda: 0.0),
+        }
+        self._mock_client.get_object.return_value = {"Body": MagicMock(read=lambda: b"abc")}
+        self.disk.append("f.txt", "def")
+        assert self._mock_client.put_object.call_args[1]["Body"] == b"abcdef"
+
+    def test_prepend_read_modify_write(self):
+        self._mock_client.head_object.return_value = {
+            "ContentLength": 3,
+            "LastModified": MagicMock(timestamp=lambda: 0.0),
+        }
+        self._mock_client.get_object.return_value = {"Body": MagicMock(read=lambda: b"abc")}
+        self.disk.prepend("f.txt", "def")
+        assert self._mock_client.put_object.call_args[1]["Body"] == b"defabc"
+
+    def test_append_when_missing_creates(self):
+        self._mock_client.head_object.side_effect = Exception("NoSuchKey")
+        self.disk.append("new.txt", b"data")
+        assert self._mock_client.put_object.call_args[1]["Body"] == b"data"
 
     def test_delete_directory(self):
         paginator = MagicMock()

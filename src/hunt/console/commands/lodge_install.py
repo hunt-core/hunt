@@ -441,24 +441,24 @@ def lodge_install_command(with_services: str, python_version: str | None) -> Non
 
     # ── Write compose.yaml ────────────────────────────────────────────────────
     compose_content = _build_compose(app_name, python_version, services)
-    compose_file.write_text(compose_content)
+    compose_file.write_text(compose_content, encoding="utf-8")
     click.echo("  ✓  compose.yaml")
 
     # ── Write docker/Dockerfile ───────────────────────────────────────────────
     docker_dir = cwd / "docker"
     docker_dir.mkdir(exist_ok=True)
     dockerfile = docker_dir / "Dockerfile"
-    dockerfile.write_text(_DOCKERFILE_DEV)
+    dockerfile.write_text(_DOCKERFILE_DEV, encoding="utf-8")
     click.echo("  ✓  docker/Dockerfile")
 
     entrypoint = docker_dir / "docker-entrypoint.sh"
-    entrypoint.write_text(_ENTRYPOINT)
+    entrypoint.write_text(_ENTRYPOINT, encoding="utf-8")
     entrypoint.chmod(0o755)
     click.echo("  ✓  docker/docker-entrypoint.sh")
 
     # ── Write lodge script ────────────────────────────────────────────────────
     lodge_script = cwd / "lodge"
-    lodge_script.write_text(_LODGE_SCRIPT)
+    lodge_script.write_text(_LODGE_SCRIPT, encoding="utf-8")
     lodge_script.chmod(0o755)
     click.echo("  ✓  lodge")
 
@@ -469,7 +469,7 @@ def lodge_install_command(with_services: str, python_version: str | None) -> Non
         for svc in services:
             for key, value in _ENV_UPDATES[svc].items():
                 content = _set_env(content, key, value)
-        env_file.write_text(content)
+        env_file.write_text(content, encoding="utf-8")
         click.echo("  ✓  .env updated")
 
     # ── Update .env.example ───────────────────────────────────────────────────
@@ -479,7 +479,7 @@ def lodge_install_command(with_services: str, python_version: str | None) -> Non
         for svc in services:
             for key, value in _ENV_UPDATES[svc].items():
                 content = _set_env(content, key, value)
-        env_example.write_text(content)
+        env_example.write_text(content, encoding="utf-8")
 
     # ── Suggest adding lodge to .gitignore ────────────────────────────────────
     gitignore = cwd / ".gitignore"

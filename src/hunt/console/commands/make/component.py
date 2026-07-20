@@ -27,6 +27,6 @@ def make_component_command(name: str) -> None:
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(_STUB.replace("{name}", slug))
+    out.write_text(_STUB.replace("{name}", slug), encoding="utf-8")
     click.echo(f"  Created Component: {out.relative_to(Path.cwd())}")
     click.echo(f"  Usage: @component('{slug}', {{'prop': value}})")

@@ -41,13 +41,13 @@
     <div class="overflow-hidden rounded-lg bg-gray-800/75 px-4 py-5 inset-ring inset-ring-white/10 sm:col-span-2 sm:p-6">
         <dt class="truncate text-sm font-medium text-gray-400">{{ metric.name }}</dt>
         <dd class="mt-3 h-16">
-            <svg viewBox="0 0 {{ metric.values | length * 30 }} 60" preserveAspectRatio="none" class="w-full h-full" aria-hidden="true">
-            {% if metric.values %}
-            {% set max_val = metric.values | max %}
-            {% set min_val = metric.values | min %}
+            <svg viewBox="0 0 {{ metric['values'] | length * 30 }} 60" preserveAspectRatio="none" class="w-full h-full" aria-hidden="true">
+            {% if metric['values'] %}
+            {% set max_val = metric['values'] | max %}
+            {% set min_val = metric['values'] | min %}
             {% set range = (max_val - min_val) or 1 %}
             {% set pts = [] %}
-            {% for v in metric.values %}
+            {% for v in metric['values'] %}
                 {% set x = loop.index0 * 30 + 15 %}
                 {% set y = 55 - ((v - min_val) / range * 50) %}
                 {% if pts.append(x | string + ',' + y | string) %}{% endif %}

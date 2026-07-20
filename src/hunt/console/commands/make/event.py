@@ -27,5 +27,5 @@ def make_event_command(name: str) -> None:
     if out.exists():
         click.echo(f"  Already exists: {out.relative_to(Path.cwd())}")
         return
-    out.write_text(load_stub("event", _STUB).format(class_name=name))
+    out.write_text(load_stub("event", _STUB).format(class_name=name), encoding="utf-8")
     click.echo(f"  Created: {out.relative_to(Path.cwd())}")

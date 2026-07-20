@@ -5,31 +5,10 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from hunt.storage._naming import upload_filename
+
 if TYPE_CHECKING:
     from hunt.http.request import UploadedFile
-
-# Derive upload filename extensions from magic-byte-detected MIME type only.
-# Client-supplied filenames are never trusted for extension.
-_MIME_EXT: dict[str, str] = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/gif": ".gif",
-    "image/webp": ".webp",
-    "image/bmp": ".bmp",
-    "image/x-icon": ".ico",
-    "application/pdf": ".pdf",
-    "text/plain": ".txt",
-    "video/mp4": ".mp4",
-    "audio/mpeg": ".mp3",
-}
-
-
-def _safe_extension(file: object) -> str:  # type: ignore[name-defined]
-    try:
-        mime = file.get_mime_type()  # type: ignore[attr-defined]
-        return _MIME_EXT.get(mime, "")
-    except Exception:
-        return ""
 
 
 class LocalDisk:
@@ -68,12 +47,7 @@ class LocalDisk:
         When no explicit name is given a UUID-based name is generated so
         concurrent uploads of identically-named files never overwrite each other.
         """
-        if name is not None:
-            filename = Path(name).name
-        else:
-            import uuid
-
-            filename = f"{uuid.uuid4().hex}{_safe_extension(file)}"
+        filename = upload_filename(file, name)
         stored_path = f"{directory.rstrip('/')}/{filename}"
         self.put(stored_path, file.content)
         return stored_path

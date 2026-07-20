@@ -18,8 +18,22 @@ def _ident(name: str) -> str:
     return name
 
 
-def _safe_default(value: object, dialect: str = "sqlite") -> str:
-    """Render a column default value as a safe SQL literal."""
+def _coerce_bool(value: object) -> bool:
+    """Interpret a non-bool default for a BOOLEAN column as a boolean."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "t", "yes", "y")
+    return bool(value)
+
+
+def _safe_default(value: object, dialect: str = "sqlite", column_type: str | None = None) -> str:
+    """Render a column default value as a safe SQL literal.
+
+    When *column_type* is ``"BOOLEAN"``, a non-bool default (e.g. ``.default(0)``
+    or ``.default("true")``) is coerced to a real boolean first — Postgres
+    rejects ``DEFAULT 0`` on a boolean column, so the literal must match the type.
+    """
+    if column_type == "BOOLEAN" and not isinstance(value, bool):
+        value = _coerce_bool(value)
     if isinstance(value, bool):
         if dialect == "postgresql":
             return "true" if value else "false"
@@ -249,7 +263,7 @@ def _pg_alter_column(conn, table: str, col: ColumnDef) -> None:
 
     # Default
     if col.default_value is not None:
-        default_val = _safe_default(col.default_value, "postgresql")
+        default_val = _safe_default(col.default_value, "postgresql", col.type)
         conn.execute(text(f"ALTER TABLE {t} ALTER COLUMN {c} SET DEFAULT {default_val}"))
     else:
         conn.execute(text(f"ALTER TABLE {t} ALTER COLUMN {c} DROP DEFAULT"))

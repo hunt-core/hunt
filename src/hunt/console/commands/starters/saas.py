@@ -7,7 +7,7 @@ from pathlib import Path
 
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
 
 
 def apply(target: Path) -> None:
@@ -47,7 +47,7 @@ class Team(Model):
 
     def members(self):
         from app.models.membership import Membership
-        return Membership.where("team_id", self._attributes.get("id")).all()
+        return Membership.where("team_id", self._attributes.get("id")).get()
 """
 
 _MEMBERSHIP_MODEL = """\
@@ -92,7 +92,7 @@ class TeamController(Controller):
     def index(self, request: Request) -> Response:
         from hunt.auth.manager import Auth
         user = Auth.user()
-        memberships = Membership.where("user_id", user._attributes["id"]).all() if user else []
+        memberships = Membership.where("user_id", user._attributes["id"]).get() if user else []
         team_ids = [m._attributes["team_id"] for m in memberships]
         teams = [Team.find(tid) for tid in team_ids]
         return self.view("teams.index", {"teams": [t for t in teams if t]})
@@ -170,7 +170,7 @@ class BillingController(Controller):
         if not secret:
             return Response(
                 '{"error": "STRIPE_WEBHOOK_SECRET is not configured. Set it in your .env file."}',
-                status_code=500,
+                status=500,
                 content_type="application/json",
             )
 
@@ -181,7 +181,7 @@ class BillingController(Controller):
         except Exception:
             return Response(
                 '{"error": "Webhook signature verification failed"}',
-                status_code=400,
+                status=400,
                 content_type="application/json",
             )
 
@@ -193,7 +193,7 @@ class BillingController(Controller):
         #         team._attributes["plan"] = subscription["metadata"].get("plan", "free")
         #         team.save()
 
-        return Response('{"received": true}', status_code=200, content_type="application/json")
+        return Response('{"received": true}', status=200, content_type="application/json")
 """
 
 # ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ class TenantMiddleware(Middleware):
         team = Team.where("slug", subdomain).first()
         if team is None:
             from hunt.http.response import Response as Res
-            return Res("Tenant not found", status_code=404)
+            return Res("Tenant not found", status=404)
 
         request.team = team
         return await next(request)
@@ -489,7 +489,7 @@ from hunt.http.router import Router
 
 
 def register(router: Router) -> None:
-    from hunt.http.middleware.auth import Authenticate
+    from hunt.http.middleware.authenticate import Authenticate
     from app.controllers.welcome_controller import WelcomeController
     from app.controllers.team_controller import TeamController
     from app.controllers.billing_controller import BillingController

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hunt-framework"
-version = "0.4.35"
+version = "0.4.36"
 description = "A batteries-included Python web framework with Active Record ORM, auth, admin, queues, and AI-agent tooling"
 readme = "README.md"
 requires-python = ">=3.11"

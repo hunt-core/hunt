@@ -133,12 +133,12 @@ def new_command(name: str, force: bool, starter: str | None) -> None:
 
 
 def _write(path: Path, content: str) -> None:
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
 
 
 def _write_secret(path: Path, content: str) -> None:
     """Write a file and restrict permissions to owner-read/write only."""
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
     path.chmod(0o600)
 
 
@@ -162,7 +162,7 @@ def _write_lock(root: Path, files: dict[str, str]) -> None:
     lock_dir.mkdir(exist_ok=True)
     hashes = {rel: _file_hash(content) for rel, content in files.items()}
     lock = {"version": 1, "files": hashes}
-    (lock_dir / "scaffold.lock").write_text(json.dumps(lock, indent=2))
+    (lock_dir / "scaffold.lock").write_text(json.dumps(lock, indent=2), encoding="utf-8")
 
 
 _PYPROJECT = """\
@@ -716,7 +716,7 @@ class CreateUsersTable(Migration):
             table.string("name")
             table.string("email").unique()
             table.string("password")
-            table.boolean("is_admin").default(0)
+            table.boolean("is_admin").default(False)
             table.timestamp("email_verified_at").nullable()
             table.string("remember_token", 100).nullable()
             table.timestamps()
