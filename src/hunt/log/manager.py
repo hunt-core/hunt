@@ -66,7 +66,7 @@ def _maybe_non_blocking(handler: logging.Handler) -> logging.Handler:
     listener thread does the disk write. Disabled under APP_ENV=testing (to avoid
     thread churn across tests) and when LOG_NON_BLOCKING=false.
     """
-    if os.environ.get("APP_ENV", "local") == "testing":
+    if os.environ.get("APP_ENV", "").strip().lower() == "testing":
         return handler
     if os.environ.get("LOG_NON_BLOCKING", "true").lower() == "false":
         return handler

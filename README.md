@@ -83,6 +83,7 @@ From there you can add models, authenticated routes, admin resources, queued job
 myapp/
 |-- app/
 |   |-- admin/             # Admin resources
+|   |-- console/           # Custom commands and the task schedule
 |   |-- controllers/       # HTTP controllers
 |   |   `-- auth/          # Login, register, password controllers
 |   |-- middleware/        # Middleware classes
@@ -93,12 +94,18 @@ myapp/
 |-- config/
 |   |-- app.py             # Application settings
 |   |-- auth.py            # Auth feature flags
+|   |-- cache.py           # Cache store
 |   |-- database.py        # Database connections
 |   |-- filesystems.py     # Storage disks
+|   |-- logging.py         # Log channels
 |   |-- mail.py            # Mail transport
+|   |-- queue.py           # Queue driver
+|   |-- session.py         # Session driver and cookie
 |   `-- view.py            # View/template settings
 |-- database/
-|   `-- migrations/        # Migration files
+|   |-- migrations/        # Migration files
+|   `-- seeders/           # Database seeders
+|-- public/                # Public files
 |-- resources/
 |   `-- views/             # hunt-style HTML templates
 |-- routes/
@@ -106,10 +113,11 @@ myapp/
 |   |-- api.py             # API routes
 |   |-- auth.py            # Auth routes
 |   `-- web.py             # Web routes
-|-- storage/               # Logs, compiled views, cache
-|-- tests/                 # Test suite
+|-- storage/               # Logs, compiled views, cache, sessions, uploads
+|-- tests/                 # Test suite (conftest.py provides a `client` fixture)
 |-- .env                   # Environment variables (not committed)
 |-- .env.example           # Environment template
+|-- Dockerfile             # Production image
 `-- pyproject.toml         # Project dependencies
 ```
 
@@ -128,7 +136,9 @@ def register(router: Router) -> None:
     router.get("/users/{id}", UserController().show).named("users.show")
 ```
 
-**HTTP methods:** `get`, `post`, `put`, `patch`, `delete`, `any`
+**HTTP methods:** `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `any`, `match`
+
+Route names must be unique. `router.url("users.show", {"id": 5})` builds the URL of a named route.
 
 **Route groups** with shared prefix and middleware:
 
@@ -155,7 +165,7 @@ from hunt.http.response import Response
 
 class UserController(Controller):
     def index(self, request: Request) -> Response:
-        users = User.all()
+        users = User.all().get()
         return self.view("users.index", {"users": users})
 
     def store(self, request: Request) -> Response:
@@ -170,6 +180,8 @@ class UserController(Controller):
         user = User.find_or_fail(id)
         return self.json(user.to_dict())
 ```
+
+`self.validate()` returns only the fields that have rules. On failure it answers with a 422 for JSON clients, or redirects back with the errors. `find_or_fail()` answers with a 404 when no row matches.
 
 **Response helpers:**
 
@@ -200,15 +212,17 @@ class Post(Model):
     timestamps = True
 ```
 
+Every model needs `fillable` (or `guarded`): `create()` and `fill()` only accept the columns listed in `fillable`, and raise `MassAssignmentError` on a model that declares neither. Set other columns explicitly (`post.views = 0`) or with `force_fill()`. `guarded = []` makes every column assignable.
+
 **Querying:**
 
 ```python
-Post.all()
+Post.all().get()
 Post.find(1)
-Post.find_or_fail(1)
+Post.find_or_fail(1)                 # 404 response when missing
 Post.where("published", True).order_by("created_at", "desc").get()
 Post.where("views", ">", 100).limit(10).paginate(per_page=10, page=1)
-Post.first_or_create({"slug": "hello-world"}, {"title": "Hello World"})
+post, created = Post.first_or_create({"slug": "hello-world"}, {"title": "Hello World"})
 
 Post.where_in("status", ["draft", "published"]).get()
 Post.where_not_in("role", ["banned"]).get()
@@ -242,6 +256,8 @@ class Post(Model):
     def comments(self):
         return self.has_many(Comment)
 ```
+
+More: [models](https://hunt-framework.com/docs/models), [query builder](https://hunt-framework.com/docs/query-builder), [relationships](https://hunt-framework.com/docs/relationships).
 
 ---
 
@@ -292,6 +308,8 @@ hunt migrate:rollback # rollback last batch
 hunt migrate:fresh    # drop all tables and re-run
 ```
 
+`migrate:rollback` and `migrate:fresh` need `--force` when `APP_ENV` is `production` or unset.
+
 ---
 
 ## Templates
@@ -339,10 +357,14 @@ Templates live in `resources/views/` and use hunt-style syntax. Files use the `.
 | `{{ $variable }}` | Escaped output |
 | `{!! $html !!}` | Raw (unescaped) output |
 | `@csrf` | CSRF hidden input |
-| `@error('field')` / `@enderror` | Show validation errors |
+| `@method('PUT')` | Hidden `_method` input so a `POST` form reaches a `PUT`, `PATCH` or `DELETE` route |
+| `@error('field')` / `@enderror` | Render the block when the field has a validation error |
 | `@auth` / `@endauth` | Authenticated user block |
 | `@guest` / `@endguest` | Guest user block |
+| `@component('alert', {'type': 'success', 'message': 'Saved'})` | Render a UI component with a dict of props |
 | `{{-- comment --}}` | Template comment (not rendered) |
+
+`{{ }}` output and component props are escaped; pass markup through a component's body or a slot. Write `@@auth` to print a literal `@auth`. See [views](https://hunt-framework.com/docs/views) and [components](https://hunt-framework.com/docs/components) for the full directive and component list.
 
 ### Overriding framework views
 
@@ -361,7 +383,7 @@ Files are copied to `resources/views/`. Any file present there takes priority ov
 
 ## Authentication
 
-`hunt new` scaffolds a complete auth system: login, registration, and password reset - all wired up and ready to use.
+`hunt new` scaffolds a complete auth system: login, registration, and password reset - all wired up, rate limited and ready to use.
 
 ```python
 from hunt.auth.manager import Auth
@@ -370,9 +392,12 @@ Auth.attempt({"email": "...", "password": "..."})  # login + session
 Auth.login(user)     # log in without credential check
 Auth.logout()        # clear session
 Auth.check()         # True if authenticated
+Auth.guest()         # True if not authenticated
 Auth.user()          # current User instance or None
 Auth.id()            # current user's primary key or None
 ```
+
+Password reset links are sent through the mailer in `config/mail.py`. The default `log` mailer does not deliver email; with `APP_ENV=local` it writes the link to the log.
 
 Protect routes with the included `Authenticate` middleware:
 
@@ -390,7 +415,7 @@ Add TOTP-based 2FA to any application with one command:
 hunt make:2fa-controllers
 ```
 
-This scaffolds routes, controllers, Tailwind-styled templates, and a migration that adds `two_factor_secret`, `two_factor_enabled`, and `two_factor_recovery_codes` columns to the `users` table. After running `hunt migrate`, protect any route group with the included middleware:
+This scaffolds `routes/two_factor.py`, a controller, Tailwind-styled templates, and a migration that adds the `two_factor_*` columns to the `users` table. Run `hunt migrate`, call `register(router)` from `routes/two_factor.py` in `bootstrap/app.py`, then protect any route group with the included middleware:
 
 ```python
 from hunt.http.middleware.two_factor import EnsureTwoFactorAuthenticated
@@ -407,11 +432,12 @@ Users who have 2FA enabled are redirected to `/two-factor/challenge` after login
 
 ```python
 config = {
+    "home": "/",   # where users land after logging in
     "features": {
         "registration": True,
         "login": True,
         "forgot_password": True,
-    }
+    },
 }
 ```
 
@@ -419,7 +445,7 @@ config = {
 
 ## Admin panel
 
-The admin panel is available at `/hunt-admin` after registration. Define resources in `app/admin/`:
+The admin panel is served at `/hunt-admin`. It is closed until a gate is registered; the gate generated in `routes/admin.py` admits logged-in users whose `is_admin` column is true. Define resources in `app/admin/`:
 
 ```python
 from hunt.admin import AdminResource
@@ -443,13 +469,20 @@ Register in `routes/admin.py`:
 
 ```python
 from hunt.admin import Admin
+from hunt.auth.manager import Auth
 from app.admin.user_resource import UserResource
 
 Admin.resource(UserResource)
-Admin.register_to(router)
+
+def register(router):
+    Admin.gate(lambda request: Auth.check() and bool(Auth.user().is_admin))
+    Admin.authorize_tool("queue")   # optional, see below
+    Admin.register_to(router)
 ```
 
-**Available field types:** `Text`, `Email`, `Password`, `Textarea`, `RichText`, `Number`, `Boolean`, `Select`, `Image`, `DateTime`, `BelongsTo`, `HasMany`, `Badge`
+The Sessions, Cache, Logs and Queue pages are off by default. Enable each one with `Admin.authorize_tool("sessions" | "cache" | "logs" | "queue")`, optionally with a callable that receives the request. Resource policies (`can_view_any`, `can_create`, `can_update`, `can_delete`) must return exactly `True` to allow.
+
+**Available field types:** `Text`, `Email`, `Password`, `Slug`, `Textarea`, `RichText`, `Markdown`, `Number`, `Currency`, `Boolean`, `Select`, `Image`, `MediaBrowser`, `Date`, `DateTime`, `BelongsTo`, `BelongsToMany`, `HasMany`, `Badge`
 
 **Filters:**
 
@@ -490,7 +523,7 @@ Built-in actions: `BulkDeleteAction`, `RestoreAction` (soft deletes), `ExportCsv
 **Customizing templates:**
 
 ```bash
-hunt admin:publish          # copy all admin templates to resources/views/admin/
+hunt admin:publish          # copy admin templates to resources/views/admin/ (existing files are kept)
 hunt admin:publish --force  # overwrite existing
 
 hunt vendor:publish --tag views:auth       # customise login, register, password reset
@@ -510,11 +543,16 @@ data = self.validate(request, {
 })
 ```
 
-**Available rules:**
+`validate()` returns only the fields that have rules. An unknown rule name raises `ValueError`. In the string form everything after `regex:` belongs to the pattern; use the list form (`["regex:^[a-z|]+$", "max:20"]`) to add rules after it.
 
-`required` · `string` · `integer` · `numeric` · `boolean` · `email` · `url`
-· `min:n` · `max:n` · `size:n` · `in:a,b,c` · `not_in:a,b,c`
-· `confirmed` · `regex:pattern` · `unique:table,column` · `array`
+**Common rules:**
+
+`required` · `filled` · `string` · `integer` · `numeric` · `boolean` · `array` · `email` · `url` · `uuid` · `json` · `date`
+· `min:n` · `max:n` · `size:n` · `between:a,b` · `in:a,b,c` · `not_in:a,b,c`
+· `confirmed` · `same:field` · `different:field` · `regex:pattern` · `alpha` · `alpha_num` · `alpha_dash`
+· `unique:table,column` · `exists:table,column` · `file` · `image` · `mimes:png,jpg`
+
+The full list is in the [validation docs](https://hunt-framework.com/docs/validation).
 
 ---
 
@@ -538,12 +576,31 @@ class AuthMiddleware(Middleware):
         return await next(request)
 ```
 
+Attach middleware to a route with `.middleware(...)`, to a group with `router.group(middleware=[...])`, or to every request through `global_middleware` in `bootstrap/app.py`. A new application ships with this global stack:
+
+```python
+global_middleware = [
+    MaintenanceMode,     # 503 while `hunt down` is active
+    # TrustProxies,      # enable behind a reverse proxy, with TRUSTED_PROXIES
+    SecureHeaders,       # app/middleware/secure_headers.py
+    StartSession,
+    VerifyCsrfToken,     # app/middleware/verify_csrf_token.py
+]
+```
+
+It also includes `app/middleware/throttle.py` (the rate limiter used on the auth routes) and `app/middleware/guest.py`.
+
+The request body is read only when a middleware or handler needs it. A subclass of a framework middleware that reads `request.input()` in its own `handle()` sets `reads_body = True`.
+
 ### Built-in middleware
 
 | Middleware | Import | Purpose |
 |---|---|---|
-| `Authenticate` | `hunt.http.middleware.authenticate` | Redirect unauthenticated requests to `/login` |
-| `SecureHeaders` | `hunt.http.middleware.secure_headers` | Add `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, opt-in HSTS and CSP |
+| `Authenticate` | `hunt.http.middleware.authenticate` | Redirect unauthenticated requests to `/login` (401 for JSON clients) |
+| `StartSession` | `hunt.http.middleware.session` | Load and save the session |
+| `VerifyCsrfToken` | `hunt.http.middleware.csrf` | Check the CSRF token on state-changing requests |
+| `ThrottleRequests` | `hunt.http.middleware.throttle` | Rate limit per client and route; answers 429 with `Retry-After` |
+| `SecureHeaders` | `hunt.http.middleware.secure_headers` | Add `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security` and `Content-Security-Policy` |
 | `TrustProxies` | `hunt.http.middleware.trust_proxies` | Rewrite `request.ip` and `request.scheme` from `X-Forwarded-For` / `X-Forwarded-Proto` when behind a proxy or load balancer |
 | `MaintenanceMode` | `hunt.http.middleware.maintenance` | Return 503 with `Retry-After` when `.maintenance` sentinel file is present |
 | `CompressResponse` | `hunt.http.middleware.compress` | Gzip responses for clients that send `Accept-Encoding: gzip`; skips small, already-encoded, or non-text responses; sets `Vary: Accept-Encoding` |
@@ -556,16 +613,22 @@ class AuthMiddleware(Middleware):
 ```bash
 # Application
 hunt new <name>                      # scaffold a new application
-hunt upgrade                         # pull in new scaffold files to existing app
+hunt new <name> --starter blog       # with a starter kit: blog, api or saas
+hunt upgrade                         # add new scaffold files to an existing app
+hunt upgrade --dry-run               # preview the changes first
 hunt serve                           # start the dev server (auto-reload)
-hunt serve:production                # start a production-grade uvicorn server
+hunt serve:production                # start a production server (multiple workers)
 hunt tinker                          # interactive REPL with app bootstrapped
-hunt key:generate                    # generate and write a new APP_KEY
+hunt key:generate                    # write an APP_KEY (--force to replace an existing one)
+hunt env:check                       # validate the environment for production
+hunt app:info                        # summary of the application
+hunt context                         # project snapshot for AI agents (--json)
 hunt down [--message "..."] [--retry 60]  # enable maintenance mode (503)
 hunt up                              # disable maintenance mode
 
 # Routes
 hunt route:list                      # print all registered routes
+hunt route:export                    # export routes as an OpenAPI 3.1 spec
 
 # Migrations
 hunt migrate                         # run pending migrations
@@ -578,17 +641,26 @@ hunt migrate:status --pending        # exit 1 if any migrations are pending (CI/
 hunt db:seed                         # run database seeders
 hunt db:seed --class PostSeeder      # run a specific seeder
 
-# Cache
+# Config, cache and views
+hunt config:show [key]               # print resolved configuration
+hunt config:cache                    # cache configuration (re-run after config or .env changes)
+hunt config:clear                    # remove the cached configuration
 hunt cache:clear                     # clear all cached values
 hunt cache:forget <key>              # remove a single cache key
+hunt view:cache                      # pre-compile templates
+hunt view:clear                      # clear compiled templates
+hunt storage:link                    # link public/storage to storage/app/public
 
 # Queue
 hunt queue:work                      # start the queue worker
 hunt queue:work --queue high --tries 3
+hunt queue:work --max-jobs 100 --max-time 3600
 hunt queue:failed                    # list failed jobs
 hunt queue:retry <id>                # re-queue a failed job
+hunt queue:retry --all               # re-queue every failed job
 hunt queue:flush                     # delete all failed jobs
 hunt queue:table                     # create the jobs migration
+hunt queue:prune-processed           # forget ids of jobs finished before the retention window
 
 # Jobs
 hunt job:list                        # list all discovered Job classes
@@ -599,23 +671,36 @@ hunt job:run <name> --data key=value
 hunt schedule:run                    # run due scheduled tasks (call from cron)
 hunt schedule:list                   # list all scheduled tasks
 
+# Sessions
+hunt session:table                   # create the user_sessions migration
+hunt session:prune                   # delete expired session rows and their data
+
 # Code generation
 hunt make:model <Name>               # app/models/name.py
-hunt make:model <Name> -m            # model + migration
-hunt make:controller <Name>          # app/controllers/name_controller.py
+hunt make:model <Name> -m            # model + migration (--all adds controller, factory, seeder, policy)
+hunt make:model <Name> --fields "title:string body:text"
+hunt make:controller <Name>          # app/controllers/name.py
 hunt make:controller <Name> --resource
+hunt make:crud <Name>                # model, migration, controller, views and authenticated routes (--public to opt out)
+hunt make:api <Name>                 # model, migration, API controller, resource and authenticated routes
 hunt make:migration <name>           # database/migrations/TIMESTAMP_name.py
 hunt make:middleware <Name>          # app/middleware/name.py
 hunt make:request <Name>             # app/requests/name_request.py
-hunt make:event <Name>               # app/events/name.py
-hunt make:listener <Name>            # app/listeners/name.py
+hunt make:rule <Name>                # app/rules/name.py
+hunt make:policy <Name>              # app/policies/name.py
+hunt make:observer <Name>            # app/observers/name.py
+hunt make:resource <Name>            # app/resources/name.py
+hunt make:event <Name>               # app/events/Name.py
+hunt make:listener <Name>            # app/listeners/Name.py
 hunt make:mail <Name>                # app/mail/name.py
 hunt make:notification <Name>        # app/notifications/name.py
 hunt make:seeder <Name>              # database/seeders/NameSeeder.py
 hunt make:factory <Name>             # database/factories/NameFactory.py
-hunt make:job <Name>                 # app/jobs/name.py
+hunt make:job <Name>                 # app/jobs/Name.py
 hunt make:command <Name>             # app/console/commands/name.py
-hunt make:admin-resource <Model>     # app/admin/model_resource.py
+hunt make:component <name>           # resources/views/components/name.html
+hunt make:test <Name>                # tests/unit/test_name.py (--feature for a feature test)
+hunt make:admin-resource <model>     # app/admin/model_resource.py
 hunt make:2fa-controllers            # 2FA routes, controllers, templates, migration
 
 # Admin
@@ -626,29 +711,60 @@ hunt vendor:publish                        # all framework views -> resources/vi
 hunt vendor:publish --tag views:auth       # auth views only
 hunt vendor:publish --tag views:components # UI components only
 hunt vendor:publish --force                # overwrite existing files
+
+# Lodge (Docker Compose development environment)
+hunt lodge:install --with pgsql,redis
+hunt lodge:add <service>
 ```
 
 ---
 
 ## Environment variables
 
-| Variable | Default | Description |
+`hunt new` writes a `.env` with these keys (commented keys are shown without a value):
+
+| Variable | Value in a new app | Description |
 |---|---|---|
 | `APP_NAME` | `hunt` | Application name |
-| `APP_ENV` | `production` | Environment (`local`, `production`) |
+| `APP_ENV` | `local` | Environment (`local`, `production`); `production` when unset |
+| `APP_KEY` | *(generated)* | Encryption and signing key |
 | `APP_DEBUG` | `false` | Enable debug mode |
 | `APP_URL` | `http://localhost:8000` | Application URL |
-| `APP_KEY` | - | Encryption key (auto-generated by `hunt new`) |
-| `DB_CONNECTION` | `sqlite` | Driver (`sqlite`, `mysql`, `postgresql`) |
+| `DB_CONNECTION` | `sqlite` | Connection from `config/database.py` (`sqlite`, `mysql`, `pgsql`) |
+| `DB_DATABASE` | `database/database.sqlite` | Database name / SQLite file path |
+| `LOG_CHANNEL` | `file` | Log channel (`file`, `stderr`, `stack`) |
+| `LOG_LEVEL` | `debug` | Minimum log level |
+| `QUEUE_DRIVER` | `sync` | Queue driver (`sync`, `database`, `redis`) |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `127.0.0.1` / `6379` / - | Redis connection for the cache and queue |
+| `CACHE_DRIVER` | `file` | Cache driver (`file`, `redis`, `array`) |
+| `SESSION_LIFETIME` | `7200` | Session lifetime in seconds |
+| `SESSION_SECURE` | *(commented)* | Force the session cookie's `Secure` flag on (`true`) or off (`false`); when unset it is on in production |
+| `MAIL_MAILER` | `log` | Mailer (`log`, `smtp`, `array`) |
+| `MAIL_LOG_BODY` | *(commented)* | Force the `log` mailer to write message bodies (`true`) or not (`false`); when unset they are written only with `APP_ENV=local` |
+| `MAIL_HOST` / `MAIL_PORT` | `127.0.0.1` / `1025` | SMTP server |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | - | SMTP credentials |
+| `MAIL_ENCRYPTION` | `none` | `tls` (STARTTLS), `ssl` or `none` |
+| `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` | `hello@example.com` / `hunt` | Default sender |
+| `FILESYSTEM_DISK` | `local` | Default storage disk (`local`, `public`, `s3`) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` / `AWS_BUCKET` / `AWS_URL` | - | S3 disk settings |
+| `MAX_BODY_SIZE` | *(commented)* | Max request body in bytes (default 10 MB); requests over the limit return 413 |
+
+Other variables the framework reads:
+
+| Variable | Default | Description |
+|---|---|---|
 | `DB_HOST` | `127.0.0.1` | Database host |
 | `DB_PORT` | `3306` / `5432` | Database port |
-| `DB_DATABASE` | - | Database name / SQLite file path |
-| `DB_USERNAME` | - | Database username |
+| `DB_USERNAME` | `root` / `postgres` | Database username |
 | `DB_PASSWORD` | - | Database password |
-| `TRUSTED_PROXIES` | - | Comma-separated IPs/CIDRs to trust for `X-Forwarded-*` headers; `*` to trust all (dev only) |
-| `MAX_BODY_SIZE` | `10485760` | Max request body in bytes (default 10 MB); requests over the limit return 413 |
-| `SECURE_HSTS_SECONDS` | `0` | Enable `Strict-Transport-Security` with this max-age; `0` disables |
-| `SECURE_CONTENT_SECURITY_POLICY` | - | Value for the `Content-Security-Policy` header |
+| `DATABASE_URL` | - | Connection URL for the default connection; takes precedence over `DB_*` |
+| `SESSION_DRIVER` | `file` | Session store (`file`, `redis`) |
+| `QUEUE_RETRY_AFTER` | `90` | Seconds a job may stay reserved before another worker takes it over |
+| `BCRYPT_ROUNDS` | `12` | Password hashing cost |
+| `TRUSTED_PROXIES` | - | Comma-separated IPs/CIDRs to trust for `X-Forwarded-*` headers when `TrustProxies` is in the stack; `*` to trust all |
+| `TRUSTED_PROXY_HOPS` | `1` | Number of proxies in front of the app |
+| `SECURE_HSTS_SECONDS` | `31536000` | `Strict-Transport-Security` max-age sent by `SecureHeaders`; `0` disables |
+| `SECURE_CONTENT_SECURITY_POLICY` | *(built-in policy)* | Value for the `Content-Security-Policy` header sent by `SecureHeaders` |
 | `ACCESS_LOG` | `true` | Set to `false` to skip per-request access log lines (e.g. when a reverse proxy already logs) |
 | `STATIC_CACHE_CONTROL` | `public, max-age=3600` | `Cache-Control` header sent with static file responses |
 | `STATIC_EXTENSIONS` | *(built-in allowlist)* | Comma-separated list of file extensions to serve as static files; replaces the default allowlist |
@@ -681,7 +797,16 @@ class TestMyApp(HuntTestCase):
         resp.assert_ok().assert_json("id", "42")
 ```
 
+A new application also ships `tests/conftest.py` with a `client` fixture, an `httpx.AsyncClient` wired to the application's ASGI entry point:
+
+```python
+async def test_welcome(client):
+    response = await client.get("/")
+    assert response.status_code == 200
+```
+
 ```bash
+uv pip install -e ".[dev]"
 pytest
 ```
 
@@ -692,5 +817,6 @@ pytest
 - Quick start: [hunt-framework.com/docs/installation](https://hunt-framework.com/docs/installation)
 - AI agents: [hunt-framework.com/docs/ai-agents](https://hunt-framework.com/docs/ai-agents)
 - Full docs: [hunt-framework.com](https://hunt-framework.com)
+- Topic guides: `https://hunt-framework.com/docs/<topic>`, for example [routing](https://hunt-framework.com/docs/routing), [models](https://hunt-framework.com/docs/models), [queues](https://hunt-framework.com/docs/queues), [admin](https://hunt-framework.com/docs/admin), [deployment](https://hunt-framework.com/docs/deployment) and the [CLI](https://hunt-framework.com/docs/cli)
 - Upgrading between versions: [UPGRADE.md](UPGRADE.md)
 - Release notes: [CHANGELOG.md](CHANGELOG.md)

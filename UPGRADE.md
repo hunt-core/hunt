@@ -222,7 +222,7 @@ A throttle that only overrides `_resolve_key` needs no change.
 - `make:crud` and `make:api` routes require authentication. Pass `--public` to opt out.
 - Generated policies and form requests deny by default. Fill in the checks.
 - Generator arguments must be valid identifiers. `hunt make:model blog-post` is rejected; use `BlogPost`.
-- `hunt key:generate` needs `--force` to replace an existing key, and no longer prints the key.
+- `hunt key:generate` needs `--force` to replace an existing key, and prints the key only with `--show`.
 - `hunt migrate:fresh` drops every table. `migrate:fresh` and `migrate:rollback` need `--force` when `APP_ENV` is `production` or unset.
 - `hunt new --force` asks before deleting a directory it did not create.
 - `hunt serve:production` refuses to start with `APP_DEBUG=true` unless you pass `--allow-debug`.
@@ -323,5 +323,5 @@ Re-run `hunt lodge:install` to regenerate `compose.yaml`. Existing credentials i
 | `QUEUE_PROCESSED_RETENTION` | 604800 | Seconds finished job ids are remembered |
 | `MAIL_LOG_BODY` | unset | Force the `log` mailer to write bodies (`true`) or not (`false`); read by the framework unless `log_body` is set in `config/mail.py` |
 | `MAX_BODY_SIZE` | 10 MB | Global request body limit; override per route with `.max_body(n)` |
-| `TRUSTED_PROXY_HOPS` | unset | Number of proxies in front of the app |
+| `TRUSTED_PROXY_HOPS` | 1 | Number of trusted proxies in front of the app when `TRUSTED_PROXIES=*` |
 | `SLACK_WEBHOOK_ALLOWED_HOSTS` | unset | Restrict Slack webhook hosts |
