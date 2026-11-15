@@ -1,3 +1,4 @@
+{#- Props are HTML-escaped. Pass markup through the component body (slot), not through a prop. -#}
 {%- set _v = variant|default('primary') -%}
 {%- set _map = {'primary':   'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
                 'secondary': 'bg-gray-200 text-gray-800 hover:bg-gray-300 focus:ring-gray-400',
@@ -10,5 +11,5 @@
                focus:outline-none focus:ring-2 focus:ring-offset-1
                disabled:opacity-50 disabled:cursor-not-allowed
                {{ _cls }} {{ class|default('') }}">
-    {{- label|default(_slot_default|default(''))|safe -}}
+    {%- if label is defined %}{{ label }}{% else %}{{ _slot_default|default('') }}{% endif -%}
 </button>

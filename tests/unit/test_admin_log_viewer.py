@@ -6,8 +6,20 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from hunt.admin.application import Admin
 from hunt.admin.controllers.logs import _log_path, _parse_line, _tail
+
+
+@pytest.fixture(autouse=True)
+def _enable_logs_tool():
+    """The logs tool is opt-in (ADM-09); these tests exercise it once enabled."""
+    saved = dict(Admin._tool_rules)
+    Admin.authorize_tool("logs")
+    yield
+    Admin._tool_rules.clear()
+    Admin._tool_rules.update(saved)
 
 # ---------------------------------------------------------------------------
 # _log_path

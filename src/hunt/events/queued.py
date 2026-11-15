@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import re
+import sys
 from typing import Any
 
 from hunt.queue.job import Job
@@ -43,27 +44,30 @@ class QueuedEventListener(Job):
         self.event_class = event_class
         self.event_data = event_data
 
-    def handle(self) -> None:
+    def handle(self) -> Any:
         # Validate against allowlists before importing anything
         if self.listener_class not in _ALLOWED_LISTENER_CLASSES:
             raise ValueError(
                 f"Refusing to execute unregistered listener: {self.listener_class!r}. "
                 "Register it via EventServiceProvider.listen."
             )
-        if self.event_class not in _ALLOWED_EVENT_CLASSES:
-            raise ValueError(f"Refusing to deserialize unregistered event: {self.event_class!r}.")
+
+        if not self.event_class:
+            # Listener registered for a string event: the payload is plain data.
+            event = self.event_data.get("payload")
+        else:
+            event_cls = _allowed_event_class(self.event_class)
+            # Reconstruct the event from its stored public attributes
+            event = object.__new__(event_cls)
+            for key, value in self.event_data.items():
+                setattr(event, key, value)
 
         # Reconstruct the listener
         listener_cls = _import_dotted(self.listener_class)
         listener = listener_cls()
 
-        # Reconstruct the event from its stored public attributes
-        event_cls = _import_dotted(self.event_class)
-        event = object.__new__(event_cls)
-        for key, value in self.event_data.items():
-            setattr(event, key, value)
-
-        # Call handle() — pass the event if the signature accepts arguments
+        # Call handle() — pass the event if the signature accepts arguments.
+        # The result is returned so an ``async def handle`` is awaited by the worker.
         sig = inspect.signature(listener.handle)
         positional = [
             p
@@ -76,9 +80,27 @@ class QueuedEventListener(Job):
             )
         ]
         if positional:
-            listener.handle(event)
-        else:
-            listener.handle()
+            return listener.handle(event)
+        return listener.handle()
+
+
+def _allowed_event_class(dotted_path: str) -> type:
+    """Return the event class for *dotted_path* if the ``listen`` map permits it.
+
+    Permitted are the registered event classes themselves and their
+    subclasses (a listener on a base event also receives subclass events).
+    A subclass is only looked up in modules that are already imported, so an
+    unregistered path never triggers an import.
+    """
+    if dotted_path in _ALLOWED_EVENT_CLASSES:
+        return _import_dotted(dotted_path)
+    if _DOTTED_PATH_RE.match(dotted_path):
+        allowed = tuple(_import_dotted(path) for path in sorted(_ALLOWED_EVENT_CLASSES))
+        module_path, class_name = dotted_path.rsplit(".", 1)
+        candidate = getattr(sys.modules.get(module_path), class_name, None)
+        if allowed and isinstance(candidate, type) and issubclass(candidate, allowed):
+            return candidate
+    raise ValueError(f"Refusing to deserialize unregistered event: {dotted_path!r}.")
 
 
 def _import_dotted(dotted_path: str) -> type:

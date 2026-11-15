@@ -6,10 +6,23 @@ from pathlib import Path
 
 import click
 
-_REQUIRED: list[tuple[str, str]] = [
-    ("APP_KEY", "Application encryption key — run `hunt key:generate` to create one"),
-    ("DATABASE_URL", "Primary database connection string"),
+# Each entry lists alternative variables: the requirement is met when any one of them is set.
+_REQUIRED: list[tuple[tuple[str, ...], str]] = [
+    (("APP_KEY",), "Application encryption key — run `hunt key:generate` to create one"),
+    (
+        ("DATABASE_URL", "DB_CONNECTION"),
+        "Database configuration — DB_CONNECTION (with the DB_* settings) or a DATABASE_URL connection string",
+    ),
 ]
+
+
+def _required_label(keys: tuple[str, ...]) -> str:
+    return " or ".join(keys)
+
+
+def _required_met(keys: tuple[str, ...]) -> bool:
+    return any(os.environ.get(key) for key in keys)
+
 
 _RECOMMENDED: list[tuple[str, str, str]] = [
     ("APP_ENV", "production", "Should be 'production' in deployed environments"),
@@ -42,13 +55,13 @@ def env_check_command() -> None:
     # Required vars
     click.echo()
     click.echo("  Required")
-    for key, description in _REQUIRED:
-        val = os.environ.get(key, "")
-        if val:
-            click.echo(f"    {click.style('✓', fg='green')} {key}")
+    for keys, description in _REQUIRED:
+        if _required_met(keys):
+            present = ", ".join(key for key in keys if os.environ.get(key))
+            click.echo(f"    {click.style('✓', fg='green')} {present}")
             passed += 1
         else:
-            click.echo(f"    {click.style('✗', fg='red')} {key}  —  {description}")
+            click.echo(f"    {click.style('✗', fg='red')} {_required_label(keys)}  —  {description}")
             failed += 1
 
     # Recommended settings
@@ -70,7 +83,8 @@ def env_check_command() -> None:
     for key, description in _OPTIONAL_WITH_SIDE_EFFECTS:
         val = os.environ.get(key, "")
         if val:
-            click.echo(f"    {click.style('✓', fg='green')} {key}={val}")
+            # Never echo the value: REDIS_URL and SENTRY_DSN embed credentials.
+            click.echo(f"    {click.style('✓', fg='green')} {key}  (set)")
         else:
             click.echo(f"    {click.style('-', fg='bright_black')} {key}  —  {description}")
 
@@ -90,9 +104,12 @@ def env_check_command() -> None:
 
 
 def check_required() -> list[str]:
-    """Return names of required env vars that are not set. Loads .env first."""
+    """Return the required settings that are not set. Loads .env first.
+
+    A requirement with alternatives is reported as "A or B" when none of them is set.
+    """
     _load_dotenv()
-    return [key for key, _ in _REQUIRED if not os.environ.get(key)]
+    return [_required_label(keys) for keys, _ in _REQUIRED if not _required_met(keys)]
 
 
 def _load_dotenv() -> None:

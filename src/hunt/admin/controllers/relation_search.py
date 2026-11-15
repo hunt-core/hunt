@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
+
+from hunt.admin.authorization import allowed as _can
 from hunt.http.request import Request
-from hunt.http.response import JsonResponse
+from hunt.http.response import HttpException, JsonResponse
+
+_log = logging.getLogger(__name__)
 
 
 def search_relation(request: Request, resource_key: str) -> JsonResponse:
@@ -13,6 +18,11 @@ def search_relation(request: Request, resource_key: str) -> JsonResponse:
     if resource_cls is None:
         return JsonResponse({"results": []})
     resource = resource_cls()
+
+    # The picker only exists on create/edit forms: require one of those
+    # abilities on the owning resource.
+    if not (_can(resource, "can_create", request) or _can(resource, "can_update", request)):
+        raise HttpException(403, "Forbidden.")
 
     field_attr = request.query("field", "")
     q = str(request.query("q", "") or "").strip()[:200]
@@ -31,20 +41,26 @@ def search_relation(request: Request, resource_key: str) -> JsonResponse:
 
     try:
         related_resource = target_field.related_resource_class()
-        query = related_resource.model.query()
-        if q and related_resource.search_columns:
-            for i, col in enumerate(related_resource.search_columns):
-                escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                if i == 0:
-                    query = query.where(col, "LIKE", f"%{escaped}%")
-                else:
-                    try:
-                        query = query.or_where(col, "LIKE", f"%{escaped}%")
-                    except ValueError:
-                        pass
-        items = query.limit(20).get()
-        results = [{"id": item._attributes.get("id"), "label": related_resource.title(item)} for item in items]
     except Exception:
+        _log.exception("Relation search: could not build the related resource for %r", field_attr)
+        return JsonResponse({"results": []})
+
+    # ...and the user must be allowed to list the related records.
+    if not _can(related_resource, "can_view_any", request):
+        raise HttpException(403, "Forbidden.")
+
+    try:
+        pk = getattr(related_resource.model, "primary_key", "id")
+        if not isinstance(pk, str) or not pk:
+            pk = "id"
+        # index_query keeps any owner/tenant scope the related resource applies.
+        query = related_resource.index_query(request)
+        if q:
+            query = related_resource._search_group(query, q)
+        items = query.limit(20).get()
+        results = [{"id": item._attributes.get(pk), "label": related_resource.title(item)} for item in items]
+    except Exception:
+        _log.exception("Relation search failed for %r", field_attr)
         results = []
 
     return JsonResponse({"results": results})

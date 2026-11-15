@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import json as _json_mod
 import time
@@ -99,10 +100,15 @@ class HttpResponse:
 
 
 class PendingRequest:
-    """Fluent synchronous HTTP request builder.
+    """Fluent HTTP request builder.
 
     Obtain one via ``Http.with_headers()``, ``Http.timeout()``, etc., or
     call HTTP verbs directly on ``Http`` for a zero-config request.
+
+    ``get()`` / ``post()`` / ... are synchronous and block the calling thread:
+    use them in sync handlers, jobs and commands. Inside an ``async def``
+    handler use the awaitable ``async_get()`` / ``async_post()`` / ... variants,
+    which do not block the event loop (retries sleep with ``asyncio.sleep``).
     """
 
     def __init__(self, factory: _HttpFactory) -> None:
@@ -182,6 +188,28 @@ class PendingRequest:
         return self._send("HEAD", url, params=params)
 
     # ------------------------------------------------------------------
+    # Async HTTP verbs (do not block the event loop)
+    # ------------------------------------------------------------------
+
+    async def async_get(self, url: str, params: dict | None = None) -> HttpResponse:
+        return await self._async_send("GET", url, params=params)
+
+    async def async_post(self, url: str, data: Any = None) -> HttpResponse:
+        return await self._async_send("POST", url, data=data)
+
+    async def async_put(self, url: str, data: Any = None) -> HttpResponse:
+        return await self._async_send("PUT", url, data=data)
+
+    async def async_patch(self, url: str, data: Any = None) -> HttpResponse:
+        return await self._async_send("PATCH", url, data=data)
+
+    async def async_delete(self, url: str, params: dict | None = None) -> HttpResponse:
+        return await self._async_send("DELETE", url, params=params)
+
+    async def async_head(self, url: str, params: dict | None = None) -> HttpResponse:
+        return await self._async_send("HEAD", url, params=params)
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
@@ -208,8 +236,8 @@ class PendingRequest:
                 if self._retry_sleep_ms:
                     time.sleep(self._retry_sleep_ms / 1000)
 
-    def _do_send(self, method: str, url: str, params: dict | None = None, data: Any = None) -> HttpResponse:
-        kw: dict[str, Any] = {"headers": self._headers, "timeout": self._timeout}
+    def _request_kwargs(self, params: dict | None = None, data: Any = None) -> dict[str, Any]:
+        kw: dict[str, Any] = {"headers": dict(self._headers), "timeout": self._timeout}
         if params:
             kw["params"] = params
         if data is not None:
@@ -217,8 +245,42 @@ class PendingRequest:
                 kw["json"] = data
             else:
                 kw["data"] = data
+        return kw
+
+    def _do_send(self, method: str, url: str, params: dict | None = None, data: Any = None) -> HttpResponse:
+        kw = self._request_kwargs(params, data)
         with _httpx.Client() as client:
             raw = client.request(method, url, **kw)
+        return HttpResponse(raw)
+
+    async def _async_send(self, method: str, url: str, **kwargs) -> HttpResponse:
+        """Async twin of ``_send``: same fake handling and retry rules."""
+        if self._factory._fakes is not None:
+            resp = self._factory._match_fake(url)
+            self._factory._recorded.append({"method": method.upper(), "url": url, "options": kwargs})
+            return resp
+
+        attempts = 0
+        while True:
+            try:
+                resp = await self._async_do_send(method, url, **kwargs)
+                if self._retry_when is not None and self._retry_when(resp) and attempts < self._retry_times:
+                    attempts += 1
+                    if self._retry_sleep_ms:
+                        await asyncio.sleep(self._retry_sleep_ms / 1000)
+                    continue
+                return resp
+            except Exception:
+                if attempts >= self._retry_times:
+                    raise
+                attempts += 1
+                if self._retry_sleep_ms:
+                    await asyncio.sleep(self._retry_sleep_ms / 1000)
+
+    async def _async_do_send(self, method: str, url: str, params: dict | None = None, data: Any = None) -> HttpResponse:
+        kw = self._request_kwargs(params, data)
+        async with _httpx.AsyncClient() as client:
+            raw = await client.request(method, url, **kw)
         return HttpResponse(raw)
 
 
@@ -378,6 +440,26 @@ class _HttpFactory:
 
     def head(self, url: str, params: dict | None = None) -> HttpResponse:
         return self._pending().head(url, params)
+
+    # Awaitable variants for async handlers — see PendingRequest.
+
+    async def async_get(self, url: str, params: dict | None = None) -> HttpResponse:
+        return await self._pending().async_get(url, params)
+
+    async def async_post(self, url: str, data: Any = None) -> HttpResponse:
+        return await self._pending().async_post(url, data)
+
+    async def async_put(self, url: str, data: Any = None) -> HttpResponse:
+        return await self._pending().async_put(url, data)
+
+    async def async_patch(self, url: str, data: Any = None) -> HttpResponse:
+        return await self._pending().async_patch(url, data)
+
+    async def async_delete(self, url: str, params: dict | None = None) -> HttpResponse:
+        return await self._pending().async_delete(url, params)
+
+    async def async_head(self, url: str, params: dict | None = None) -> HttpResponse:
+        return await self._pending().async_head(url, params)
 
 
 Http = _HttpFactory()

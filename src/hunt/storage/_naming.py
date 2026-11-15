@@ -2,8 +2,9 @@
 
 Both ``LocalDisk`` and ``S3Disk`` derive stored filenames through
 ``upload_filename`` so their ``put_file`` behaviour is identical regardless of
-backend: an explicit name is reduced to a basename, and an auto-generated name
-is a UUID plus a safe, content-verified extension.
+backend: an explicit name is reduced to a basename whose extension must pass
+the allow-list, and an auto-generated name is a UUID plus a safe,
+content-verified extension.
 """
 
 from __future__ import annotations
@@ -62,19 +63,21 @@ _ALLOWED_EXT: dict[str, frozenset[str]] = {
 }
 
 
-def safe_extension(file: Any) -> str:
+def safe_extension(file: Any, filename: str | None = None) -> str:
     """Pick a storage extension for an upload.
 
     Honours the client-supplied extension only when it is allowlisted *and*
     consistent with the magic-byte sniff; otherwise falls back to the sniffed
-    type, and finally to ``_DEFAULT_EXT``.
+    type, and finally to ``_DEFAULT_EXT``.  *filename* overrides the name whose
+    extension is considered (default: ``file.filename``).
     """
     try:
         mime = file.get_mime_type()
     except Exception:
         return _DEFAULT_EXT
     try:
-        ext = Path(getattr(file, "filename", "") or "").suffix.lower()
+        candidate = filename if filename is not None else (getattr(file, "filename", "") or "")
+        ext = Path(candidate).suffix.lower()
     except Exception:
         ext = ""
     if ext and mime in _ALLOWED_EXT.get(ext, frozenset()):
@@ -86,10 +89,21 @@ def upload_filename(file: Any, name: str | None = None) -> str:
     """Return the stored filename for an upload.
 
     With an explicit *name* the basename is used (path components stripped so a
-    caller-supplied name can never escape the target directory).  Otherwise a
-    UUID name is generated so concurrent uploads of identically-named files
-    never overwrite each other, with a safe extension from ``safe_extension``.
+    caller-supplied name can never escape the target directory) and its
+    extension goes through the same allow-list as generated names: it is kept
+    only if allowlisted and consistent with the file's content, otherwise it is
+    replaced by the sniffed (or default) extension.  So passing the client's
+    ``file.filename`` cannot put ``.php`` / ``.html`` on disk.  Names that are
+    empty, ``.`` or ``..`` raise ``ValueError``.
+
+    Otherwise a UUID name is generated so concurrent uploads of
+    identically-named files never overwrite each other, with a safe extension
+    from ``safe_extension``.
     """
     if name is not None:
-        return Path(name).name
+        base = Path(str(name).replace("\\", "/")).name
+        if base in ("", ".", "..") or "\x00" in base:
+            raise ValueError(f"Invalid upload filename: {name!r}")
+        stem = Path(base).stem
+        return f"{stem}{safe_extension(file, base)}"
     return f"{uuid.uuid4().hex}{safe_extension(file)}"

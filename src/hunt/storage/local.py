@@ -19,8 +19,11 @@ class LocalDisk:
     """
 
     def __init__(self, root: str | Path, url_prefix: str = "") -> None:
-        self._root = Path(root)
-        self._root.mkdir(parents=True, exist_ok=True)
+        Path(root).mkdir(parents=True, exist_ok=True)
+        # Resolved once (absolute, symlinks followed) so listings, which compare
+        # resolved child paths against the root, work for relative and
+        # symlinked roots too.
+        self._root = Path(root).resolve()
         self._url_prefix = url_prefix.rstrip("/")
 
     # ------------------------------------------------------------------
@@ -106,21 +109,21 @@ class LocalDisk:
         target = self._resolve(directory) if directory else self._root
         if not target.is_dir():
             return []
-        return [str(f.relative_to(self._root)) for f in target.iterdir() if f.is_file()]
+        return [self._relative(f) for f in target.iterdir() if f.is_file()]
 
     def all_files(self, directory: str = "") -> list[str]:
         """Return all files recursively."""
         target = self._resolve(directory) if directory else self._root
         if not target.is_dir():
             return []
-        return [str(f.relative_to(self._root)) for f in target.rglob("*") if f.is_file()]
+        return [self._relative(f) for f in target.rglob("*") if f.is_file()]
 
     def directories(self, directory: str = "") -> list[str]:
         """Return immediate sub-directories."""
         target = self._resolve(directory) if directory else self._root
         if not target.is_dir():
             return []
-        return [str(d.relative_to(self._root)) for d in target.iterdir() if d.is_dir()]
+        return [self._relative(d) for d in target.iterdir() if d.is_dir()]
 
     def make_directory(self, path: str) -> bool:
         self._resolve(path).mkdir(parents=True, exist_ok=True)
@@ -162,6 +165,10 @@ class LocalDisk:
             return f"{self._url_prefix}/{clean}"
         return f"/storage/{clean}"
 
+    def temporary_url(self, path: str, expires: int = 3600) -> str:
+        """Local disks cannot sign URLs; use an S3 disk or a signed route."""
+        raise NotImplementedError("LocalDisk does not support temporary URLs.")
+
     # ------------------------------------------------------------------
     # Append / prepend
     # ------------------------------------------------------------------
@@ -187,9 +194,17 @@ class LocalDisk:
     # Internal
     # ------------------------------------------------------------------
 
+    def _relative(self, entry: Path) -> str:
+        """Storage-relative path for a directory entry found under the root.
+
+        The entry is not resolved: a symlink inside the disk is listed under
+        its own name rather than its target's.
+        """
+        return str(entry.relative_to(self._root))
+
     def _resolve(self, relative: str) -> Path:
         resolved = (self._root / relative).resolve()
-        root_resolved = self._root.resolve()
-        if not str(resolved).startswith(str(root_resolved) + os.sep) and resolved != root_resolved:
+        root_resolved = self._root
+        if not str(resolved).startswith(str(root_resolved).rstrip(os.sep) + os.sep) and resolved != root_resolved:
             raise ValueError(f"Path traversal attempt: {relative!r} escapes storage root")
         return resolved

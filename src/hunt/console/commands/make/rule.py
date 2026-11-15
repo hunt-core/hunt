@@ -28,7 +28,9 @@ class {class_name}:
 def make_rule_command(name: str) -> None:
     """Create a new custom validation rule class."""
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
 
+    validate_identifier(name, "rule name")
     class_name = Str.pascal(Str.snake(name))
     content = load_stub("rule", _STUB).format(class_name=class_name)
 

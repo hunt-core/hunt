@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -31,24 +32,70 @@ def config(key: str, default: Any = None) -> Any:
     return _get_app().config.get(key, default)
 
 
+_CANONICAL_INT_RE = re.compile(r"0|-?[1-9][0-9]*")
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_VALUES = frozenset({"0", "false", "no", "off", ""})
+
+
 def env(key: str, default: Any = None) -> Any:
+    """Read an environment variable with minimal, lossless coercion.
+
+    ``true``/``false`` become booleans, ``null`` becomes ``None``, ``(empty)`` becomes
+    the empty string and canonical integers (``42``, ``-7``) become ``int``. Everything
+    else is returned as the exact string: ``0123`` (a password or zip code) stays
+    ``"0123"``, and ``1e5`` or ``1.5`` stay strings. Use :func:`env_int`,
+    :func:`env_float` or :func:`env_bool` when a specific type is required.
+    """
     val = os.environ.get(key)
     if val is None:
         return default
     low = val.lower()
-    if low == "true":
+    if low in ("true", "(true)"):
         return True
-    if low == "false":
+    if low in ("false", "(false)"):
         return False
-    try:
+    if low in ("null", "(null)"):
+        return None
+    if low == "(empty)":
+        return ""
+    if _CANONICAL_INT_RE.fullmatch(val):
         return int(val)
-    except ValueError:
-        pass
-    try:
-        return float(val)
-    except ValueError:
-        pass
     return val
+
+
+def env_int(key: str, default: int | None = None) -> int | None:
+    """Read an integer environment variable; ``default`` when unset, empty or not an integer."""
+    val = os.environ.get(key)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return int(val.strip())
+    except ValueError:
+        return default
+
+
+def env_float(key: str, default: float | None = None) -> float | None:
+    """Read a float environment variable; ``default`` when unset, empty or not a number."""
+    val = os.environ.get(key)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return float(val.strip())
+    except ValueError:
+        return default
+
+
+def env_bool(key: str, default: bool = False) -> bool:
+    """Read a boolean environment variable (``1/true/yes/on`` and ``0/false/no/off``)."""
+    val = os.environ.get(key)
+    if val is None:
+        return default
+    low = val.strip().lower()
+    if low in _TRUE_VALUES:
+        return True
+    if low in _FALSE_VALUES:
+        return False
+    return default
 
 
 def dump(*values: Any) -> Any:
@@ -59,11 +106,28 @@ def dump(*values: Any) -> Any:
     return values[-1] if values else None
 
 
+class DumpAndDie(Exception):
+    """Raised by :func:`dd` while a request is being handled.
+
+    ``SystemExit`` must not be raised inside a server worker: it would terminate the
+    worker (or be swallowed by a thread pool) instead of ending just this request.
+    """
+
+    def __init__(self, values: tuple) -> None:
+        self.values = values
+        super().__init__("dd() called")
+
+
 def dd(*values: Any) -> None:
+    """Dump the values and stop: aborts the current request, or exits a CLI script."""
     import pprint
 
     for v in values:
         pprint.pprint(v)
+    from hunt.auth.manager import _get_current_request
+
+    if _get_current_request() is not None:
+        raise DumpAndDie(values)
     raise SystemExit(0)
 
 
@@ -174,11 +238,11 @@ def trans_choice(key: str, count: int, replace: dict | None = None, locale: str 
 
 
 def back(default: str = "/") -> Any:
-    """Redirect to the previous URL (stored in session) or a fallback."""
-    from hunt.auth.manager import _get_current_request
-    from hunt.http.response import RedirectResponse
+    """Redirect to the previous URL (stored in session) or a fallback.
 
-    req = _get_current_request()
-    store = getattr(req, "_session", None) if req else None
-    url = store.get("_previous_url", default) if store else default
-    return RedirectResponse(url)
+    Delegates to ``redirect().back()`` so both spellings share one implementation,
+    including its open-redirect protection.
+    """
+    from hunt.http.response import FluentRedirect
+
+    return FluentRedirect(default).back(default)

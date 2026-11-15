@@ -49,10 +49,13 @@ class TestCronMatches:
         assert not matches("0 0 1 1 *", datetime(2024, 2, 1, 0, 0))
 
     def test_day_of_week(self):
-        # datetime.weekday(): 0=Mon … 6=Sun
+        # Standard cron: 0 (and 7) = Sunday, 1 = Monday … 6 = Saturday
         monday = datetime(2024, 6, 17, 0, 0)  # a known Monday
-        assert matches("0 0 * * 0", monday)
-        assert not matches("0 0 * * 1", monday)
+        sunday = datetime(2024, 6, 16, 0, 0)
+        assert matches("0 0 * * 1", monday)
+        assert not matches("0 0 * * 0", monday)
+        assert matches("0 0 * * 0", sunday)
+        assert matches("0 0 * * 7", sunday)
 
     def test_invalid_expression_raises(self):
         with pytest.raises(ValueError):

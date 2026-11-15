@@ -12,6 +12,13 @@ def _write(path: Path, content: str) -> None:
 
 def apply(target: Path) -> None:
     """Overlay blog starter kit files on the base skeleton."""
+    from hunt.console.commands.new import secure_headers_source
+
+    # The blog layout loads Tailwind from its CDN.
+    _write(
+        target / "app" / "middleware" / "secure_headers.py",
+        secure_headers_source("https://cdn.tailwindcss.com"),
+    )
     _write(target / "app" / "models" / "post.py", _POST_MODEL)
     _write(target / "app" / "models" / "category.py", _CATEGORY_MODEL)
     _write(target / "app" / "models" / "tag.py", _TAG_MODEL)
@@ -44,8 +51,15 @@ from hunt.database.model import Model
 
 class Post(Model):
     table = "posts"
+    # author_id is deliberately not fillable: it is set from the logged-in
+    # user in PostController.store, never from request input.
     fillable = ["title", "slug", "body", "published", "category_id"]
     casts = {"published": "boolean"}
+
+    def author(self):
+        from app.models.user import User
+        uid = self._attributes.get("author_id")
+        return User.find(uid) if uid else None
 
     def category(self):
         from app.models.category import Category
@@ -95,83 +109,142 @@ class Tag(Model):
 _POST_CONTROLLER = """\
 import re
 
+from hunt.auth.manager import Auth
 from hunt.http.controller import Controller
 from hunt.http.request import Request
-from hunt.http.response import Response, RedirectResponse
+from hunt.http.response import HttpException, Response, RedirectResponse
 from hunt.validation.validator import Validator
 from app.models.post import Post
 from app.models.category import Category
+
+RULES = {
+    "title": "required|string|max:255",
+    "body": "required|string",
+    "category_id": "nullable|integer|exists:categories,id",
+}
 
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+def _unique_slug(title: str, ignore_id=None) -> str:
+    \"\"\"Slug for *title*; a counter is appended when another post already uses it.\"\"\"
+    base = _slugify(title) or "post"
+    slug, counter = base, 2
+    while True:
+        existing = Post.where("slug", slug).first()
+        if existing is None or (ignore_id is not None and str(existing._attributes.get("id")) == str(ignore_id)):
+            return slug
+        slug = f"{base}-{counter}"
+        counter += 1
+
+
+def _find_post(id) -> Post:
+    \"\"\"Load a post or answer 404 (also for ids that are not numbers).\"\"\"
+    try:
+        key = int(id)
+    except (TypeError, ValueError):
+        raise HttpException(404, "Post not found.") from None
+    post = Post.find(key)
+    if post is None:
+        raise HttpException(404, "Post not found.")
+    return post
+
+
+def _can_edit(user, post: Post) -> bool:
+    \"\"\"Authors manage their own posts; administrators manage all of them.\"\"\"
+    if user is None:
+        return False
+    if user._attributes.get("is_admin"):
+        return True
+    author_id = post._attributes.get("author_id")
+    return author_id is not None and str(author_id) == str(user._attributes.get("id"))
+
+
+def _authorize(post: Post) -> None:
+    if not _can_edit(Auth.user(), post):
+        raise HttpException(403, "You are not allowed to change this post.")
+
+
+def _input(request: Request) -> dict:
+    return {
+        "title": request.input("title", ""),
+        "body": request.input("body", ""),
+        "category_id": request.input("category_id") or None,
+        "published": bool(request.input("published")),
+    }
+
+
 class PostController(Controller):
     def index(self, request: Request) -> Response:
+        user = Auth.user()
         posts = Post.where("published", True).get()
-        return self.view("posts.index", {"posts": posts})
+        editable = [post._attributes["id"] for post in posts if _can_edit(user, post)]
+        return self.view("posts.index", {"posts": posts, "editable": editable})
 
     def show(self, request: Request, id: int) -> Response:
-        post = Post.find(id)
-        return self.view("posts.show", {"post": post})
+        post = _find_post(id)
+        can_edit = _can_edit(Auth.user(), post)
+        # Drafts are visible to their author and to administrators only.
+        if not post._attributes.get("published") and not can_edit:
+            raise HttpException(404, "Post not found.")
+        return self.view("posts.show", {"post": post, "can_edit": can_edit})
 
     def create(self, request: Request) -> Response:
         return self.view("posts.create", {
-            "categories": Category.all(),
+            "categories": Category.all().get(),
             "errors": {},
             "old": {},
         })
 
     def store(self, request: Request) -> Response:
-        data = {
-            "title": request.input("title", ""),
-            "body": request.input("body", ""),
-            "category_id": request.input("category_id") or None,
-            "published": bool(request.input("published")),
-        }
-        v = Validator.make(data, {"title": "required|string|max:255", "body": "required"})
+        data = _input(request)
+        v = Validator.make(data, RULES)
         if v.fails():
             return self.view("posts.create", {
-                "categories": Category.all(),
+                "categories": Category.all().get(),
                 "errors": v.errors()._errors,
                 "old": data,
             })
-        Post.create({**data, "slug": _slugify(data["title"])})
+        post = Post()
+        post.fill({**data, "slug": _unique_slug(data["title"])})
+        post.author_id = Auth.id()
+        post.save()
         return RedirectResponse("/posts")
 
     def edit(self, request: Request, id: int) -> Response:
-        post = Post.find(id)
+        post = _find_post(id)
+        _authorize(post)
         return self.view("posts.edit", {
             "post": post,
-            "categories": Category.all(),
+            "categories": Category.all().get(),
             "errors": {},
             "old": {},
         })
 
     def update(self, request: Request, id: int) -> Response:
-        post = Post.find(id)
-        data = {
-            "title": request.input("title", ""),
-            "body": request.input("body", ""),
-            "category_id": request.input("category_id") or None,
-            "published": bool(request.input("published")),
-        }
-        v = Validator.make(data, {"title": "required|string|max:255", "body": "required"})
+        post = _find_post(id)
+        _authorize(post)
+        data = _input(request)
+        v = Validator.make(data, RULES)
         if v.fails():
             return self.view("posts.edit", {
                 "post": post,
-                "categories": Category.all(),
+                "categories": Category.all().get(),
                 "errors": v.errors()._errors,
                 "old": data,
             })
-        for k, val in {**data, "slug": _slugify(data["title"])}.items():
-            post._attributes[k] = val
+        if data["title"] != post._attributes.get("title"):
+            data["slug"] = _unique_slug(data["title"], ignore_id=post._attributes["id"])
+        post.fill(data)
         post.save()
-        return RedirectResponse(f"/posts/{id}")
+        return RedirectResponse(f"/posts/{post._attributes['id']}")
 
     def destroy(self, request: Request, id: int) -> Response:
-        Post.find(id).delete()
+        post = _find_post(id)
+        _authorize(post)
+        post.delete()
         return RedirectResponse("/posts")
 """
 
@@ -182,6 +255,7 @@ class PostController(Controller):
 _POST_ADMIN = """\
 from hunt.admin import AdminResource
 from hunt.admin.fields import Text, Boolean, DateTime
+from app.admin.user_resource import is_admin
 from app.models.post import Post
 
 
@@ -202,22 +276,24 @@ class PostResource(AdminResource):
             DateTime("Created At", attribute="created_at").sortable().hide_from_forms(),
         ]
 
+    # Administrators only. Narrow these (or return False) to restrict the panel further.
     def can_view_any(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_create(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_update(self, request, instance=None) -> bool:
-        return True
+        return is_admin(request)
 
     def can_delete(self, request, instance=None) -> bool:
-        return True
+        return is_admin(request)
 """
 
 _CATEGORY_ADMIN = """\
 from hunt.admin import AdminResource
 from hunt.admin.fields import Text, DateTime
+from app.admin.user_resource import is_admin
 from app.models.category import Category
 
 
@@ -235,17 +311,18 @@ class CategoryResource(AdminResource):
             DateTime("Created At", attribute="created_at").sortable().hide_from_forms(),
         ]
 
+    # Administrators only. Narrow these (or return False) to restrict the panel further.
     def can_view_any(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_create(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_update(self, request, instance=None) -> bool:
-        return True
+        return is_admin(request)
 
     def can_delete(self, request, instance=None) -> bool:
-        return True
+        return is_admin(request)
 """
 
 # ---------------------------------------------------------------------------
@@ -280,12 +357,14 @@ class CreatePostsTable(Migration):
     def up(self) -> None:
         def blueprint(table):
             table.id()
+            table.integer("author_id").nullable()
             table.integer("category_id").nullable()
             table.string("title")
             table.string("slug").unique()
             table.text("body")
             table.boolean("published").default(False)
             table.timestamps()
+            table.index("author_id")
 
         Schema.create("posts", blueprint)
 
@@ -442,7 +521,7 @@ _POSTS_INDEX = """\
         <p class="text-gray-600 text-sm mb-4">{{ post._attributes.body[:200] }}{% if post._attributes.body|length > 200 %}...{% endif %}</p>
         <div class="flex gap-3">
             <a href="/posts/{{ post._attributes.id }}" class="text-indigo-600 text-sm hover:underline">Read more</a>
-            {% if auth_check is defined and auth_check() %}
+            {% if editable is defined and post._attributes.id in editable %}
             <a href="/posts/{{ post._attributes.id }}/edit" class="text-gray-500 text-sm hover:underline">Edit</a>
             <form method="POST" action="/posts/{{ post._attributes.id }}/delete" class="inline">
                 @csrf
@@ -473,7 +552,7 @@ _POSTS_SHOW = """\
     <div class="prose max-w-none text-gray-700 whitespace-pre-wrap">{{ post._attributes.body }}</div>
     <div class="mt-8 flex gap-3 pt-6 border-t">
         <a href="/posts" class="text-gray-500 text-sm hover:underline">Back to posts</a>
-        {% if auth_check is defined and auth_check() %}
+        {% if can_edit is defined and can_edit %}
         <a href="/posts/{{ post._attributes.id }}/edit" class="text-indigo-600 text-sm hover:underline">Edit</a>
         <form method="POST" action="/posts/{{ post._attributes.id }}/delete" class="inline">
             @csrf
@@ -498,14 +577,14 @@ _POSTS_CREATE = """\
         @csrf
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
-            <input type="text" name="title" value="@old('title')"
+            <input type="text" name="title" value="{{ old.get('title', '') }}"
                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
             {% if errors.title %}<p class="text-red-500 text-xs mt-1">{{ errors.title[0] }}</p>{% endif %}
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Body</label>
             <textarea name="body" rows="10"
-                      class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">@old('body')</textarea>
+                      class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">{{ old.get('body', '') }}</textarea>
             {% if errors.body %}<p class="text-red-500 text-xs mt-1">{{ errors.body[0] }}</p>{% endif %}
         </div>
         {% if categories %}
@@ -545,14 +624,14 @@ _POSTS_EDIT = """\
         @csrf
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
-            <input type="text" name="title" value="@old('title', post._attributes.title)"
+            <input type="text" name="title" value="{{ old.get('title', post._attributes.title) }}"
                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
             {% if errors.title %}<p class="text-red-500 text-xs mt-1">{{ errors.title[0] }}</p>{% endif %}
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Body</label>
             <textarea name="body" rows="10"
-                      class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">@old('body', post._attributes.body)</textarea>
+                      class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">{{ old.get('body', post._attributes.body) }}</textarea>
             {% if errors.body %}<p class="text-red-500 text-xs mt-1">{{ errors.body[0] }}</p>{% endif %}
         </div>
         {% if categories %}
@@ -589,6 +668,7 @@ from hunt.http.router import Router
 
 
 def register(router: Router) -> None:
+    from hunt.http.middleware.authenticate import Authenticate
     from app.controllers.welcome_controller import WelcomeController
     from app.controllers.post_controller import PostController
 
@@ -596,12 +676,18 @@ def register(router: Router) -> None:
 
     ctrl = PostController()
     router.get("/posts", ctrl.index).named("posts.index")
-    router.get("/posts/create", ctrl.create).named("posts.create")
-    router.post("/posts", ctrl.store).named("posts.store")
+
+    # Writing requires a logged-in user. The controller additionally checks
+    # that the user is the post's author or an administrator.
+    with router.group(middleware=[Authenticate]):
+        router.get("/posts/create", ctrl.create).named("posts.create")
+        router.post("/posts", ctrl.store).named("posts.store")
+        router.get("/posts/{id}/edit", ctrl.edit).named("posts.edit")
+        router.post("/posts/{id}/update", ctrl.update).named("posts.update")
+        router.post("/posts/{id}/delete", ctrl.destroy).named("posts.destroy")
+
+    # Registered after /posts/create so "create" is not read as an id.
     router.get("/posts/{id}", ctrl.show).named("posts.show")
-    router.get("/posts/{id}/edit", ctrl.edit).named("posts.edit")
-    router.post("/posts/{id}/update", ctrl.update).named("posts.update")
-    router.post("/posts/{id}/delete", ctrl.destroy).named("posts.destroy")
 """
 
 _BLOG_ROUTES_ADMIN = """\
@@ -632,6 +718,12 @@ def register(router: Router) -> None:
         lambda request: Auth.check()
         and bool(getattr(Auth.user(), "_attributes", {}).get("is_admin"))
     )
+    # The system tools (sessions, cache, logs, queue) expose operational data
+    # and are denied by default. Enable the ones you need, for administrators:
+    # Admin.authorize_tool("sessions")
+    # Admin.authorize_tool("cache")
+    # Admin.authorize_tool("logs")
+    # Admin.authorize_tool("queue")
     Admin.register_to(router)
 """
 
@@ -647,9 +739,11 @@ This application was created with the **hunt blog starter kit**.
 ## What was created
 
 - **Models**: `Post`, `Category`, `Tag`
-- **Controller**: `PostController` — full CRUD (index, show, create, store, edit, update, destroy)
+- **Controller**: `PostController` — full CRUD (index, show, create, store, edit, update, destroy).
+  Creating a post requires a login; editing and deleting are limited to the
+  post's author and administrators; drafts are hidden from everyone else
 - **Views**: `posts/index`, `posts/show`, `posts/create`, `posts/edit` (Tailwind CSS)
-- **Admin**: PostResource and CategoryResource pre-wired at `/admin`
+- **Admin**: PostResource and CategoryResource pre-wired at `/hunt-admin`
 - **Migrations**: categories, posts, tags, post_tag pivot
 
 ## Get started
@@ -665,7 +759,7 @@ Then visit:
 - `http://localhost:8000/` — welcome page
 - `http://localhost:8000/posts` — blog post listing
 - `http://localhost:8000/register` — create an account
-- `http://localhost:8000/admin` — admin panel (requires `is_admin = True` on your user)
+- `http://localhost:8000/hunt-admin` — admin panel (requires `is_admin = True` on your user)
 
 ## Promote a user to admin
 
@@ -674,11 +768,11 @@ After registering, open a Python shell with `hunt tinker` and run:
 ```python
 from app.models.user import User
 u = User.where("email", "you@example.com").first()
-u._attributes["is_admin"] = True
+u.is_admin = True
 u.save()
 ```
 
 ## Add categories via admin
 
-Visit `/admin` → Categories → New Category to create categories before writing posts.
+Visit `/hunt-admin` → Categories → New Category to create categories before writing posts.
 """

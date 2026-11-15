@@ -5,6 +5,91 @@ import secrets
 import string
 import uuid as _uuid_mod
 
+# Words with no distinct plural form.
+_UNCOUNTABLE = frozenset(
+    {
+        "data",
+        "equipment",
+        "feedback",
+        "fish",
+        "information",
+        "media",
+        "metadata",
+        "money",
+        "news",
+        "series",
+        "sheep",
+        "software",
+        "species",
+    }
+)
+
+# Singular nouns that end in a single "s": stripping it would mangle them (status -> statu),
+# which breaks table-name inference.
+_SINGULAR_S_WORDS = frozenset(
+    {
+        "alias",
+        "analysis",
+        "atlas",
+        "axis",
+        "basis",
+        "bonus",
+        "bus",
+        "campus",
+        "canvas",
+        "census",
+        "chaos",
+        "consensus",
+        "corpus",
+        "crisis",
+        "diagnosis",
+        "focus",
+        "gas",
+        "iris",
+        "lens",
+        "status",
+        "synopsis",
+        "thesis",
+        "virus",
+    }
+)
+# The same words as the tail of a compound (order_status, PaymentStatus).
+_SINGULAR_S_SUFFIXES = tuple(sorted(w for w in _SINGULAR_S_WORDS if len(w) > 3))
+
+_IRREGULAR_SINGULARS = {
+    "people": "person",
+    "children": "child",
+    "men": "man",
+    "women": "woman",
+    "teeth": "tooth",
+    "feet": "foot",
+    "mice": "mouse",
+    "geese": "goose",
+    "statuses": "status",
+    "aliases": "alias",
+    "buses": "bus",
+    "bonuses": "bonus",
+    "viruses": "virus",
+    "campuses": "campus",
+    "lenses": "lens",
+    "gases": "gas",
+    "atlases": "atlas",
+    "canvases": "canvas",
+    "censuses": "census",
+    "irises": "iris",
+    "focuses": "focus",
+}
+
+
+def _compound_head(value: str, word: str) -> str | None:
+    """Return the part of ``value`` before a trailing ``word`` that starts a new word, else None."""
+    if len(value) <= len(word) or not value.lower().endswith(word):
+        return None
+    head = value[: -len(word)]
+    if head.endswith(("_", "-", " ")) or value[len(head)].isupper():
+        return head
+    return None
+
 
 class Str:
     @staticmethod
@@ -44,6 +129,8 @@ class Str:
             "mouse": "mice",
             "goose": "geese",
         }
+        if not value:
+            return value
         lower = value.lower()
         if lower in irregular:
             return irregular[lower]
@@ -54,13 +141,27 @@ class Str:
             return value[:-2] + "es"
         if lower.endswith(("s", "x", "z", "ch", "sh")):
             return value + "es"
-        if lower.endswith("y") and lower[-2] not in "aeiou":
+        if lower.endswith("y") and len(lower) > 1 and lower[-2] not in "aeiou":
             return value[:-1] + "ies"
         return value + "s"
 
     @staticmethod
     def singular(value: str) -> str:
-        if value.endswith("ies"):
+        lower = value.lower()
+        if lower in _UNCOUNTABLE or lower in _SINGULAR_S_WORDS:
+            return value
+        if lower in _IRREGULAR_SINGULARS:
+            return _IRREGULAR_SINGULARS[lower]
+        # Compound names (order_status, UserStatuses): the last word decides.
+        for word in _SINGULAR_S_SUFFIXES:
+            if _compound_head(value, word) is not None:
+                return value
+        for plural_word, singular_word in _IRREGULAR_SINGULARS.items():
+            head = _compound_head(value, plural_word)
+            if head is not None:
+                tail = value[len(head) :]
+                return head + (singular_word.capitalize() if tail[0].isupper() else singular_word)
+        if value.endswith("ies") and len(value) > 3:
             return value[:-3] + "y"
         # Mirror of the -sis rule in plural().  Matched against an explicit list
         # because a general -ses rule would mangle regular words (houses, roses).

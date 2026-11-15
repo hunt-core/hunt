@@ -13,22 +13,44 @@ _SENSITIVE_RE = re.compile(
 )
 _REDACTED = "*** redacted ***"
 
+# Keys that conventionally hold connection strings (database.url, sentry.dsn, redis.uri, ...).
+_URL_KEY_RE = re.compile(r"(?:^|[._-])(url|dsn|uri)(?:$|[._-])", re.IGNORECASE)
+# scheme://user:password@host — the password part of any URL-like value.
+_URL_PASSWORD_RE = re.compile(r"(?P<head>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/:@?#]*):[^\s/@?#]*@")
+# scheme://userinfo@host — any userinfo at all (a DSN keeps its secret in the user part).
+_URL_USERINFO_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/@?#]+@")
+
+
+def _mask_url_credentials(value: str) -> str:
+    """Mask the password in ``scheme://user:password@host`` wherever it appears in *value*."""
+    return _URL_PASSWORD_RE.sub(lambda m: f"{m.group('head')}:***@", value)
+
 
 def _redact(value: Any, key: str) -> Any:
     """Replace sensitive string values with a redaction marker."""
-    if _SENSITIVE_RE.search(key) and isinstance(value, str) and value:
+    if not isinstance(value, str) or not value:
+        return value
+    if _SENSITIVE_RE.search(key):
         return _REDACTED
-    return value
+    if _URL_KEY_RE.search(key) and (_URL_USERINFO_RE.search(value) or "?" in value):
+        # Connection strings carry credentials in the userinfo or the query string.
+        return _REDACTED
+    return _mask_url_credentials(value)
+
+
+def _redact_value(value: Any, key: str) -> Any:
+    if isinstance(value, dict):
+        return _redact_dict(value, key)
+    if isinstance(value, (list, tuple)):
+        return [_redact_value(item, key) for item in value]
+    return _redact(value, key)
 
 
 def _redact_dict(data: dict, parent_key: str = "") -> dict:
     out: dict = {}
     for k, v in data.items():
         full_key = f"{parent_key}.{k}" if parent_key else k
-        if isinstance(v, dict):
-            out[k] = _redact_dict(v, full_key)
-        else:
-            out[k] = _redact(v, full_key)
+        out[k] = _redact_value(v, full_key)
     return out
 
 
@@ -82,12 +104,12 @@ def config_show_command(key: str | None, as_json: bool, no_redact: bool) -> None
         if value is None:
             click.echo(f"  Key '{key}' not found in configuration.", err=True)
             raise SystemExit(1)
+        # Redact against the full dotted key so `config:show database.password` is still masked.
+        if not no_redact:
+            value = _redact_value(value, key)
         data = {key: value} if not isinstance(value, dict) else value
     else:
-        data = config
-
-    if not no_redact:
-        data = _redact_dict(data)
+        data = config if no_redact else _redact_dict(config)
 
     if as_json:
         click.echo(json.dumps(data, default=str, indent=2))

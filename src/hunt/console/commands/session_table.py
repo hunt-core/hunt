@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import click
@@ -32,9 +31,17 @@ class CreateUserSessionsTable(Migration):
 @click.command("session:table")
 def session_table_command() -> None:
     """Create a migration for the user_sessions table."""
-    ts = time.strftime("%Y%m%d%H%M%S")
-    filename = f"{ts}_create_user_sessions_table.py"
-    out = Path.cwd() / "database" / "migrations" / filename
+    from hunt.console.commands.make._naming import migration_timestamp
+
+    migrations = Path.cwd() / "database" / "migrations"
+    suffix = "_create_user_sessions_table.py"
+    existing = sorted(migrations.glob(f"*{suffix}")) if migrations.is_dir() else []
+    if existing:
+        click.echo(f"  Already exists: database/migrations/{existing[0].name}")
+        return
+    # Same filename scheme as make:migration, so migrations sort in creation order.
+    filename = f"{migration_timestamp()}{suffix}"
+    out = migrations / filename
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(_MIGRATION_STUB, encoding="utf-8")
     click.echo(f"  Created migration: database/migrations/{filename}")

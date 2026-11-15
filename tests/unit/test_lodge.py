@@ -89,7 +89,7 @@ class TestBuildCompose:
     def test_redis_service_included(self):
         out = _build_compose("myapp", "3.12", ["redis"])
         assert "redis:" in out
-        assert "redis:alpine" in out
+        assert "redis:7.4.12-alpine" in out  # CLI-03: pinned, no floating tag
 
     def test_mailpit_uses_service_started(self):
         out = _build_compose("myapp", "3.12", ["mailpit"])
@@ -129,7 +129,8 @@ class TestBuildCompose:
 
     def test_docker_compose_env_vars_preserved(self):
         out = _build_compose("myapp", "3.12", ["pgsql"])
-        assert "${DB_PORT:-5432}" in out
+        # CLI-03: the host-published port has its own variable; DB_PORT is the in-container port
+        assert "${FORWARD_DB_PORT:-5432}" in out
         assert "${DB_DATABASE:-hunt}" in out
 
     def test_app_port_env_var_escaped(self):
@@ -150,10 +151,10 @@ class TestLodgeInstallCommand:
     def test_creates_compose_yaml(self, tmp_path):
         (tmp_path / "bootstrap").mkdir()
         (tmp_path / "bootstrap" / "app.py").touch()
-        result = self._run([], env={"PWD": str(tmp_path)})
         with patch("hunt.console.commands.lodge_install.Path.cwd", return_value=tmp_path):
             result = self._run([])
-        assert (tmp_path / "compose.yaml").exists() or result.exit_code == 0
+        assert result.exit_code == 0
+        assert (tmp_path / "compose.yaml").exists()
 
     def test_rejects_both_pgsql_and_mysql(self, tmp_path):
         (tmp_path / "bootstrap").mkdir()

@@ -6,6 +6,8 @@ import json
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from hunt.admin.application import Admin
 from hunt.admin.controllers.cache_inspector import (
     _list_array,
@@ -13,6 +15,16 @@ from hunt.admin.controllers.cache_inspector import (
     _truncate,
 )
 from hunt.cache.manager import ArrayStore, FileStore
+
+
+@pytest.fixture(autouse=True)
+def _enable_cache_tool():
+    """The cache tool is opt-in (ADM-09); these tests exercise it once enabled."""
+    saved = dict(Admin._tool_rules)
+    Admin.authorize_tool("cache")
+    yield
+    Admin._tool_rules.clear()
+    Admin._tool_rules.update(saved)
 
 # ---------------------------------------------------------------------------
 # _truncate

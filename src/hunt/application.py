@@ -13,6 +13,15 @@ from hunt.container.container import Container
 from hunt.container.facade import set_facade_application
 from hunt.container.provider import ServiceProvider
 
+# The one default for APP_ENV. An unset environment is treated as production so
+# that debug-only behaviour is never switched on by omission.
+DEFAULT_APP_ENV = "production"
+
+
+def app_env() -> str:
+    """Return the current APP_ENV, falling back to ``DEFAULT_APP_ENV``."""
+    return (os.environ.get("APP_ENV") or DEFAULT_APP_ENV).strip().lower()
+
 
 class Application(Container):
     """Central application class — bootstraps providers, config, and env."""
@@ -81,11 +90,15 @@ class Application(Container):
     def env(self, key: str, default: Any = None) -> Any:
         return os.environ.get(key, default)
 
+    def environment(self) -> str:
+        """The current APP_ENV (``production`` when unset)."""
+        return app_env()
+
     def is_production(self) -> bool:
-        return self.env("APP_ENV", "production") == "production"
+        return app_env() == "production"
 
     def is_local(self) -> bool:
-        return self.env("APP_ENV", "production") == "local"
+        return app_env() == "local"
 
     def locale(self) -> str:
         try:

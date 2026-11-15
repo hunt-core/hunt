@@ -3,5 +3,5 @@ from hunt.database.model import Model
 
 class {{class}}(Model):
     table = "{{table}}"
-    fillable: list[str] = []
+    fillable: list[str] = {{fillable}}
     hidden: list[str] = []

@@ -81,19 +81,24 @@ def make_model_command(
 
 def _create_model(name: str, fields: str = "") -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make._output import output
-    from hunt.console.commands.make.field_types import fillable_list, parse_fields
+    from hunt.console.commands.make.field_types import model_source, parse_fields
 
+    validate_identifier(name, "model name")
     class_name = Str.pascal(name)
     table = Str.plural(Str.snake(name))
     parsed = parse_fields(fields)
-    fillable = fillable_list(parsed) if parsed else "[]"
 
-    stub = load_stub("model", _MODEL_STUB)
-    content = stub.replace("{{class}}", class_name).replace("{{table}}", table).replace("{{fillable}}", fillable)
+    content = model_source(class_name, table, parsed, load_stub("model", _MODEL_STUB))
 
     out = Path.cwd() / "app" / "models" / f"{Str.snake(name)}.py"
-    output.write(out, content, label="Created Model     ")
+    written = output.write(out, content, label="Created Model     ")
+    if written and not parsed:
+        output.echo(
+            "  Note: no --fields given, so the model has an empty fillable list and rejects all "
+            "mass assignment. Add the columns users may set to `fillable`."
+        )
 
 
 _MODEL_STUB = """\

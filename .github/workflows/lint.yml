@@ -6,21 +6,24 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Ruff
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
         with:
-          version: "latest"
+          version: "0.13.8"
 
       - name: Install ruff
-        run: uv tool install ruff
+        run: uv tool install ruff==0.17.5
 
       - name: Lint
         run: uv tool run ruff check src/

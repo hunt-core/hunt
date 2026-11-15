@@ -1,15 +1,31 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlsplit
+
+# Characters that may never appear in a header name or value: CR/LF would split
+# the response, NUL is rejected by every server.
+_HEADER_UNSAFE = {ord("\r"): None, ord("\n"): None, 0: None}
+# RFC 6265 cookie-octet minus "%" (which we encode so the value round-trips
+# through Request.cookie(), which percent-decodes).
+_COOKIE_VALUE_SAFE = "!#$&'()*+-./:<=>?@[]^_`{|}~"
+_COOKIE_NAME_UNSAFE = re.compile(r"[^!#$%&'*+\-.^_`|~0-9A-Za-z]")
+_COOKIE_ATTR_UNSAFE = re.compile(r"[;,\x00-\x1f\x7f]")
+
+
+def _clean_header(value: Any) -> str:
+    """Drop CR, LF and NUL so a header can never split the response."""
+    return str(value).translate(_HEADER_UNSAFE)
 
 
 class HttpException(Exception):
-    def __init__(self, status: int, message: str = "") -> None:
+    def __init__(self, status: int, message: str = "", headers: dict[str, str] | None = None) -> None:
         self.status = status
         self.message = message
+        self.headers: dict[str, str] = dict(headers or {})
         super().__init__(message)
 
 
@@ -23,15 +39,55 @@ class Response:
     ) -> None:
         self.status = status
         self.content_type = content_type
-        self._headers: dict[str, str] = headers or {}
+        # Copy: the caller's dict must not be aliased (later header() calls
+        # would otherwise leak into a dict shared between responses).
+        self._headers: dict[str, str] = {}
         self._cookie_headers: list[str] = []
         if isinstance(content, str):
             self._body = content.encode("utf-8")
         else:
             self._body = content
+        for key, value in (headers or {}).items():
+            self.header(key, value)
 
     def header(self, key: str, value: str) -> Response:
+        key = _clean_header(key)
+        value = _clean_header(value)
+        lowered = key.lower()
+        if lowered == "content-type":
+            # Content-Type is emitted once, from ``content_type``. The entry kept
+            # in ``_headers`` is for introspection only; _asgi_headers skips it.
+            self.content_type = value
+        if key not in self._headers:
+            # Header names are case-insensitive: replace, never duplicate.
+            for existing in [k for k in self._headers if k.lower() == lowered]:
+                del self._headers[existing]
         self._headers[key] = value
+        return self
+
+    def get_header(self, key: str, default: str | None = None) -> str | None:
+        """Return a response header by case-insensitive name."""
+        lowered = key.lower()
+        if lowered == "content-type":
+            return self.content_type
+        for k, v in self._headers.items():
+            if k.lower() == lowered:
+                return v
+        return default
+
+    def vary(self, *values: str) -> Response:
+        """Append to the Vary header without dropping values already present."""
+        existing = self.get_header("Vary") or ""
+        parts = [p.strip() for p in existing.split(",") if p.strip()]
+        seen = {p.lower() for p in parts}
+        for value in values:
+            for item in str(value).split(","):
+                item = item.strip()
+                if item and item.lower() not in seen:
+                    parts.append(item)
+                    seen.add(item.lower())
+        if parts:
+            self.header("Vary", ", ".join(parts))
         return self
 
     def with_cookie(
@@ -44,12 +100,18 @@ class Response:
         secure: bool = False,
         same_site: str = "Lax",
     ) -> Response:
-        # Strip CRLF to prevent HTTP response splitting / header injection.
-        name = name.translate({ord("\r"): None, ord("\n"): None})
-        value = value.translate({ord("\r"): None, ord("\n"): None})
+        # The name must be an RFC 6265 token and the value is percent-encoded, so
+        # neither can inject an attribute (";"), a second cookie (",") or a new
+        # header (CR/LF). Request.cookie() decodes the value again.
+        name = _COOKIE_NAME_UNSAFE.sub("", str(name))
+        if not name:
+            raise ValueError("Cookie name is empty or contains only invalid characters.")
+        value = quote(str(value), safe=_COOKIE_VALUE_SAFE)
+        path = _COOKIE_ATTR_UNSAFE.sub("", str(path)) or "/"
+        same_site = _COOKIE_ATTR_UNSAFE.sub("", str(same_site)) or "Lax"
         cookie = f"{name}={value}; Path={path}; SameSite={same_site}"
         if max_age:
-            cookie += f"; Max-Age={max_age}"
+            cookie += f"; Max-Age={int(max_age)}"
         if http_only:
             cookie += "; HttpOnly"
         if secure:
@@ -60,8 +122,7 @@ class Response:
     def with_etag(self, etag: str) -> Response:
         """Set the ETag response header. Wraps bare values in double-quotes."""
         value = etag if etag.startswith('"') or etag.startswith("W/") else f'"{etag}"'
-        self._headers["ETag"] = value
-        return self
+        return self.header("ETag", value)
 
     def last_modified(self, dt: datetime | str) -> Response:
         """Set the Last-Modified header. Accepts a datetime or an RFC 7231 string."""
@@ -71,37 +132,41 @@ class Response:
             value = dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
         else:
             value = str(dt)
-        self._headers["Last-Modified"] = value
-        return self
+        return self.header("Last-Modified", value)
 
     def cache(self, seconds: int, *, public: bool = True) -> Response:
         """Set Cache-Control with max-age."""
         scope = "public" if public else "private"
-        self._headers["Cache-Control"] = f"{scope}, max-age={seconds}"
-        return self
+        return self.header("Cache-Control", f"{scope}, max-age={seconds}")
 
     def no_cache(self) -> Response:
         """Instruct clients and proxies never to cache this response."""
-        self._headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-        self._headers["Pragma"] = "no-cache"
-        return self
+        self.header("Cache-Control", "no-store, no-cache, must-revalidate")
+        return self.header("Pragma", "no-cache")
 
     def forget_cookie(self, name: str, path: str = "/") -> Response:
+        name = _COOKIE_NAME_UNSAFE.sub("", str(name))
+        path = _COOKIE_ATTR_UNSAFE.sub("", str(path)) or "/"
         self._cookie_headers.append(f"{name}=; Path={path}; Max-Age=0")
         return self
 
     def add_cookie_header(self, raw: str) -> None:
-        self._cookie_headers.append(raw)
+        self._cookie_headers.append(_clean_header(raw))
 
     def _asgi_headers(self) -> list[tuple[bytes, bytes]]:
+        # Every value is cleaned again here: ``_headers`` / ``content_type`` can be
+        # assigned directly, bypassing header().
         headers = [
-            (b"content-type", self.content_type.encode()),
+            (b"content-type", _clean_header(self.content_type).encode("utf-8")),
             (b"content-length", str(len(self._body)).encode()),
         ]
         for k, v in self._headers.items():
-            headers.append((k.lower().encode(), v.encode()))
+            name = _clean_header(k).lower()
+            if name in ("content-type", "content-length"):
+                continue
+            headers.append((name.encode("utf-8"), _clean_header(v).encode("utf-8")))
         for cookie in self._cookie_headers:
-            headers.append((b"set-cookie", cookie.encode()))
+            headers.append((b"set-cookie", _clean_header(cookie).encode("utf-8")))
         return headers
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
@@ -151,7 +216,7 @@ class FluentRedirect(RedirectResponse):
     # ------------------------------------------------------------------
 
     def to(self, url: str, status: int = 302) -> FluentRedirect:
-        self._headers["Location"] = url
+        self.header("Location", url)
         self.status = status
         return self
 
@@ -165,13 +230,7 @@ class FluentRedirect(RedirectResponse):
     def back(self, default: str = "/", status: int = 302) -> FluentRedirect:
         from hunt.auth.manager import _get_current_request
 
-        req = _get_current_request()
-        store = getattr(req, "_session", None) if req else None
-        url = store.get("_previous_url", default) if store else default
-        # Reject off-host redirects to prevent open-redirect attacks
-        if not _is_safe_redirect(url):
-            url = default
-        return self.to(url, status)
+        return self.to(_previous_url(_get_current_request(), default), status)
 
     # ------------------------------------------------------------------
     # Flash data
@@ -215,17 +274,73 @@ class FluentRedirect(RedirectResponse):
             store.flash(key, value)
 
 
+_REDIRECT_UNSAFE_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
+
+
 def _is_safe_redirect(url: str) -> bool:
-    """Return True if the URL is relative or same-host (no external redirect)."""
-    if not url:
+    """Return True only for a same-site path: exactly one leading ``/``, no
+    scheme or host, and no characters browsers rewrite into either.
+
+    Browsers strip tab/CR/LF from URLs and treat ``\\`` as ``/``, so
+    ``/\\evil.com`` and ``/\\t/evil.com`` both leave the site. Whitespace,
+    control characters and backslashes are therefore rejected outright.
+    """
+    if not url or not isinstance(url, str):
         return False
-    # `///evil.com` parses to netloc="" but still redirects off-host in browsers
-    # `/\evil.com` and `\/evil.com` also resolve off-host in some browsers
-    if url.startswith("//") or url.startswith("/\\") or url.startswith("\\/"):
+    if not url.startswith("/") or url.startswith("//"):
         return False
-    parsed = urlparse(url)
-    # Relative URLs have no scheme or netloc
+    if _REDIRECT_UNSAFE_CHARS.search(url):
+        return False
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
     return not parsed.netloc and not parsed.scheme
+
+
+def _same_origin_path(url: str | None, request: Any) -> str | None:
+    """Reduce *url* to a safe local path (plus query), or None.
+
+    Accepts a URL that is already a safe local path, or an absolute http(s)
+    URL whose host (and port) equals the request's ``Host`` header, which is
+    what browsers send in ``Referer``. Anything else returns None.
+    """
+    if not url or not isinstance(url, str):
+        return None
+    url = url.strip()
+    if _is_safe_redirect(url):
+        return url
+    if _REDIRECT_UNSAFE_CHARS.search(url):
+        return None
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc or "@" in parsed.netloc:
+        return None
+    host = ((request.header("host", "") if request is not None else "") or "").strip().lower()
+    if not host or parsed.netloc.lower() != host:
+        return None
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    return path if _is_safe_redirect(path) else None
+
+
+def _previous_url(request: Any, default: str = "/") -> str:
+    """Where "back" points: the same-origin Referer, else the URL StartSession
+    recorded for the last page view, else *default* (developer supplied, used
+    as given). Request-derived values never leave the site."""
+    if request is not None:
+        referer = _same_origin_path(request.header("referer"), request)
+        if referer:
+            return referer
+        store = getattr(request, "_session", None)
+        if store is not None:
+            stored = store.get("_previous_url")
+            if isinstance(stored, str) and _is_safe_redirect(stored):
+                return stored
+    return default
 
 
 def response(content: str = "", status: int = 200, headers: dict | None = None) -> Response:

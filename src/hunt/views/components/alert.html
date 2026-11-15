@@ -1,3 +1,4 @@
+{#- Props are HTML-escaped. Pass markup through the component body (slot), not through a prop. -#}
 {%- set _t = type|default('info') -%}
 {%- set _map = {'success': 'bg-green-50 border-green-200 text-green-800',
                 'error':   'bg-red-50 border-red-200 text-red-800',
@@ -6,5 +7,5 @@
 {%- set _cls = _map.get(_t, _map['info']) -%}
 <div role="alert" class="rounded-md border p-4 {{ _cls }}">
     {%- if title is defined %}<p class="font-semibold mb-1">{{ title }}</p>{% endif %}
-    <p class="text-sm">{{ message|default(_slot_default|default(''))|safe }}</p>
+    <p class="text-sm">{% if message is defined %}{{ message }}{% else %}{{ _slot_default|default('') }}{% endif %}</p>
 </div>

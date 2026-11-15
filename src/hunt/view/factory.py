@@ -1,13 +1,111 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
+import re
+import secrets
+import tempfile
+import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
-from jinja2 import ChoiceLoader, Environment, FileSystemLoader, TemplateNotFound, select_autoescape
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, TemplateNotFound, TemplateSyntaxError, Undefined
+from markupsafe import Markup, escape
 
-from hunt.view.directives import preprocess
+from hunt.view.directives import PUSH_FUNCTION, STACK_FUNCTION, preprocess
+
+# ------------------------------------------------------------------
+# safe_url filter
+# ------------------------------------------------------------------
+
+SAFE_URL_SCHEMES = frozenset({"http", "https", "mailto", "tel"})
+
+_URL_SCHEME_RE = re.compile(r"([A-Za-z][A-Za-z0-9+.\-]*):")
+_URL_IGNORED_RE = re.compile(r"[\x00-\x20\x7f]+")
+
+
+def safe_url(value: Any, fallback: str = "#") -> str:
+    """
+    Jinja filter for ``href``-like attributes: ``<a href="{{ url|safe_url }}">``.
+
+    Relative URLs and the schemes in :data:`SAFE_URL_SCHEMES` are returned
+    unchanged; anything else (``javascript:``, ``data:``, ``vbscript:`` ...)
+    is replaced by *fallback*.  The result is a plain string, so it is still
+    HTML-escaped by autoescaping.
+    """
+    if value is None or isinstance(value, Undefined):
+        return ""
+    # Markup is not escaped again on output, so judge it by what the browser will see.
+    url = value.unescape() if isinstance(value, Markup) else str(value)
+    url = url.strip()
+    # Browsers drop whitespace and control characters inside the scheme ("java\tscript:").
+    match = _URL_SCHEME_RE.match(_URL_IGNORED_RE.sub("", url))
+    if match and match.group(1).lower() not in SAFE_URL_SCHEMES:
+        return fallback
+    return url
+
+
+# ------------------------------------------------------------------
+# @stack / @push runtime
+# ------------------------------------------------------------------
+
+
+class _StackCollector:
+    """
+    Collects ``@push`` / ``@prepend`` fragments during one render.
+
+    ``@stack('name')`` may be rendered before the fragments are pushed (a
+    ``<head>`` stack filled from a section further down), so it only emits a
+    placeholder; :meth:`resolve` substitutes the collected fragments once the
+    whole template has been rendered.
+    """
+
+    def __init__(self) -> None:
+        self._nonce = secrets.token_hex(8)
+        self._items: dict[str, list[str]] = {}
+        self._placeholders = False
+
+    def placeholder(self, name: str) -> Markup:
+        self._placeholders = True
+        return Markup(f"<!--hunt-stack:{self._nonce}:{name}-->")
+
+    def push(self, name: str, content: Any, prepend: bool = False) -> None:
+        fragment = str(escape(content))
+        items = self._items.setdefault(name, [])
+        if prepend:
+            items.insert(0, fragment)
+        else:
+            items.append(fragment)
+
+    def resolve(self, output: str) -> str:
+        if not self._placeholders:
+            return output
+        pattern = re.compile(rf"<!--hunt-stack:{self._nonce}:(\w+)-->")
+        return pattern.sub(lambda m: "".join(self._items.get(m.group(1), ())), output)
+
+
+_active_stacks: ContextVar[_StackCollector | None] = ContextVar("hunt_view_stacks", default=None)
+
+
+def _stack_global(name: str) -> Markup:
+    stacks = _active_stacks.get()
+    return stacks.placeholder(name) if stacks is not None else Markup("")
+
+
+def _push_global(name: str, content: Any, prepend: bool = False) -> str:
+    stacks = _active_stacks.get()
+    if stacks is not None:
+        stacks.push(name, content, prepend)
+    return ""
+
+
+def register_view_helpers(env: Environment) -> None:
+    """Install the filters and globals that hunt templates and directives rely on."""
+    env.filters.setdefault("safe_url", safe_url)
+    env.globals.setdefault(STACK_FUNCTION, _stack_global)
+    env.globals.setdefault(PUSH_FUNCTION, _push_global)
 
 
 class _OldInput:
@@ -41,14 +139,16 @@ class ViewFactory:
         self._cache_path = cache_path
         self._extension = extension if extension.startswith(".") else f".{extension}"
         _hunt_views = Path(__file__).parent.parent / "views"
-        loaders: list = [_TemplateLoader(p, cache_path) for p in paths]
+        loaders: list = [_TemplateLoader(p, cache_path, self._extension) for p in paths]
         if _hunt_views.is_dir():
-            loaders.append(_TemplateLoader(_hunt_views, None))
+            loaders.append(_TemplateLoader(_hunt_views, None, self._extension))
         self._env = Environment(
-            loader=ChoiceLoader(loaders),
-            autoescape=select_autoescape(["html"]),
+            loader=_ViewLoader(loaders, self._extension),
+            # Always on: escaping must not depend on the configured view extension.
+            autoescape=True,
             auto_reload=True,
         )
+        register_view_helpers(self._env)
         self._shared: dict[str, Any] = {}
         self._composers: dict[str, list] = {}
 
@@ -99,6 +199,12 @@ class ViewFactory:
             return True
         except TemplateNotFound:
             return False
+
+    def prune_cache(self, max_age: float | None = None) -> int:
+        """Delete compiled templates (all of them, or only those older than *max_age* seconds)."""
+        if self._cache_path is None:
+            return 0
+        return prune_compiled_views(self._cache_path, max_age)
 
     # ------------------------------------------------------------------
 
@@ -200,33 +306,165 @@ class View:
         return self
 
     def render(self) -> str:
-        return self._template.render(**self._data)
+        if _active_stacks.get() is not None:
+            # Nested render (a view rendered while another one renders): share the outer stacks.
+            return self._template.render(**self._data)
+        stacks = _StackCollector()
+        token = _active_stacks.set(stacks)
+        try:
+            output = self._template.render(**self._data)
+        finally:
+            _active_stacks.reset(token)
+        return stacks.resolve(output)
 
     def __str__(self) -> str:
         return self.render()
 
 
+# ------------------------------------------------------------------
+# Compiled-template cache
+# ------------------------------------------------------------------
+
+_COMPILED_NAME_RE = re.compile(r"[0-9a-f]{32}-[0-9a-f]{16}")
+_LEGACY_NAME_RE = re.compile(r"[0-9a-f]{64}")
+_TMP_PREFIX = ".hunt-view-"
+
+
+def compiled_view_cache_name(filename: str | os.PathLike, extension: str = ".html") -> str:
+    """
+    File name of the compiled copy of the template *filename* inside the view cache.
+
+    ``<template id>-<state>``: the first part identifies the template file, the
+    second changes with its mtime, the hunt version (the preprocessor output
+    may differ between releases) and the view extension.
+    """
+    from hunt import __version__
+
+    filename = os.fspath(filename)
+    ident = hashlib.sha256(filename.encode()).hexdigest()[:32]
+    state = f"{os.stat(filename).st_mtime_ns}:{__version__}:{extension}"
+    return f"{ident}-{hashlib.sha256(state.encode()).hexdigest()[:16]}"
+
+
+def write_compiled_view(cache_path: str | os.PathLike, name: str, processed: str) -> None:
+    """Atomically store *processed* as *name* and drop older compiled copies of the same template."""
+    cache_dir = Path(cache_path)
+    fd, tmp = tempfile.mkstemp(dir=cache_dir, prefix=_TMP_PREFIX)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(processed)
+        os.replace(tmp, cache_dir / name)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+    for stale in cache_dir.glob(f"{name.split('-', 1)[0]}-*"):
+        if stale.name != name:
+            with contextlib.suppress(OSError):
+                stale.unlink()
+
+
+def prune_compiled_views(cache_path: str | os.PathLike, max_age: float | None = None) -> int:
+    """
+    Remove compiled templates from *cache_path* and return how many were deleted.
+
+    Only files written by the view cache are touched (current and legacy
+    naming, plus temp files left by an interrupted write).  With *max_age*
+    only files not modified in the last *max_age* seconds are removed.
+    """
+    cache_dir = Path(cache_path)
+    if not cache_dir.is_dir():
+        return 0
+    cutoff = None if max_age is None else time.time() - max_age
+    removed = 0
+    for entry in cache_dir.iterdir():
+        name = entry.name
+        if not (_COMPILED_NAME_RE.fullmatch(name) or _LEGACY_NAME_RE.fullmatch(name) or name.startswith(_TMP_PREFIX)):
+            continue
+        try:
+            if not entry.is_file() or (cutoff is not None and entry.stat().st_mtime > cutoff):
+                continue
+            entry.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
+
+
+class _ViewLoader(ChoiceLoader):
+    """
+    ChoiceLoader that falls back to ``.html`` when the configured view
+    extension is something else, so the templates bundled with hunt (auth
+    views, components) stay reachable.
+    """
+
+    def __init__(self, loaders: list, extension: str = ".html") -> None:
+        super().__init__(loaders)
+        self._extension = extension
+
+    def _fallback(self, template: str) -> str | None:
+        if self._extension != ".html" and template.endswith(self._extension):
+            return template[: -len(self._extension)] + ".html"
+        return None
+
+    def get_source(self, environment: Any, template: str) -> tuple[str, str | None, Any]:
+        try:
+            return super().get_source(environment, template)
+        except TemplateNotFound:
+            fallback = self._fallback(template)
+            if fallback is None:
+                raise
+        try:
+            return super().get_source(environment, fallback)
+        except TemplateNotFound:
+            raise TemplateNotFound(template) from None
+
+    def load(self, environment: Any, name: str, globals: Any = None) -> Any:
+        try:
+            return super().load(environment, name, globals)
+        except TemplateNotFound:
+            fallback = self._fallback(name)
+            if fallback is None:
+                raise
+        try:
+            return super().load(environment, fallback, globals)
+        except TemplateNotFound:
+            raise TemplateNotFound(name) from None
+
+
 class _TemplateLoader(FileSystemLoader):
     """Preprocesses @-directives before handing source to Jinja2."""
 
-    def __init__(self, views_path: Path, cache_path: Path | None = None) -> None:
+    def __init__(self, views_path: Path, cache_path: Path | None = None, extension: str = ".html") -> None:
         super().__init__(str(views_path))
         self._cache_path = Path(cache_path) if cache_path else None
+        self._extension = extension
         if self._cache_path:
             self._cache_path.mkdir(parents=True, exist_ok=True)
+
+    def _preprocess(self, source: str, template: str, filename: str) -> str:
+        try:
+            return preprocess(source, self._extension)
+        except TemplateSyntaxError as exc:
+            raise TemplateSyntaxError(exc.message or "", exc.lineno, template, filename) from None
 
     def get_source(self, environment: Any, template: str) -> tuple[str, str, Any]:
         raw_contents, filename, uptodate = super().get_source(environment, template)
 
-        if self._cache_path:
-            cache_key = hashlib.sha256(f"{filename}:{os.path.getmtime(filename)}".encode()).hexdigest()
-            cache_file = self._cache_path / cache_key
-            if cache_file.exists():
-                processed = cache_file.read_text(encoding="utf-8")
-            else:
-                processed = preprocess(raw_contents)
-                cache_file.write_text(processed, encoding="utf-8")
-        else:
-            processed = preprocess(raw_contents)
+        if not self._cache_path:
+            return self._preprocess(raw_contents, template, filename), filename, uptodate
+
+        try:
+            cache_name = compiled_view_cache_name(filename, self._extension)
+        except OSError:
+            return self._preprocess(raw_contents, template, filename), filename, uptodate
+
+        try:
+            processed = (self._cache_path / cache_name).read_text(encoding="utf-8")
+        except OSError:
+            processed = self._preprocess(raw_contents, template, filename)
+            # A read-only or missing cache directory must not break rendering.
+            with contextlib.suppress(OSError):
+                write_compiled_view(self._cache_path, cache_name, processed)
 
         return processed, filename, uptodate

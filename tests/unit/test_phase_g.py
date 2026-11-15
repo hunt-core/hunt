@@ -394,20 +394,23 @@ class TestDatabaseDriverLifecycle:
     def test_fail_inserts_to_jobs_failed(self):
         from hunt.queue.drivers.database import DatabaseDriver
 
-        self._raw.return_value = _make_raw_result([])
-        DatabaseDriver().fail(3, "default", '{"payload": true}', "boom")
-        # First call: INSERT jobs_failed; second: DELETE FROM jobs
-        insert_sql = self._raw.call_args_list[0][0][0]
-        delete_sql = self._raw.call_args_list[1][0][0]
+        # QUE-07: both statements run in one transaction (see _atomic), not as
+        # two autocommit calls through raw().
+        with patch("hunt.queue.drivers.database._atomic") as atomic:
+            DatabaseDriver().fail(3, "default", '{"payload": true}', "boom")
+        statements = atomic.call_args[0][0]
+        insert_sql = statements[0][0]
+        delete_sql = statements[1][0]
         assert "jobs_failed" in insert_sql
         assert "DELETE FROM jobs" in delete_sql
+        assert not self._raw.called
 
     def test_fail_stores_exception_text(self):
         from hunt.queue.drivers.database import DatabaseDriver
 
-        self._raw.return_value = _make_raw_result([])
-        DatabaseDriver().fail(1, "default", "{}", "Something broke")
-        args = self._raw.call_args_list[0][0][1]
+        with patch("hunt.queue.drivers.database._atomic") as atomic:
+            DatabaseDriver().fail(1, "default", "{}", "Something broke")
+        args = atomic.call_args[0][0][0][1]
         assert "Something broke" in args["exc"]
 
     def test_size_filters_available_at(self):
@@ -648,18 +651,23 @@ class TestRedisDriver:
         key = self._mock_client.zadd.call_args[0][0]
         assert "delayed" in key
 
-    def test_pop_migrates_delayed_then_brpop(self):
+    def test_pop_migrates_delayed_then_blmove(self):
+        # QUE-01: BRPOP dropped the payload from Redis before it ran; BLMOVE
+        # keeps it in the processing list.
         self._mock_client.zrangebyscore.return_value = []
-        self._mock_client.brpop.return_value = None
+        self._mock_client.lrange.return_value = []
+        self._mock_client.blmove.return_value = None
         result = self.driver.pop()
         assert self._mock_client.zrangebyscore.called
-        assert self._mock_client.brpop.called
+        assert self._mock_client.blmove.called
+        assert not self._mock_client.brpop.called
         assert result is None
 
     def test_pop_returns_dict(self):
         raw_bytes = _FAKE_PAYLOAD.encode()
         self._mock_client.zrangebyscore.return_value = []
-        self._mock_client.brpop.return_value = (b"queue_key", raw_bytes)
+        self._mock_client.lrange.return_value = []
+        self._mock_client.blmove.return_value = raw_bytes
         result = self.driver.pop()
         assert result is not None
         assert result["queue"] == "default"
@@ -683,16 +691,28 @@ class TestRedisDriver:
         self.driver.fail("id", "default", "{}", "oops")
         assert not self._mock_client.zadd.called
 
-    def test_size_uses_llen(self):
+    def test_size_uses_llen_plus_delayed(self):
+        # QUE-02: delayed (and therefore retried) jobs count towards the size.
         self._mock_client.llen.return_value = 3
-        assert self.driver.size() == 3
+        self._mock_client.zcard.return_value = 2
+        assert self.driver.size() == 5
 
     def test_migrate_delayed_lpushes_ready_jobs(self):
         ready_payload = b'{"body": "x"}'
         self._mock_client.zrangebyscore.return_value = [ready_payload]
+        self._mock_client.zrem.return_value = 1
         self.driver._migrate_delayed("default")
-        self._mock_client.lpush.assert_called_once()
         self._mock_client.zrem.assert_called_once()
+        self._mock_client.lpush.assert_any_call("test_q:default", ready_payload)
+
+    def test_migrate_delayed_skips_job_another_worker_took(self):
+        # QUE-02: ZREM returning 0 means another worker already migrated it.
+        ready_payload = b'{"body": "x"}'
+        self._mock_client.zrangebyscore.return_value = [ready_payload]
+        self._mock_client.zrem.return_value = 0
+        self.driver._migrate_delayed("default")
+        pushed_keys = [c[0][0] for c in self._mock_client.lpush.call_args_list]
+        assert "test_q:default" not in pushed_keys
 
     def test_redis_missing_raises(self):
         import sys
@@ -749,37 +769,79 @@ class TestBackoffHelper:
 # ---------------------------------------------------------------------------
 
 
+from hunt.queue.job import Job as _Job  # noqa: E402
+
+_CHAIN_RAN: list[str] = []
+
+
+class _ChainFirst(_Job):
+    def handle(self):
+        _CHAIN_RAN.append("first")
+
+
+class _ChainSecond(_Job):
+    def handle(self):
+        _CHAIN_RAN.append("second")
+
+
+class _RecordingDriver:
+    """Minimal in-memory queue driver that records what the worker does."""
+
+    def __init__(self):
+        self.ready: list[dict] = []
+        self.calls: list[tuple] = []
+        self._next_id = 1
+
+    def push_payload(self, body_dict, queue="default"):
+        self.calls.append(("push_payload", body_dict["class"], queue))
+        self.ready.append({"id": self._next_id, "queue": queue, "attempts": 0, "payload": _signed_payload(body_dict)})
+        self._next_id += 1
+
+    def pop(self, queue="default"):
+        if not self.ready:
+            return None
+        job = self.ready.pop(0)
+        job["attempts"] += 1
+        return job
+
+    def delete(self, job_id):
+        self.calls.append(("delete", job_id))
+
+    def release(self, job_id, delay=0):
+        self.calls.append(("release", job_id, delay))
+
+    def fail(self, job_id, queue, payload, exception):
+        self.calls.append(("fail", job_id, exception))
+
+
 class TestQueueWorkChain:
-    def test_successful_job_pushes_chain_next(self):
-        """After a job succeeds, the next chain job is pushed."""
+    def test_successful_job_pushes_chain_next(self, monkeypatch):
+        """The real worker runs a job, enqueues the next chain link, then deletes the job."""
         from hunt.queue.drivers.database import _serialize_job
-        from hunt.queue.job import Job
+        from hunt.queue.worker import run_worker
 
-        class First(Job):
-            def handle(self):
-                pass
+        monkeypatch.setenv("APP_KEY", "k" * 40)
+        _CHAIN_RAN.clear()
+        first = _ChainFirst()
+        first.chain([_ChainSecond()])
 
-        class Second(Job):
-            def handle(self):
-                pass
+        driver = _RecordingDriver()
+        driver.push_payload(_serialize_job(first), "default")
+        driver.calls.clear()
 
-        first = First()
-        first.chain([Second()])
-
-        body = _serialize_job(first)
-        # chain has one item (Second)
-        assert len(body["chain"]) == 1
-
-        # Simulate what the worker does after success
-        payload = body
-        chain = payload.get("chain", [])
-        assert len(chain) == 1
-        first_chain_item = chain[0]
-        first_chain_item["chain"] = chain[1:]  # empty
-
-        # The driver's push_payload would be called with first_chain_item
-        assert "Second" in first_chain_item["class"]
-        assert first_chain_item["chain"] == []
+        lines: list[str] = []
+        handled = run_worker(
+            driver, queue="default", sleep=0, max_jobs=2, output=lambda message="", err=False: lines.append(message)
+        )
+        assert handled == 2
+        assert _CHAIN_RAN == ["first", "second"]
+        # The continuation is enqueued before the finished job is deleted.
+        assert driver.calls == [
+            ("push_payload", f"{__name__}._ChainSecond", "default"),
+            ("delete", 1),
+            ("delete", 2),
+        ]
+        assert any("Processed" in line and "_ChainFirst" in line for line in lines)
 
 
 # ---------------------------------------------------------------------------
@@ -877,21 +939,71 @@ class TestQueueFailedCommands:
         result = self._run_cmd(queue_retry_command, ["999"])
         assert result.exit_code != 0
 
-    def test_queue_retry_requeues_job(self):
+    def test_queue_retry_requeues_job(self, monkeypatch):
+        from hunt.console.commands.queue_failed import queue_retry_command
+        from hunt.queue.manager import Queue
+
+        monkeypatch.setenv("APP_KEY", "k" * 40)
+        row = MagicMock()
+        row.id = 1
+        row.queue = "default"
+        row.connection = "database"
+        row.payload = _signed_payload({"class": "app.jobs.X", "data": {}, "chain": []})
+        self._raw.return_value = MagicMock(fetchone=MagicMock(return_value=row))
+        Queue._driver = None
+        # QUE-07: the retry goes through the driver, as one transaction. The
+        # failed row is deleted first and the job is only re-inserted if that
+        # delete matched, so two concurrent retries cannot enqueue it twice.
+        conn = MagicMock()
+        conn.execute.return_value = MagicMock(rowcount=1)
+        with patch("hunt.queue.drivers.database.begin") as begin:
+            begin.return_value.__enter__.return_value = conn
+            result = self._run_cmd(queue_retry_command, ["1"])
+        Queue._driver = None
+        assert result.exit_code == 0
+        assert self._raw.call_count == 1  # only the SELECT
+        assert begin.call_count == 1  # one transaction
+        statements = [str(c.args[0]) for c in conn.execute.call_args_list]
+        assert "DELETE FROM jobs_failed" in statements[0]
+        assert "INSERT INTO jobs" in statements[1]
+
+    def test_queue_retry_does_not_requeue_a_job_already_retried(self, monkeypatch):
+        from hunt.console.commands.queue_failed import queue_retry_command
+        from hunt.queue.manager import Queue
+
+        monkeypatch.setenv("APP_KEY", "k" * 40)
+        row = MagicMock()
+        row.id = 1
+        row.queue = "default"
+        row.connection = "database"
+        row.payload = _signed_payload({"class": "app.jobs.X", "data": {}, "chain": []})
+        self._raw.return_value = MagicMock(fetchone=MagicMock(return_value=row))
+        Queue._driver = None
+        conn = MagicMock()
+        conn.execute.return_value = MagicMock(rowcount=0)  # someone else got there first
+        with patch("hunt.queue.drivers.database.begin") as begin:
+            begin.return_value.__enter__.return_value = conn
+            result = self._run_cmd(queue_retry_command, ["1"])
+        Queue._driver = None
+        assert result.exit_code == 0
+        statements = [str(c.args[0]) for c in conn.execute.call_args_list]
+        assert len(statements) == 1 and "DELETE FROM jobs_failed" in statements[0]
+        assert "already" in result.output
+
+    def test_queue_retry_refuses_forged_payload(self, monkeypatch):
         from hunt.console.commands.queue_failed import queue_retry_command
 
+        monkeypatch.setenv("APP_KEY", "k" * 40)
         row = MagicMock()
+        row.id = 1
         row.queue = "default"
+        row.connection = "database"
         row.payload = '{"body": "x", "signature": "y"}'
         self._raw.return_value = MagicMock(fetchone=MagicMock(return_value=row))
-        result = self._run_cmd(queue_retry_command, ["1"])
-        assert result.exit_code == 0
-        # First call: SELECT; second: INSERT jobs; third: DELETE jobs_failed
-        assert self._raw.call_count == 3
-        insert_sql = self._raw.call_args_list[1][0][0]
-        assert "INSERT INTO jobs" in insert_sql
-        delete_sql = self._raw.call_args_list[2][0][0]
-        assert "DELETE FROM jobs_failed" in delete_sql
+        with patch("hunt.queue.drivers.database.begin") as begin:
+            result = self._run_cmd(queue_retry_command, ["1"])
+        assert result.exit_code == 1
+        assert not begin.called
 
     def test_queue_flush_deletes_all(self):
         from hunt.console.commands.queue_failed import queue_flush_command

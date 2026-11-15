@@ -5,6 +5,8 @@ from typing import Any, TypeVar
 
 T = TypeVar("T")
 
+_MISSING: Any = object()
+
 
 class Collection:
     def __init__(self, items: Iterable[Any] = ()) -> None:
@@ -108,14 +110,18 @@ class Collection:
             return None
         return self._items[-1] if self._items else None
 
-    def contains(self, key_or_callback: Any, value: Any = None) -> bool:
-        if callable(key_or_callback):
-            return any(key_or_callback(item) for item in self._items)
-        if value is not None:
+    def contains(self, key_or_callback: Any, value: Any = _MISSING) -> bool:
+        """``contains(item)``, ``contains(callback)`` or ``contains(key, value)``.
+
+        The two-argument form compares the key of every item, also when ``value`` is None.
+        """
+        if value is not _MISSING:
             return any(
                 (item.get(key_or_callback) if isinstance(item, dict) else getattr(item, key_or_callback)) == value
                 for item in self._items
             )
+        if callable(key_or_callback):
+            return any(key_or_callback(item) for item in self._items)
         return key_or_callback in self._items
 
     def sum(self, key: str | Callable | None = None) -> Any:

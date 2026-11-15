@@ -15,7 +15,9 @@ class HasMany:
 
     def get_results(self) -> list:
         local_val = self._parent._attributes.get(self._local_key)
-        return self._related.query().where(self._foreign_key, local_val).get()
+        if local_val is None:
+            return []
+        return self._related.query()._add_scope_clause("basic", (self._foreign_key, "=", local_val)).get()
 
     def eager_load_for(
         self,
@@ -33,7 +35,9 @@ class HasMany:
                 inst._relations[rel_name] = []
             return
 
-        qb = related.query().where_in(fk, parent_keys)
+        # The parent-key restriction is a scope predicate: a constraint that
+        # uses or_where cannot widen it to other parents' rows.
+        qb = related.query()._add_scope_clause("basic", (fk, "IN", parent_keys))
         if constraint:
             qb = constraint(qb)
         results = qb.get()

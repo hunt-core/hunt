@@ -1,4 +1,5 @@
 {% extends "admin/layout.html" %}
+{% from "admin/_macros.html" import pagination_nav %}
 
 {% block content %}
 <nav class="flex mb-6" aria-label="Breadcrumb">
@@ -16,7 +17,7 @@
         <p class="mt-1 text-sm text-gray-400">{{ count }} entr{{ 'y' if count == 1 else 'ies' }} in the cache store.</p>
     </div>
     <div class="mt-4 sm:mt-0 shrink-0">
-        <form method="post" action="{{ prefix }}/cache/flush" onsubmit="return confirm('Flush the entire cache?')">
+        <form method="post" action="{{ prefix }}/cache/flush" data-confirm="Flush the entire cache?">
             <input type="hidden" name="_token" value="{{ csrf_token }}">
             <button type="submit" class="rounded-md bg-red-600/80 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-600">
                 Flush All
@@ -60,10 +61,11 @@
                     <div class="truncate">{{ entry.value }}</div>
                 </td>
                 <td class="px-3 py-2.5 text-right align-top">
-                    <form method="post" action="{{ prefix }}/cache/delete">
+                    <form method="post" action="{{ prefix }}/cache/delete" data-confirm="Delete this cache key?">
                         <input type="hidden" name="_token" value="{{ csrf_token }}">
                         <input type="hidden" name="key" value="{{ entry.key }}">
-                        <button type="submit" class="text-xs text-red-400 hover:text-red-300" onclick="return confirm('Delete this cache key?')">Delete</button>
+                        {% if entry.file %}<input type="hidden" name="file" value="{{ entry.file }}">{% endif %}
+                        <button type="submit" class="text-xs text-red-400 hover:text-red-300">Delete</button>
                     </form>
                 </td>
             </tr>
@@ -71,5 +73,9 @@
         </tbody>
     </table>
 </div>
+{% if pagination is defined %}{{ pagination_nav(pagination) }}{% endif %}
+{% if truncated is defined and truncated %}
+<p class="mt-2 text-xs text-gray-500">Listing is limited to the first {{ count }} entries.</p>
+{% endif %}
 {% endif %}
 {% endblock %}

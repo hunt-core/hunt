@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -12,6 +13,25 @@ import click
 
 def _generate_app_key() -> str:
     return "base64:" + base64.urlsafe_b64encode(os.urandom(32)).decode()
+
+
+#: Name this framework is published under on PyPI. The bare name "hunt" is an unrelated project.
+FRAMEWORK_DISTRIBUTION = "hunt-framework"
+
+
+def framework_requirement(version: str | None = None) -> str:
+    """Return the PEP 508 requirement generated apps use for the framework.
+
+    The range is pinned to the running minor series: ``hunt-framework>=X.Y,<X.(Y+1)``.
+    """
+    if version is None:
+        from hunt import __version__ as version
+    parts = str(version).split(".")
+    try:
+        major, minor = int(parts[0]), int(parts[1])
+    except (IndexError, ValueError):
+        return FRAMEWORK_DISTRIBUTION
+    return f"{FRAMEWORK_DISTRIBUTION}>={major}.{minor},<{major}.{minor + 1}"
 
 
 _STARTERS = ("blog", "api", "saas")
@@ -28,12 +48,12 @@ _STARTERS = ("blog", "api", "saas")
 )
 def new_command(name: str, force: bool, starter: str | None) -> None:
     """Create a new hunt application skeleton."""
-    target = Path.cwd() / name
-    if target.exists():
+    target = _resolve_target(name)
+    if target.is_symlink() or target.exists():
         if not force:
             click.echo(f"Directory '{name}' already exists. Use --force to overwrite.", err=True)
             raise SystemExit(1)
-        shutil.rmtree(target)
+        _remove_existing(target, name)
 
     dirs = [
         "app/admin",
@@ -65,7 +85,14 @@ def new_command(name: str, force: bool, starter: str | None) -> None:
     for d in dirs:
         (target / d).mkdir(parents=True, exist_ok=True)
 
-    _write(target / "pyproject.toml", _PYPROJECT.replace("{{name}}", name))
+    # Runtime state is git-ignored; these keep the directories in a fresh clone.
+    for d in _GITKEEP_DIRS:
+        _write(target / d / ".gitkeep", "")
+
+    _write(
+        target / "pyproject.toml",
+        _PYPROJECT.replace("{{name}}", name).replace("{{framework_requirement}}", framework_requirement()),
+    )
     _write(target / ".gitignore", _GITIGNORE)
     _write(target / ".env.example", _ENV_EXAMPLE)
     _write_secret(  # 0o600 — owner-read only
@@ -97,7 +124,11 @@ def new_command(name: str, force: bool, starter: str | None) -> None:
     _write(target / "app" / "controllers" / "auth" / "login_controller.py", _AUTH_LOGIN_CONTROLLER)
     _write(target / "app" / "controllers" / "auth" / "register_controller.py", _AUTH_REGISTER_CONTROLLER)
     _write(target / "app" / "controllers" / "auth" / "password_controller.py", _AUTH_PASSWORD_CONTROLLER)
+    _write(target / "app" / "middleware" / "__init__.py", "")
     _write(target / "app" / "middleware" / "guest.py", _GUEST_MIDDLEWARE)
+    _write(target / "app" / "middleware" / "throttle.py", _THROTTLE_MIDDLEWARE)
+    _write(target / "app" / "middleware" / "verify_csrf_token.py", csrf_middleware_source([]))
+    _write(target / "app" / "middleware" / "secure_headers.py", secure_headers_source())
     _write(target / "app" / "models" / "user.py", _MODEL_USER)
     _write(target / "app" / "admin" / "__init__.py", "")
     _write(target / "app" / "admin" / "user_resource.py", _ADMIN_USER_RESOURCE)
@@ -109,10 +140,16 @@ def new_command(name: str, force: bool, starter: str | None) -> None:
     )
     _write(target / "database" / "migrations" / "0003_create_notifications_table.py", _MIGRATION_NOTIFICATIONS)
     _write(target / "database" / "migrations" / "0004_create_jobs_tables.py", _MIGRATION_JOBS)
+    from hunt.console.commands.queue_table import _PROCESSED_MIGRATION_STUB
+
+    _write(target / "database" / "migrations" / "0005_create_jobs_processed_table.py", _PROCESSED_MIGRATION_STUB)
     _write(target / "resources" / "views" / "welcome.html", _WELCOME_VIEW)
     _write(target / "resources" / "views" / "layout.html", _LAYOUT_VIEW)
     _write(target / "public" / "index.py", _PUBLIC_INDEX)
     _write(target / "tests" / "__init__.py", "")
+    from hunt.console.commands.make.test import CONFTEST_STUB
+
+    _write(target / "tests" / "conftest.py", CONFTEST_STUB)
     _write(target / "Dockerfile", _DOCKERFILE.replace("{{name}}", name))
     _write(target / ".dockerignore", _DOCKERIGNORE)
 
@@ -137,9 +174,63 @@ def _write(path: Path, content: str) -> None:
 
 
 def _write_secret(path: Path, content: str) -> None:
-    """Write a file and restrict permissions to owner-read/write only."""
-    path.write_text(content, encoding="utf-8")
-    path.chmod(0o600)
+    """Create a file that is owner-read/write only from the moment it exists."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        # An already existing file keeps its old mode on open(); tighten it before writing.
+        if hasattr(os, "fchmod"):
+            os.fchmod(fh.fileno(), 0o600)
+        fh.write(content)
+    if not hasattr(os, "fchmod"):
+        path.chmod(0o600)
+
+
+_APP_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+#: Marker written into every scaffold; `hunt new --force` only deletes directories that contain it
+#: without asking.
+SCAFFOLD_MARKER = Path(".hunt") / "scaffold.lock"
+
+
+def _resolve_target(name: str) -> Path:
+    """Validate the application name and return the directory to create.
+
+    The name must be a single path component directly below the working
+    directory: no separators, no ``.``/``..``, no absolute paths.
+    """
+    if not _APP_NAME_RE.match(name) or name in {".", ".."} or name.endswith("."):
+        raise click.BadParameter(
+            f"{name!r} is not a valid application name. Use a single directory name made of letters, "
+            "digits, '.', '_' and '-' (starting with a letter or digit).",
+            param_hint="NAME",
+        )
+    cwd = Path.cwd().resolve()
+    target = cwd / name
+    if target.parent != cwd or (not target.is_symlink() and target.resolve().parent != cwd):
+        raise click.BadParameter("The application must be created directly inside the current directory.")
+    return target
+
+
+def _remove_existing(target: Path, name: str) -> None:
+    """Delete a previous scaffold for --force; anything else needs explicit confirmation."""
+    if target.is_symlink() or not target.is_dir():
+        click.echo(f"'{name}' exists and is not a directory created by `hunt new`; refusing to delete it.", err=True)
+        raise SystemExit(1)
+    if not (target / SCAFFOLD_MARKER).is_file():
+        click.echo(
+            f"'{name}' does not look like a hunt application (no {SCAFFOLD_MARKER.as_posix()} marker).",
+            err=True,
+        )
+        confirmed = False
+        try:
+            confirmed = click.confirm(f"  Permanently delete '{name}' and everything in it?", default=False, err=True)
+        except click.Abort:
+            confirmed = False
+        if not confirmed:
+            click.echo("  Aborted. Nothing was deleted.", err=True)
+            raise SystemExit(1)
+    shutil.rmtree(target)
 
 
 def _file_hash(content: str) -> str:
@@ -175,13 +266,14 @@ name = "{{name}}"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "hunt",
+    "{{framework_requirement}}",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "httpx>=0.27",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -192,53 +284,123 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 """
 
-_GITIGNORE = """\
+# Directories whose contents are runtime state. Each gets a .gitkeep.
+_GITKEEP_DIRS = (
+    "storage/app",
+    "storage/app/public",
+    "storage/logs",
+    "storage/framework/views",
+    "storage/framework/sessions",
+    "storage/framework/cache",
+)
+
+# Runtime state that must never be committed or baked into an image: live
+# sessions, the cache, the config cache (resolved secrets), uploads and the
+# maintenance sentinel.
+_RUNTIME_IGNORES = """\
+storage/framework/views/*
+storage/framework/sessions/*
+storage/framework/cache/*
+storage/framework/config.json
+storage/logs/*
+storage/app/*
+!storage/app/public/
+storage/app/public/*
+!storage/**/.gitkeep
+.maintenance
+"""
+
+_GITIGNORE = (
+    """\
 __pycache__/
 *.py[cod]
 .venv/
 .env
-storage/framework/views/
-storage/logs/
+.env.*
+!.env.example
+"""
+    + _RUNTIME_IGNORES
+    + """\
 database/*.sqlite
+database/*.sqlite-*
 *.egg-info/
 dist/
 .pytest_cache/
 """
+)
 
 _DOCKERFILE = """\
-FROM python:3.12-slim
+# Base image pinned by version and digest. Bump both together (Dependabot and
+# Renovate can do this for you) to pick up security fixes.
+ARG PYTHON_IMAGE=python:3.12.16-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 
-WORKDIR /app
+# -- Build stage: the compiler toolchain stays here ---------------------------
+FROM ${PYTHON_IMAGE} AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /build
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e .
+# Install the dependencies declared in pyproject.toml; the application itself runs from /app.
+RUN python -c "import subprocess, sys, tomllib; deps = tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']; subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', *deps])"
 
-COPY . .
+# -- Runtime stage -------------------------------------------------------------
+FROM ${PYTHON_IMAGE}
 
-ENV APP_ENV=production \\
+ENV PATH="/opt/venv/bin:$PATH" \\
+    PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONUNBUFFERED=1 \\
+    APP_ENV=production \\
     APP_DEBUG=false \\
     PORT=8000
 
+RUN groupadd --system app && useradd --system --gid app --home-dir /app --shell /usr/sbin/nologin app
+
+WORKDIR /app
+COPY --from=build /opt/venv /opt/venv
+COPY . .
+
+# Only the directories the application writes to belong to the runtime user.
+# `database` is included for the default SQLite file; mount a volume there (or
+# use a database server) to keep data across containers.
+RUN mkdir -p storage/app/public storage/logs storage/framework/views \\
+        storage/framework/sessions storage/framework/cache database \\
+    && chown -R app:app storage \\
+    && chown app:app database
+
+USER app
+
 EXPOSE 8000
 
-CMD hunt serve:production --host 0.0.0.0 --port 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \\
+    CMD ["python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
+
+# Behind a reverse proxy add: "--forwarded-allow-ips", "<proxy address>"
+CMD ["hunt", "serve:production", "--host", "0.0.0.0", "--port", "8000"]
 """
 
-_DOCKERIGNORE = """\
+_DOCKERIGNORE = (
+    """\
 .venv/
 __pycache__/
 *.py[cod]
 .env
+.env.*
 .git/
+.hunt/
 .pytest_cache/
-storage/framework/views/
-storage/logs/
+"""
+    + _RUNTIME_IGNORES
+    + """\
 database/*.sqlite
+database/*.sqlite-*
 *.egg-info/
 dist/
 """
+)
 
 _ENV_EXAMPLE = """\
 APP_NAME=hunt
@@ -262,14 +424,20 @@ REDIS_PASSWORD=
 
 CACHE_DRIVER=file
 SESSION_LIFETIME=7200
-SESSION_SECURE=false
+# The session cookie is Secure when APP_ENV=production (and on any https
+# request). Set SESSION_SECURE=true or false to force it either way.
+# SESSION_SECURE=
 
 MAIL_MAILER=log
+# The "log" mailer writes message bodies (e.g. reset links) to the log when
+# APP_ENV=local. Set MAIL_LOG_BODY=true/false to force it either way.
+# MAIL_LOG_BODY=
 MAIL_HOST=127.0.0.1
 MAIL_PORT=1025
 MAIL_USERNAME=
 MAIL_PASSWORD=
-MAIL_ENCRYPTION=tls
+# none (local Mailpit on port 1025), tls (STARTTLS, port 587) or ssl (port 465).
+MAIL_ENCRYPTION=none
 MAIL_FROM_ADDRESS=hello@example.com
 MAIL_FROM_NAME=hunt
 
@@ -298,11 +466,16 @@ config = {
 
 _CONFIG_AUTH = """\
 config = {
+    # Where users land after logging in, registering or passing a 2FA challenge.
+    "home": "/",
     "features": {
         "registration": True,
         "login": True,
+        # The reset link is sent through the mailer in config/mail.py. The
+        # default "log" mailer does not deliver email: configure SMTP in .env
+        # (with APP_ENV=local the link is written to the log instead).
         "forgot_password": True,
-    }
+    },
 }
 """
 
@@ -322,6 +495,14 @@ config = {
             "port": os.environ.get("DB_PORT", "3306"),
             "database": os.environ.get("DB_DATABASE", "hunt"),
             "username": os.environ.get("DB_USERNAME", "root"),
+            "password": os.environ.get("DB_PASSWORD", ""),
+        },
+        "pgsql": {
+            "driver": "pgsql",
+            "host": os.environ.get("DB_HOST", "127.0.0.1"),
+            "port": os.environ.get("DB_PORT", "5432"),
+            "database": os.environ.get("DB_DATABASE", "hunt"),
+            "username": os.environ.get("DB_USERNAME", "postgres"),
             "password": os.environ.get("DB_PASSWORD", ""),
         },
     },
@@ -348,9 +529,16 @@ config = {
             "port": int(os.environ.get("MAIL_PORT", "1025")),
             "username": os.environ.get("MAIL_USERNAME"),
             "password": os.environ.get("MAIL_PASSWORD"),
-            "encryption": os.environ.get("MAIL_ENCRYPTION", "tls"),
+            # "tls" (STARTTLS), "ssl" or "none". Unset or empty falls back to tls.
+            "encryption": os.environ.get("MAIL_ENCRYPTION") or "tls",
         },
-        "log": {"transport": "log"},
+        # Message bodies (which can contain password reset links) are written
+        # to the log only when APP_ENV=local, unless MAIL_LOG_BODY=true/false
+        # forces it. Never enable it in production.
+        "log": {
+            "transport": "log",
+            "log_body": {"true": True, "false": False}.get(os.environ.get("MAIL_LOG_BODY", "").strip().lower()),
+        },
         "array": {"transport": "array"},
     },
     "from": {
@@ -370,8 +558,10 @@ config = {
     "lifetime": int(os.environ.get("SESSION_LIFETIME", "7200")),
     # SameSite cookie attribute: "Strict", "Lax", or "None"
     "same_site": os.environ.get("SESSION_SAME_SITE", "Strict"),
-    # Force the Secure cookie flag (always set automatically on https)
-    "secure": os.environ.get("SESSION_SECURE", "").lower() == "true",
+    # Secure cookie flag. Left unset (None) the framework decides: on when
+    # APP_ENV is production, and always on for https requests. Set
+    # SESSION_SECURE=true or false in .env to force it either way.
+    "secure": {"true": True, "false": False}.get(os.environ.get("SESSION_SECURE", "").strip().lower()),
 }
 """
 
@@ -434,6 +624,12 @@ config = {
     "db": int(os.environ.get("REDIS_DB", "0")),
     "password": os.environ.get("REDIS_PASSWORD") or None,
     "prefix": "hunt_queue",
+    # Seconds a job may stay reserved before another worker takes it over.
+    # Must be longer than your longest job timeout.
+    "retry_after": int(os.environ.get("QUEUE_RETRY_AFTER", "90")),
+    # Seconds the ids of finished jobs are remembered so the same job is never
+    # run twice (and after which an undelivered job is treated as stale).
+    "processed_retention": int(os.environ.get("QUEUE_PROCESSED_RETENTION", str(7 * 24 * 60 * 60))),
 }
 """
 
@@ -486,8 +682,9 @@ from pathlib import Path
 from hunt.application import Application
 from hunt.http.router import Router
 from hunt.http.kernel import HttpKernel
+from hunt.http.middleware.maintenance import MaintenanceMode
 from hunt.http.middleware.session import StartSession
-from hunt.http.middleware.csrf import VerifyCsrfToken
+from hunt.http.middleware.trust_proxies import TrustProxies  # noqa: F401 - see global_middleware
 from hunt.exceptions.handler import ExceptionHandler
 from hunt.storage.manager import Storage
 from hunt.support.helpers import _set_app
@@ -574,8 +771,18 @@ view_factory.share("config", _config)
 debug = os.environ.get("APP_DEBUG", "false").lower() == "true"
 exc_handler = ExceptionHandler(debug=debug, views_path=BASE_PATH / "resources" / "views")
 
-# -- Global middleware
+# -- Global middleware (outermost first)
+from app.middleware.secure_headers import SecureHeaders
+from app.middleware.verify_csrf_token import VerifyCsrfToken
+
 global_middleware = [
+    # Answers 503 while `hunt down` is active; `hunt up` restores service.
+    MaintenanceMode,
+    # Behind a reverse proxy or load balancer, enable TrustProxies and set
+    # TRUSTED_PROXIES to the proxy addresses. Without it every client shares
+    # the proxy's IP address, which breaks rate limiting and logging.
+    # TrustProxies,
+    SecureHeaders,
     StartSession,
     VerifyCsrfToken,
 ]
@@ -811,17 +1018,38 @@ from hunt.database.model import Model
 
 class User(Model):
     table = "users"
+    # Only these columns can be mass assigned (create()/fill()). Privileged
+    # columns such as is_admin must be set explicitly: user.is_admin = True.
+    # Always store passwords with hunt.auth.manager.hash_password().
     fillable = ["name", "email", "password"]
     hidden = ["password", "remember_token"]
     casts = {
         "is_admin": "boolean",
     }
+
+    def save(self) -> bool:
+        # An administrator cannot remove their own admin flag (for example by
+        # unticking "Admin" on their own record in the admin panel), which
+        # could leave the application without any administrator.
+        if self._exists and self._original.get("is_admin") and not self._attributes.get("is_admin"):
+            from hunt.auth.manager import Auth
+
+            if Auth.id() is not None and str(Auth.id()) == str(self._attributes.get("id")):
+                self._attributes["is_admin"] = self._original["is_admin"]
+        return super().save()
 """
 
 _ADMIN_USER_RESOURCE = """\
 from hunt.admin import AdminResource
 from hunt.admin.fields import Text, Email, Password, Boolean, DateTime
+from hunt.auth.manager import Auth
 from app.models.user import User
+
+
+def is_admin(request) -> bool:
+    \"\"\"True when the current user is an administrator.\"\"\"
+    user = Auth.user()
+    return bool(user is not None and user._attributes.get("is_admin"))
 
 
 class UserResource(AdminResource):
@@ -836,22 +1064,173 @@ class UserResource(AdminResource):
             Text("Id", attribute="id").readonly().sortable(),
             Text("Name", attribute="name").rules("required", "string", "max:255").sortable(),
             Email("Email", attribute="email").rules("required", "email").sortable(),
+            # The admin panel hashes Password fields before they are stored.
             Password("Password", attribute="password").rules("required", "min:8").hide_from_edit(),
+            # is_admin is not in User.fillable; the admin panel saves the fields
+            # declared here explicitly, so only administrators can change it.
+            # User.save() refuses to let an administrator demote themselves.
             Boolean("Admin", attribute="is_admin"),
             DateTime("Created At", attribute="created_at").sortable().hide_from_forms(),
         ]
 
+    # Each ability is limited to administrators. Narrow these further (or
+    # return False) for resources that should be read-only in the panel.
     def can_view_any(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_create(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_update(self, request, instance=None) -> bool:
-        return True
+        return is_admin(request)
 
     def can_delete(self, request, instance=None) -> bool:
+        # Administrators cannot delete their own account from the panel.
+        if instance is not None and getattr(instance, "_attributes", {}).get("id") == Auth.id():
+            return False
+        return is_admin(request)
+"""
+
+_CSRF_MIDDLEWARE = """\
+from typing import ClassVar
+
+from hunt.http.middleware.csrf import VerifyCsrfToken as Middleware
+
+
+class VerifyCsrfToken(Middleware):
+    \"\"\"CSRF protection for every state-changing request.
+
+    List URL prefixes here ONLY when the routes below them do not rely on the
+    session cookie for authentication (token-authenticated APIs, signed
+    webhooks). Exempting a cookie-authenticated route makes it forgeable.
+    \"\"\"
+
+    except_urls: ClassVar[list[str]] = {{except_urls}}
+"""
+
+
+def csrf_middleware_source(except_urls: list[str]) -> str:
+    """Render app/middleware/verify_csrf_token.py with the given exempt URL prefixes."""
+    return _CSRF_MIDDLEWARE.replace("{{except_urls}}", json.dumps(list(except_urls)))
+
+
+# The scaffold's own pages use inline <style> and <script> blocks, so the
+# default policy has to allow those. No third-party script host is needed:
+# the 2FA setup QR code is rendered on the server.
+BASE_SCRIPT_SOURCES = "'self' 'unsafe-inline'"
+
+_SECURE_HEADERS_MIDDLEWARE = """\
+import os
+
+from hunt.http.middleware.secure_headers import SecureHeaders as Middleware
+from hunt.http.response import Response
+
+
+class SecureHeaders(Middleware):
+    \"\"\"Security headers for every response (clickjacking, MIME sniffing, HSTS, CSP).
+
+    The Content-Security-Policy below allows what the generated pages use.
+    Tighten it as you remove inline scripts and styles, or override it per
+    environment with SECURE_CONTENT_SECURITY_POLICY. The admin panel sends
+    its own policy.
+    \"\"\"
+
+    content_security_policy = (
+        "default-src 'self'; "
+        "script-src {{script_src}}; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+    def _apply(self, response: Response) -> None:
+        if (
+            "SECURE_CONTENT_SECURITY_POLICY" not in os.environ
+            and response.get_header("Content-Security-Policy") is None
+        ):
+            response.header("Content-Security-Policy", self.content_security_policy)
+        super()._apply(response)
+"""
+
+
+def secure_headers_source(extra_script_sources: str = "") -> str:
+    """Render app/middleware/secure_headers.py; starters add the CDNs their layouts load."""
+    sources = BASE_SCRIPT_SOURCES + (f" {extra_script_sources}" if extra_script_sources else "")
+    return _SECURE_HEADERS_MIDDLEWARE.replace("{{script_src}}", sources)
+
+
+_THROTTLE_MIDDLEWARE = """\
+\"\"\"Rate limiting that is shared by every server worker.
+
+`hunt serve:production` starts several worker processes. The framework's
+in-memory `ThrottleRequests` counts per process, so a limit of 5 would really
+be 5 x workers. The limiters here keep their counters in a shared store:
+
+* Redis (sliding window) when Redis is configured, otherwise
+* the application cache from config/cache.py (fixed window). The default
+  file cache is shared by all workers on one machine; use Redis when you run
+  more than one machine.
+\"\"\"
+import hashlib
+import os
+import time
+
+from hunt.cache.manager import Cache
+from hunt.http.middleware import Middleware, Next
+from hunt.http.middleware.throttle import RedisThrottleRequests
+from hunt.http.request import Request
+from hunt.http.response import HttpException, Response
+
+
+def redis_configured() -> bool:
+    \"\"\"True when the environment points the app at a Redis server.\"\"\"
+    if os.environ.get("THROTTLE_DRIVER"):
+        return os.environ["THROTTLE_DRIVER"].lower() == "redis"
+    if os.environ.get("REDIS_URL"):
         return True
+    drivers = {os.environ.get(name, "").lower() for name in ("CACHE_DRIVER", "QUEUE_DRIVER", "SESSION_DRIVER")}
+    return "redis" in drivers
+
+
+class CacheThrottleRequests(Middleware):
+    \"\"\"Fixed-window rate limiter backed by the application cache.\"\"\"
+
+    max_attempts: int = 60
+    decay_seconds: int = 60
+
+    async def handle(self, request: Request, next: Next) -> Response:
+        now = time.time()
+        window = int(now // self.decay_seconds)
+        digest = hashlib.sha256(self._resolve_key(request).encode()).hexdigest()
+        key = f"throttle:{digest}:{window}"
+
+        # add() and increment() are atomic, so concurrent workers cannot lose a hit.
+        Cache.add(key, 0, self.decay_seconds)
+        hits = int(Cache.increment(key))
+        if hits > self.max_attempts:
+            retry_after = max(1, int((window + 1) * self.decay_seconds - now))
+            raise HttpException(
+                429,
+                f"Too many requests. Retry after {retry_after}s.",
+                {"Retry-After": str(retry_after)},
+            )
+
+        response = await next(request)
+        response.header("X-RateLimit-Limit", str(self.max_attempts))
+        response.header("X-RateLimit-Remaining", str(max(0, self.max_attempts - hits)))
+        return response
+
+    def _resolve_key(self, request: Request) -> str:
+        route = getattr(request, "route", None)
+        target = getattr(route, "uri", None) or request.path
+        return f"{request.ip}:{request.method}:{target}"
+
+
+# Base class for the application's rate limiters.
+Throttle = RedisThrottleRequests if redis_configured() else CacheThrottleRequests
 """
 
 _GUEST_MIDDLEWARE = """\
@@ -878,7 +1257,13 @@ from hunt.http.controller import Controller
 from hunt.http.request import Request
 from hunt.http.response import Response, RedirectResponse
 from hunt.auth.manager import Auth
+from hunt.support.helpers import config
 from hunt.validation.validator import Validator
+
+
+def home_path() -> str:
+    \"\"\"Where to send users after login. Change "home" in config/auth.py.\"\"\"
+    return str(config("auth.home", "/") or "/")
 
 
 class LoginController(Controller):
@@ -895,18 +1280,22 @@ class LoginController(Controller):
         if validator.fails():
             return self.view("auth.login", {
                 "errors": validator.errors()._errors,
-                "old": data,
+                "old": {"email": data["email"]},
                 "status": None,
             })
 
         if not Auth.attempt({"email": data["email"], "password": data["password"]}):
+            if Auth.two_factor_pending():
+                # The password was correct but the account uses two-factor
+                # authentication: finish the login on the challenge page.
+                return RedirectResponse("/two-factor/challenge")
             return self.view("auth.login", {
                 "errors": {"email": ["These credentials do not match our records."]},
-                "old": data,
+                "old": {"email": data["email"]},
                 "status": None,
             })
 
-        return RedirectResponse("/")
+        return RedirectResponse(home_path())
 
     def destroy(self, request: Request) -> Response:
         Auth.logout()
@@ -918,6 +1307,7 @@ from hunt.http.controller import Controller
 from hunt.http.request import Request
 from hunt.http.response import Response, RedirectResponse
 from hunt.auth.manager import Auth, hash_password
+from hunt.support.helpers import config
 from hunt.validation.validator import Validator
 from app.models.user import User
 
@@ -950,29 +1340,60 @@ class RegisterController(Controller):
             "password": hash_password(data["password"]),
         })
         Auth.login(user)
-        return RedirectResponse("/")
+        return RedirectResponse(str(config("auth.home", "/") or "/"))
 """
 
 _AUTH_PASSWORD_CONTROLLER = """\
-import hashlib
-import secrets
-import time
+import html
+import logging
+import os
+from urllib.parse import quote
 
-from sqlalchemy import text
-
-from hunt.database.connection import connection
+from hunt.auth.passwords import Password
 from hunt.http.controller import Controller
 from hunt.http.request import Request
 from hunt.http.response import Response, RedirectResponse
-from hunt.auth.manager import hash_password
+from hunt.mail.mailable import Mailable
+from hunt.mail.manager import Mail
 from hunt.validation.validator import Validator
 from app.models.user import User
 
-_TOKEN_TTL = 3600  # 60 minutes
+# The broker stores only a hash of each token, expires tokens after an hour,
+# makes them single-use and issues at most one link per address per minute.
+Password.set_model(User)
+
+_log = logging.getLogger("app.auth")
 
 
-def _hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
+def _send_reset_link(email: str, token: str) -> None:
+    \"\"\"Send the password reset link through the configured mailer.
+
+    MAIL_MAILER=log (the default) does not deliver email; with APP_ENV=local the
+    link is written to the log during development. Configure SMTP in
+    .env for real delivery. A delivery failure is logged and never shown to
+    the visitor, so the response does not reveal whether the address exists.
+    \"\"\"
+    base = os.environ.get("APP_URL", "http://localhost:8000").rstrip("/")
+    url = f"{base}/reset-password/{quote(token, safe='')}?email={quote(email, safe='')}"
+    minutes = Password.TOKEN_EXPIRY // 60
+    message = (
+        Mailable()
+        .subject("Reset your password")
+        .html(
+            "<p>We received a request to reset the password for your account.</p>"
+            f'<p><a href="{html.escape(url, quote=True)}">Choose a new password</a></p>'
+            f"<p>The link expires in {minutes} minutes. If you did not ask for it, ignore this email.</p>"
+        )
+        .text(
+            "We received a request to reset the password for your account.\\n\\n"
+            f"Choose a new password: {url}\\n\\n"
+            f"The link expires in {minutes} minutes. If you did not ask for it, ignore this email.\\n"
+        )
+    )
+    try:
+        Mail.to(email).send(message)
+    except Exception:
+        _log.exception("Could not send the password reset email")
 
 
 class ForgotPasswordController(Controller):
@@ -988,22 +1409,15 @@ class ForgotPasswordController(Controller):
                 "status": None,
             })
 
-        user = User.where("email", data["email"]).first()
-        # Always hit the DB so response time doesn't reveal whether the email exists
-        engine = connection()
-        with engine.connect() as conn:
-            conn.execute(
-                text("DELETE FROM password_reset_tokens WHERE email = :e"),
-                {"e": data["email"]},
-            )
-            if user:
-                token = secrets.token_urlsafe(32)
-                conn.execute(
-                    text("INSERT INTO password_reset_tokens (email, token, created_at) VALUES (:e, :t, :c)"),
-                    {"e": data["email"], "t": _hash_token(token), "c": int(time.time())},
-                )
-                # TODO: email the reset link — /reset-password/{token}?email={email}
-            conn.commit()
+        # Returns (address stored on the user record, token), or None for an
+        # unknown address or one that was sent a link less than a minute ago.
+        created = Password.create_token(data["email"])
+        if created is not None:
+            stored_email, token = created
+            # Always mail the stored address, never the submitted one. In
+            # production, queue this (Mail.to(...).queue(...)) so slow SMTP
+            # delivery does not make existing addresses distinguishable.
+            _send_reset_link(stored_email, token)
 
         return self.view("auth.forgot_password", {
             "errors": {},
@@ -1038,51 +1452,66 @@ class ResetPasswordController(Controller):
                 "errors": validator.errors()._errors,
             })
 
-        engine = connection()
-        with engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT email, token, created_at FROM password_reset_tokens WHERE email = :e AND token = :t"),
-                {"e": data["email"], "t": _hash_token(data["token"])},
-            ).fetchone()
-
-        invalid_ctx = {"token": data["token"], "email": data["email"],
-                       "errors": {"email": ["This password reset link is invalid or has expired."]}}
-
-        if not row:
-            return self.view("auth.reset_password", invalid_ctx)
-        if (int(time.time()) - (row[2] or 0)) > _TOKEN_TTL:
-            return self.view("auth.reset_password", invalid_ctx)
-
-        user = User.where("email", data["email"]).first()
-        if user is None:
-            return self.view("auth.reset_password", invalid_ctx)
-
-        user._attributes["password"] = hash_password(data["password"])
-        user.save()
-
-        with engine.connect() as conn:
-            conn.execute(
-                text("DELETE FROM password_reset_tokens WHERE email = :e"),
-                {"e": data["email"]},
-            )
-            conn.commit()
+        # Checks the token, consumes it exactly once, stores the new password
+        # hash and signs the user out of their other sessions.
+        if not Password.reset(data):
+            return self.view("auth.reset_password", {
+                "token": data["token"],
+                "email": data["email"],
+                "errors": {"email": ["This password reset link is invalid or has expired."]},
+            })
 
         return RedirectResponse("/login?reset=1")
 """
 
 _ROUTES_AUTH = """\
-from hunt.http.middleware.throttle import ThrottleRequests
+from hunt.http.request import Request
 from hunt.http.router import Router
 from hunt.support.helpers import config
 from app.controllers.auth.login_controller import LoginController
 from app.controllers.auth.register_controller import RegisterController
 from app.controllers.auth.password_controller import ForgotPasswordController, ResetPasswordController
 from app.middleware.guest import RedirectIfAuthenticated
+from app.middleware.throttle import Throttle
 
 
-class ThrottleLogin(ThrottleRequests):
+class ThrottleLogin(Throttle):
+    \"\"\"5 attempts per minute for one account from one address.\"\"\"
+
     max_attempts = 5
     decay_seconds = 60
+
+    def _resolve_key(self, request: Request) -> str:
+        email = str(request.input("email", "") or "").strip().lower()
+        return f"login:{request.ip}:{email}"
+
+
+class ThrottleLoginAddress(Throttle):
+    \"\"\"Caps password guessing across many accounts from one address.\"\"\"
+
+    max_attempts = 30
+    decay_seconds = 60
+
+    def _resolve_key(self, request: Request) -> str:
+        return f"login-address:{request.ip}"
+
+
+class ThrottleRegistration(Throttle):
+    max_attempts = 5
+    decay_seconds = 60
+
+    def _resolve_key(self, request: Request) -> str:
+        return f"register:{request.ip}"
+
+
+class ThrottlePasswordReset(Throttle):
+    \"\"\"Shared by the forgot-password and reset-password forms.\"\"\"
+
+    max_attempts = 5
+    decay_seconds = 60
+
+    def _resolve_key(self, request: Request) -> str:
+        return f"password-reset:{request.ip}"
 
 
 def register(router: Router) -> None:
@@ -1096,22 +1525,22 @@ def register(router: Router) -> None:
     with router.group(middleware=[RedirectIfAuthenticated]):
         if login_enabled:
             router.get("/login", login.show).named("login")
-            router.post("/login", login.store).middleware(ThrottleLogin)
+            router.post("/login", login.store).middleware(ThrottleLoginAddress, ThrottleLogin)
         if registration_enabled:
             reg = RegisterController()
             router.get("/register", reg.show).named("register")
-            router.post("/register", reg.store)
+            router.post("/register", reg.store).middleware(ThrottleRegistration)
         if forgot_enabled:
             forgot = ForgotPasswordController()
             router.get("/forgot-password", forgot.show).named("password.request")
-            router.post("/forgot-password", forgot.store).named("password.email")
+            router.post("/forgot-password", forgot.store).middleware(ThrottlePasswordReset).named("password.email")
 
     if login_enabled:
         router.post("/logout", login.destroy).named("logout")
     if forgot_enabled:
         reset = ResetPasswordController()
         router.get("/reset-password/{token}", reset.show).named("password.reset")
-        router.post("/reset-password", reset.store).named("password.update")
+        router.post("/reset-password", reset.store).middleware(ThrottlePasswordReset).named("password.update")
 """
 
 _ROUTES_ADMIN = """\
@@ -1135,6 +1564,12 @@ def register(router: Router) -> None:
         lambda request: Auth.check()
         and bool(getattr(Auth.user(), "_attributes", {}).get("is_admin"))
     )
+    # The system tools (sessions, cache, logs, queue) expose operational data
+    # and are denied by default. Enable the ones you need, for administrators:
+    # Admin.authorize_tool("sessions")
+    # Admin.authorize_tool("cache")
+    # Admin.authorize_tool("logs")
+    # Admin.authorize_tool("queue")
     Admin.register_to(router)
 """
 
@@ -1164,6 +1599,8 @@ _SCAFFOLD_FILES: dict[str, str] = {
     "app/controllers/auth/register_controller.py": _AUTH_REGISTER_CONTROLLER,
     "app/controllers/auth/password_controller.py": _AUTH_PASSWORD_CONTROLLER,
     "app/middleware/guest.py": _GUEST_MIDDLEWARE,
+    # routes/auth.py imports this module, so `hunt upgrade` must add it alongside.
+    "app/middleware/throttle.py": _THROTTLE_MIDDLEWARE,
     "app/admin/__init__.py": "",
     "app/admin/user_resource.py": _ADMIN_USER_RESOURCE,
     "app/console/kernel.py": _CONSOLE_KERNEL,

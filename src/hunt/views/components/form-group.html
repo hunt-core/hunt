@@ -1,4 +1,7 @@
-{%- set _has_error = errors is defined and name is defined and name in errors -%}
+{%- set _has_error = errors is defined and name is defined and name in errors and errors[name] -%}
+{%- set _error = errors[name] if _has_error else '' -%}
+{#- errors[name] is normally a list of messages: show the first one, not the list's repr -#}
+{%- if _error is not string and _error is sequence %}{% set _error = _error[0] %}{% endif -%}
 {%- set _border = 'border-red-400 focus:ring-red-500' if _has_error else 'border-gray-300 focus:ring-blue-500' -%}
 <div class="mb-4">
     {%- if label is defined or name is defined %}
@@ -27,6 +30,6 @@
            class="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 {{ _border }}">
     {%- endif %}
     {%- if _has_error %}
-    <p class="text-red-600 text-xs mt-1">{{ errors[name] }}</p>
+    <p class="text-red-600 text-xs mt-1">{{ _error }}</p>
     {%- endif %}
 </div>

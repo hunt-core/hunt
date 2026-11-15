@@ -21,27 +21,31 @@ def _should_queue(cls: type) -> bool:
         return False
 
 
-def _make_queued_wrapper(listener_cls: type, event_cls: type):
-    """Return a callable that pushes a QueuedEventListener to the queue."""
+def _make_queued_wrapper(listener_cls: type, event_cls: type | str):
+    """Return a callable that pushes a QueuedEventListener to the queue.
+
+    The worker's allow-list is built here, at boot, from the ``listen`` map
+    only: the listener class and (for class events) the event class. Nothing
+    is added at dispatch time, because the worker process would never see it.
+    """
     from hunt.events.queued import QueuedEventListener, allow_event, allow_listener
     from hunt.queue.manager import Queue
 
     listener_path = f"{listener_cls.__module__}.{listener_cls.__name__}"
-    event_path = f"{event_cls.__module__}.{event_cls.__name__}"
-
-    # Register both paths in the allowlist so the worker can safely reconstruct them
     allow_listener(listener_path)
-    allow_event(event_path)
+    if not isinstance(event_cls, str):
+        allow_event(f"{event_cls.__module__}.{event_cls.__name__}")
 
     def _wrapper(event) -> None:
-        actual_event_path = f"{type(event).__module__}.{type(event).__name__}"
-        allow_event(actual_event_path)
-        event_data = {k: v for k, v in vars(event).items() if not k.startswith("_")}
-        job = QueuedEventListener(
-            listener_class=listener_path,
-            event_class=actual_event_path,
-            event_data=event_data,
-        )
+        if isinstance(event, (str, int, float, bool, list, tuple, dict)) or event is None:
+            # String-keyed events carry an arbitrary payload, not an event object.
+            job = QueuedEventListener(listener_class=listener_path, event_class="", event_data={"payload": event})
+        else:
+            job = QueuedEventListener(
+                listener_class=listener_path,
+                event_class=f"{type(event).__module__}.{type(event).__name__}",
+                event_data={k: v for k, v in vars(event).items() if not k.startswith("_")},
+            )
         Queue.push(job)
 
     return _wrapper

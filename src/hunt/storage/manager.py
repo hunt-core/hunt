@@ -55,6 +55,9 @@ class _StorageManager:
     def url(self, path: str) -> str:
         return self.disk().url(path)
 
+    def temporary_url(self, path: str, expires: int = 3600) -> str:
+        return self.disk().temporary_url(path, expires)
+
     def path(self, relative: str = "") -> str:
         return self.disk().path(relative)
 

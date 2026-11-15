@@ -24,8 +24,10 @@ def make_test_command(name: str, test_type: str, dry_run: bool, as_json: bool) -
 
 def _create_test(name: str, test_type: str = "unit") -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make._output import output
 
+    validate_identifier(name, "test name")
     class_name = Str.pascal(name)
     if not class_name.startswith("Test"):
         class_name = f"Test{class_name}"
@@ -39,6 +41,13 @@ def _create_test(name: str, test_type: str = "unit") -> None:
 
     content = stub.replace("{{class}}", class_name)
     output.write(out, content, label="Created Test      ")
+
+    if test_type == "feature":
+        # The feature stub needs a `client` fixture; create it unless the app already has a conftest.
+        conftest = Path.cwd() / "tests" / "conftest.py"
+        if not conftest.exists():
+            output.write(conftest, CONFTEST_STUB, label="Created Conftest  ")
+            output.echo("  Feature tests need httpx: add `httpx` to your dev dependencies if it is missing.")
 
 
 _UNIT_STUB = """\
@@ -63,4 +72,23 @@ class {{class}}:
     async def test_example(self, client: AsyncClient) -> None:
         response = await client.get("/")
         assert response.status_code == 200
+"""
+
+# Written to tests/conftest.py by `hunt new` and by `make:test --feature`.
+CONFTEST_STUB = """\
+from __future__ import annotations
+
+import pytest
+
+
+@pytest.fixture()
+async def client():
+    \"\"\"HTTP client wired to the application's ASGI entry point (no network involved).\"\"\"
+    import httpx
+
+    from bootstrap.app import app
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as http:
+        yield http
 """

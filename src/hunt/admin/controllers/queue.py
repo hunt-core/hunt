@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 from hunt.http.request import Request
 from hunt.http.response import HttpException, RedirectResponse, Response
 
+_log = logging.getLogger(__name__)
+
 _PER_PAGE = 25
+_GENERIC_ERROR = "The operation could not be completed. See the application log for details."
 
 
 def _raw():
@@ -37,7 +41,7 @@ def _fmt_time(ts: int | None) -> str:
     if ts is None:
         return "—"
     try:
-        return datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return str(ts)
 
@@ -86,6 +90,7 @@ def _build_pagination(page: int, total: int) -> dict:
 def index(request: Request) -> Response:
     from hunt.admin.application import Admin
 
+    Admin.require_tool(request, "queue")
     raw = _raw()
     ctx = Admin._base_context(request)
     now = int(time.time())
@@ -221,46 +226,68 @@ def index(request: Request) -> Response:
 
 def retry(request: Request, id: str) -> Response:
     from hunt.admin.application import Admin
+    from hunt.admin.audit import audit_tool
+    from hunt.console.commands.queue_failed import _retry_row
+    from hunt.database.connection import raw
+    from hunt.queue.serialization import InvalidPayload
 
-    raw = _raw()
+    Admin.require_tool(request, "queue")
     try:
         row = raw("SELECT * FROM jobs_failed WHERE id = :id", {"id": id}).fetchone()
         if row is None:
             raise HttpException(404, "Failed job not found.")
-        job = dict(row._mapping)
-        raw(
-            "INSERT INTO jobs (queue, payload, attempts, available_at, created_at)"
-            " VALUES (:queue, :payload, 0, NULL, :now)",
-            {"queue": job["queue"], "payload": job["payload"], "now": int(time.time())},
-        )
-        raw("DELETE FROM jobs_failed WHERE id = :id", {"id": id})
+        # Same path as `hunt queue:retry`: the payload is verified and re-signed
+        # (so jobs signed before an upgrade can be brought forward), routed back
+        # to the driver it came from, and moved in one transaction so the job is
+        # either back on the queue or still in jobs_failed, never both.
+        if not _retry_row(row):
+            # Another request already retried or removed it.
+            raise HttpException(404, "Failed job not found.")
     except HttpException:
         raise
-    except Exception as exc:
-        return _flash_and_redirect(request, "admin_error", str(exc), f"{Admin.prefix}/queue")
+    except InvalidPayload:
+        _log.warning("Admin queue: failed job %s has an unverifiable payload and cannot be retried", id)
+        return _flash_and_redirect(
+            request,
+            "admin_error",
+            "This job's payload could not be verified, so it cannot be retried.",
+            f"{Admin.prefix}/queue",
+        )
+    except Exception:
+        _log.exception("Admin queue: could not retry failed job %s", id)
+        return _flash_and_redirect(request, "admin_error", _GENERIC_ERROR, f"{Admin.prefix}/queue")
 
+    audit_tool("queue", "retry", id)
     return _flash_and_redirect(request, "admin_success", "Job re-queued successfully.", f"{Admin.prefix}/queue")
 
 
 def delete_failed(request: Request, id: str) -> Response:
     from hunt.admin.application import Admin
+    from hunt.admin.audit import audit_tool
 
+    Admin.require_tool(request, "queue")
     raw = _raw()
     try:
         raw("DELETE FROM jobs_failed WHERE id = :id", {"id": id})
-    except Exception as exc:
-        return _flash_and_redirect(request, "admin_error", str(exc), f"{Admin.prefix}/queue")
+    except Exception:
+        _log.exception("Admin queue: could not delete failed job %s", id)
+        return _flash_and_redirect(request, "admin_error", _GENERIC_ERROR, f"{Admin.prefix}/queue")
 
+    audit_tool("queue", "delete_failed", id)
     return _flash_and_redirect(request, "admin_success", "Failed job deleted.", f"{Admin.prefix}/queue")
 
 
 def flush(request: Request) -> Response:
     from hunt.admin.application import Admin
+    from hunt.admin.audit import audit_tool
 
+    Admin.require_tool(request, "queue")
     raw = _raw()
     try:
         raw("DELETE FROM jobs_failed")
-    except Exception as exc:
-        return _flash_and_redirect(request, "admin_error", str(exc), f"{Admin.prefix}/queue")
+    except Exception:
+        _log.exception("Admin queue: could not flush failed jobs")
+        return _flash_and_redirect(request, "admin_error", _GENERIC_ERROR, f"{Admin.prefix}/queue")
 
+    audit_tool("queue", "flush_failed")
     return _flash_and_redirect(request, "admin_success", "All failed jobs flushed.", f"{Admin.prefix}/queue")

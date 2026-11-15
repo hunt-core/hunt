@@ -17,6 +17,8 @@ class HandleCors(Middleware):
     browsers reject such responses and it indicates a configuration error.
     """
 
+    reads_body = False  # never touches the request body
+
     allowed_origins: ClassVar[list[str]] = []  # deny-by-default
     allowed_methods: ClassVar[list[str]] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     allowed_headers: ClassVar[list[str]] = ["Content-Type", "Authorization", "X-CSRF-TOKEN"]
@@ -44,12 +46,14 @@ class HandleCors(Middleware):
         return response
 
     def _add_cors_headers(self, response: Response, origin: str) -> None:
+        # The response depends on Origin whether or not this origin is allowed:
+        # without Vary a shared cache could serve an allowed origin's response
+        # (or a disallowed one's) to everybody. Append; never overwrite.
+        response.vary("Origin")
         if "*" in self.allowed_origins:
             response.header("Access-Control-Allow-Origin", "*")
-            response.header("Vary", "Origin")
         elif origin and origin in self.allowed_origins:
             response.header("Access-Control-Allow-Origin", origin)
-            response.header("Vary", "Origin")
         else:
             return  # no CORS headers for disallowed origins
 

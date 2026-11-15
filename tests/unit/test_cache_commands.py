@@ -69,14 +69,20 @@ class TestCacheClear:
 
 class TestCacheForget:
     def test_calls_cache_forget_with_key(self, project):
-        with patch("hunt.cache.manager.Cache") as mock_cache:
+        with (
+            patch("hunt.console.commands.cache._boot_application", return_value=True),
+            patch("hunt.cache.manager.Cache") as mock_cache,
+        ):
             result = CliRunner().invoke(cache_forget, ["my-key"])
 
         assert result.exit_code == 0
         mock_cache.forget.assert_called_once_with("my-key")
 
     def test_prints_removed_key(self, project):
-        with patch("hunt.cache.manager.Cache"):
+        with (
+            patch("hunt.console.commands.cache._boot_application", return_value=True),
+            patch("hunt.cache.manager.Cache"),
+        ):
             result = CliRunner().invoke(cache_forget, ["session:abc123"])
 
         assert "session:abc123" in result.output

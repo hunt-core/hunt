@@ -166,7 +166,11 @@ class TestApiStarter:
         app = self._apply(tmp_path, monkeypatch)
         mw = app / "app" / "middleware" / "api_rate_limit.py"
         assert mw.exists()
-        assert "ThrottleRequests" in mw.read_text()
+        # GEN-08: the limiter must be the shared (Redis / cache backed) one from
+        # app/middleware/throttle.py, not the per-process in-memory ThrottleRequests.
+        source = mw.read_text()
+        assert "from app.middleware.throttle import Throttle" in source
+        assert "class ApiRateLimit(Throttle)" in source
 
     def test_api_routes_versioned(self, tmp_path, monkeypatch):
         app = self._apply(tmp_path, monkeypatch)

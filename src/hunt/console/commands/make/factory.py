@@ -36,8 +36,12 @@ def make_factory_command(name: str, model_name: str, dry_run: bool, as_json: boo
 
 def _create_factory(name: str, model_name: str = "") -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make._output import output
 
+    validate_identifier(name, "factory name")
+    if model_name:
+        validate_identifier(model_name, "model name")
     class_name = name if name.endswith("Factory") else f"{name}Factory"
     if not model_name:
         model_name = name.replace("Factory", "")

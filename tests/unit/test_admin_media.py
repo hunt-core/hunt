@@ -119,7 +119,10 @@ class TestMediaController:
         import json
 
         data = json.loads(resp._body)
-        assert data == {"files": []}
+        assert data["files"] == []
+        assert data["total"] == 0
+        assert data["page"] == 1
+        assert data["last_page"] == 1
 
     def test_api_list_returns_files(self):
         from hunt.admin.controllers.media import api_list
@@ -247,5 +250,6 @@ class TestMediaController:
         assert "image/png" in _ALLOWED_MIME
         assert "image/gif" in _ALLOWED_MIME
         assert "image/webp" in _ALLOWED_MIME
-        assert "image/svg+xml" in _ALLOWED_MIME
+        # SVG can carry inline script and is no longer accepted.
+        assert "image/svg+xml" not in _ALLOWED_MIME
         assert "application/pdf" not in _ALLOWED_MIME

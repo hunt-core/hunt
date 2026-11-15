@@ -3,7 +3,8 @@
     Context: fields, errors, old, resource, prefix, resource_key, record_id (optional)
 #}
 {% macro render_field(field, old={}, errors={}, record=none) %}
-{% set val = old.get(field.attribute, '') %}
+{# to_form_value turns the stored value (or re-flashed old input) into what the control expects #}
+{% set val = field.to_form_value(old.get(field.attribute, '')) %}
 {% set has_error = field.attribute in errors %}
 
 {% if field.field_type == 'boolean' %}
@@ -178,53 +179,18 @@
     <div class="mt-2">
         {% if field._searchable %}
         {# Autocomplete: text input for display, hidden input for actual FK value #}
-        <div class="relative" id="autocomplete_{{ field.attribute }}">
-            <input type="hidden" id="field_{{ field.attribute }}" name="{{ field.attribute }}" value="{{ val }}">
-            <input type="text" id="field_{{ field.attribute }}_display"
+        <div class="relative" id="autocomplete_{{ field.attribute }}" data-hunt-autocomplete="{{ field.attribute }}">
+            <input type="hidden" id="field_{{ field.attribute }}" name="{{ field.attribute }}" value="{{ val }}" data-hunt-role="value">
+            <input type="text" id="field_{{ field.attribute }}_display" data-hunt-role="search"
                    autocomplete="off"
                    placeholder="Type to search…"
                    {% if field._readonly %}readonly{% endif %}
                    {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}
                    class="block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 {% if has_error %}bg-white/5 text-red-400 outline-red-500/50 focus:outline-red-400{% else %}bg-white/5 text-white outline-white/10 focus:outline-indigo-500{% endif %}">
-            <ul id="field_{{ field.attribute }}_results"
+            <ul id="field_{{ field.attribute }}_results" data-hunt-role="results"
                 class="hidden absolute z-50 mt-1 w-full rounded-md bg-gray-800 py-1 inset-ring inset-ring-white/10 shadow-lg max-h-48 overflow-y-auto text-sm text-white">
             </ul>
         </div>
-        <script>
-        (function() {
-            var hidden  = document.getElementById('field_{{ field.attribute }}');
-            var display = document.getElementById('field_{{ field.attribute }}_display');
-            var list    = document.getElementById('field_{{ field.attribute }}_results');
-            var timer;
-            display.addEventListener('input', function() {
-                clearTimeout(timer);
-                timer = setTimeout(function() {
-                    var q = display.value.trim();
-                    fetch(window._huntAdmin.prefix+'/resources/'+window._huntAdmin.resourceKey+'/search-relation?field={{ field.attribute }}&q=' + encodeURIComponent(q))
-                        .then(function(r) { return r.json(); })
-                        .then(function(data) {
-                            list.innerHTML = '';
-                            if (!data.results || !data.results.length) { list.classList.add('hidden'); return; }
-                            data.results.forEach(function(item) {
-                                var li = document.createElement('li');
-                                li.textContent = item.label;
-                                li.className = 'px-3 py-2 cursor-pointer hover:bg-white/10';
-                                li.addEventListener('mousedown', function(e) {
-                                    e.preventDefault();
-                                    hidden.value  = item.id;
-                                    display.value = item.label;
-                                    list.classList.add('hidden');
-                                });
-                                list.appendChild(li);
-                            });
-                            list.classList.remove('hidden');
-                        })
-                        .catch(function() { list.classList.add('hidden'); });
-                }, 250);
-            });
-            display.addEventListener('blur', function() { setTimeout(function() { list.classList.add('hidden'); }, 200); });
-        })();
-        </script>
         {% else %}
         {# Select: loads all related records (suitable for smaller tables) #}
         <div class="grid grid-cols-1">
@@ -255,9 +221,9 @@
         {{ field.label }}
         {% if 'required' in (field._rules | join('|')) %}<span class="text-red-400 ml-0.5">*</span>{% endif %}
     </label>
-    <div class="mt-2" id="btm_wrap_{{ field.attribute }}">
-        <input type="hidden" name="{{ field.attribute }}" id="btm_hidden_{{ field.attribute }}" value="{{ current_ids_csv }}">
-        <div id="btm_chips_{{ field.attribute }}" class="flex flex-wrap gap-1.5 min-h-8 mb-2">
+    <div class="mt-2" id="btm_wrap_{{ field.attribute }}"{% if not field._readonly %} data-hunt-btm="{{ field.attribute }}"{% endif %}>
+        <input type="hidden" name="{{ field.attribute }}" id="btm_hidden_{{ field.attribute }}" value="{{ current_ids_csv }}" data-hunt-role="value">
+        <div id="btm_chips_{{ field.attribute }}" data-hunt-role="chips" class="flex flex-wrap gap-1.5 min-h-8 mb-2">
             {% for item_id, item_label in current_items %}
             <span class="inline-flex items-center gap-x-1 rounded-md bg-indigo-500/15 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30" data-id="{{ item_id }}">
                 {{ item_label }}
@@ -268,90 +234,14 @@
             {% endfor %}
         </div>
         <div class="relative">
-            <input type="text" id="btm_search_{{ field.attribute }}" autocomplete="off"
+            <input type="text" id="btm_search_{{ field.attribute }}" autocomplete="off" data-hunt-role="search"
                    {% if field._readonly %}disabled{% endif %}
                    placeholder="Type to search and add…"
                    class="block w-full rounded-md px-3 py-1.5 text-base outline-1 -outline-offset-1 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 sm:text-sm/6 disabled:opacity-50 bg-white/5 text-white outline-white/10 focus:outline-indigo-500">
-            <ul id="btm_results_{{ field.attribute }}" class="hidden absolute z-50 mt-1 w-full rounded-md bg-gray-800 py-1 inset-ring inset-ring-white/10 shadow-lg max-h-48 overflow-y-auto text-sm text-white"></ul>
+            <ul id="btm_results_{{ field.attribute }}" data-hunt-role="results" class="hidden absolute z-50 mt-1 w-full rounded-md bg-gray-800 py-1 inset-ring inset-ring-white/10 shadow-lg max-h-48 overflow-y-auto text-sm text-white"></ul>
         </div>
     </div>
     {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
-    {% if not field._readonly %}
-    <script>
-    (function() {
-        var hidden = document.getElementById('btm_hidden_{{ field.attribute }}');
-        var chips  = document.getElementById('btm_chips_{{ field.attribute }}');
-        var search = document.getElementById('btm_search_{{ field.attribute }}');
-        var list   = document.getElementById('btm_results_{{ field.attribute }}');
-        var timer;
-
-        function selectedIds() {
-            var v = hidden.value;
-            return v ? v.split(',') : [];
-        }
-        function setIds(ids) {
-            hidden.value = ids.join(',');
-        }
-        function makeRemoveBtn() {
-            var btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'btm-remove ml-0.5 leading-none';
-            btn.setAttribute('aria-label', 'Remove');
-            btn.innerHTML = '<svg class="size-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg>';
-            return btn;
-        }
-        function addChip(id, label) {
-            var ids = selectedIds();
-            if (ids.indexOf(String(id)) >= 0) return;
-            ids.push(String(id));
-            setIds(ids);
-            var span = document.createElement('span');
-            span.className = 'inline-flex items-center gap-x-1 rounded-md bg-indigo-500/15 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30';
-            span.dataset.id = String(id);
-            span.textContent = label;
-            var btn = makeRemoveBtn();
-            btn.addEventListener('click', function() { removeChip(span); });
-            span.appendChild(btn);
-            chips.appendChild(span);
-        }
-        function removeChip(span) {
-            var id = span.dataset.id;
-            setIds(selectedIds().filter(function(x) { return x !== id; }));
-            span.remove();
-        }
-        chips.querySelectorAll('.btm-remove').forEach(function(btn) {
-            btn.addEventListener('click', function() { removeChip(btn.closest('[data-id]')); });
-        });
-        search.addEventListener('input', function() {
-            clearTimeout(timer);
-            timer = setTimeout(function() {
-                var q = search.value.trim();
-                fetch(window._huntAdmin.prefix+'/resources/'+window._huntAdmin.resourceKey+'/search-relation?field={{ field.attribute }}&q='+encodeURIComponent(q))
-                    .then(function(r) { return r.json(); })
-                    .then(function(data) {
-                        list.innerHTML = '';
-                        if (!data.results || !data.results.length) { list.classList.add('hidden'); return; }
-                        data.results.forEach(function(item) {
-                            var li = document.createElement('li');
-                            li.textContent = item.label;
-                            li.className = 'px-3 py-2 cursor-pointer hover:bg-white/10';
-                            li.addEventListener('mousedown', function(e) {
-                                e.preventDefault();
-                                addChip(item.id, item.label);
-                                search.value = '';
-                                list.classList.add('hidden');
-                            });
-                            list.appendChild(li);
-                        });
-                        list.classList.remove('hidden');
-                    })
-                    .catch(function() { list.classList.add('hidden'); });
-            }, 250);
-        });
-        search.addEventListener('blur', function() { setTimeout(function() { list.classList.add('hidden'); }, 200); });
-    })();
-    </script>
-    {% endif %}
 </div>
 
 {% elif field.field_type == 'markdown' %}
@@ -362,87 +252,12 @@
     </label>
     <div class="mt-2">
         <textarea id="field_{{ field.attribute }}" name="{{ field.attribute }}"
-                  rows="10"
-                  {% if field._readonly %}readonly{% endif %}
+                  rows="10" data-hunt-markdown
+                  {% if field._readonly %}readonly data-hunt-readonly{% endif %}
                   {% if has_error %}aria-invalid="true" aria-describedby="field_{{ field.attribute }}_error"{% endif %}>{{ val }}</textarea>
     </div>
     {% if field._help_text %}<p class="mt-2 text-sm text-gray-500">{{ field._help_text }}</p>{% endif %}
     {% if has_error %}<p class="mt-2 text-sm text-red-400" id="field_{{ field.attribute }}_error">{{ errors[field.attribute][0] }}</p>{% endif %}
-    <script>
-    (function() {
-        var fieldId = 'field_{{ field.attribute }}';
-        function boot() {
-            if (!document.getElementById('_hunt-easymde-dark')) {
-                var s = document.createElement('style');
-                s.id = '_hunt-easymde-dark';
-                s.textContent =
-                    '.EasyMDEContainer .CodeMirror{background:rgba(255,255,255,.05);color:#f9fafb;border-color:rgba(255,255,255,.1);border-radius:0 0 .375rem .375rem}' +
-                    '.EasyMDEContainer .editor-toolbar{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.1);border-radius:.375rem .375rem 0 0}' +
-                    '.EasyMDEContainer .editor-toolbar a,.EasyMDEContainer .editor-toolbar button{color:#9ca3af!important;border:none!important;background:none!important}' +
-                    '.EasyMDEContainer .editor-toolbar a:hover,.EasyMDEContainer .editor-toolbar button:hover,.EasyMDEContainer .editor-toolbar a.active,.EasyMDEContainer .editor-toolbar button.active{color:#fff!important;background:rgba(255,255,255,.08)!important;border-radius:.25rem}' +
-                    '.EasyMDEContainer .editor-toolbar i.separator{border-color:rgba(255,255,255,.15)}' +
-                    '.EasyMDEContainer .editor-toolbar.disabled-for-preview a:not(.no-disable){opacity:.35}' +
-                    '.EasyMDEContainer .editor-preview{background:#111827;color:#f9fafb;border-color:rgba(255,255,255,.1)}' +
-                    '.EasyMDEContainer .editor-preview table{border-collapse:collapse;width:100%}' +
-                    '.EasyMDEContainer .editor-preview table td,.EasyMDEContainer .editor-preview table th{border:1px solid rgba(255,255,255,.2);padding:.4rem .6rem}' +
-                    '.EasyMDEContainer .editor-statusbar{color:#6b7280;border-color:rgba(255,255,255,.1)}' +
-                    '.EasyMDEContainer .CodeMirror-cursor{border-left-color:#f9fafb}' +
-                    '.EasyMDEContainer .CodeMirror-selectedtext,.EasyMDEContainer .CodeMirror .CodeMirror-selected{background:rgba(99,102,241,.35)}' +
-                    '.EasyMDEContainer .cm-s-easymde .cm-header{color:#818cf8}' +
-                    '.EasyMDEContainer .cm-s-easymde .cm-link,.EasyMDEContainer .cm-s-easymde .cm-url{color:#6ee7b7}' +
-                    '.EasyMDEContainer .cm-s-easymde .cm-strong{color:#f9fafb;font-weight:700}' +
-                    '.EasyMDEContainer .cm-s-easymde .cm-em{color:#f9fafb;font-style:italic}';
-                document.head.appendChild(s);
-            }
-            var mdeInstance = new EasyMDE({
-                element: document.getElementById(fieldId),
-                toolbar: [
-                    'bold','italic','heading','|','table','link','|',
-                    {
-                        name: 'media',
-                        action: function(editor) {
-                            window._huntAdmin.openMediaManager(function(url, name) {
-                                var cm = editor.codemirror;
-                                var text = '![' + name + '](' + url + ')';
-                                cm.replaceSelection(text);
-                            });
-                        },
-                        className: 'fa fa-image',
-                        title: 'Insert from Media Manager'
-                    },
-                    '|','preview','guide'
-                ],
-                spellChecker: false,
-                status: false,
-                minHeight: '200px',
-                {% if field._readonly %}
-                readOnly: true,
-                {% endif %}
-            });
-        }
-        if (typeof EasyMDE !== 'undefined') {
-            boot();
-        } else if (!window._huntMDELoading) {
-            window._huntMDELoading = true;
-            window._huntMDEQueue = [boot];
-            var _p = window._huntAdmin.prefix;
-            var lnk1 = document.createElement('link');
-            lnk1.rel = 'stylesheet';
-            lnk1.href = _p+'/assets/font-awesome.min.css';
-            document.head.appendChild(lnk1);
-            var lnk2 = document.createElement('link');
-            lnk2.rel = 'stylesheet';
-            lnk2.href = _p+'/assets/easymde.min.css';
-            document.head.appendChild(lnk2);
-            var scr = document.createElement('script');
-            scr.src = _p+'/assets/easymde.min.js';
-            scr.onload = function() { (window._huntMDEQueue || []).forEach(function(fn) { fn(); }); };
-            document.head.appendChild(scr);
-        } else {
-            (window._huntMDEQueue = window._huntMDEQueue || []).push(boot);
-        }
-    })();
-    </script>
 </div>
 
 {% elif field.field_type == 'media_browser' %}
@@ -450,7 +265,7 @@
     <label class="block text-sm/6 font-medium text-white">{{ field.label }}</label>
     <div class="mt-2 flex items-center gap-x-3">
         <button type="button"
-                onclick="window._huntAdmin.openMediaManager(function(url,name){var inp=document.getElementById('_media_url_{{ field.attribute }}');if(inp){inp.value=url;}})"
+                data-hunt-action="media-pick" data-hunt-target="_media_url_{{ field.attribute }}"
                 class="inline-flex items-center gap-x-1.5 rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">
             <svg class="-ml-0.5 size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/></svg>
             Browse Media
@@ -459,7 +274,7 @@
                placeholder="Select an image from the media manager…"
                class="block flex-1 rounded-md bg-white/5 px-3 py-1.5 text-sm text-gray-300 outline-white/10 cursor-default">
         <button type="button"
-                onclick="(function(){var v=document.getElementById('_media_url_{{ field.attribute }}').value;if(v)navigator.clipboard.writeText(v);})()"
+                data-hunt-action="copy-value" data-hunt-target="_media_url_{{ field.attribute }}"
                 class="rounded-md bg-white/5 px-2.5 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/10"
                 title="Copy URL">
             <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"/></svg>

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import click
@@ -49,13 +48,11 @@ def _find_seeder(seeder_class: str):
 @click.option("--class", "seeder_class", default="DatabaseSeeder", help="Seeder class to run")
 def db_seed_command(seeder_class: str) -> None:
     """Run database seeders."""
-    from dotenv import load_dotenv
+    from hunt.console.commands.db.boot import boot_application, warn_if_throwaway_database
 
-    env_file = Path.cwd() / ".env"
-    if env_file.exists():
-        load_dotenv(env_file, override=False)
-
-    sys.path.insert(0, str(Path.cwd()))
+    # Boot the app so config/database.py selects the database, as for the web process.
+    boot_application()
+    warn_if_throwaway_database()
 
     cls = _find_seeder(seeder_class)
     if cls is None:

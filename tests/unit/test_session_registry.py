@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -32,12 +33,16 @@ class TestSessionRegistryRegister:
         conn.execute.assert_called_once()
         conn.commit.assert_called_once()
 
-    def test_register_silences_db_error(self):
+    def test_register_raises_db_error(self):
+        # HTTP-06: only a missing user_sessions table is tolerated; a real
+        # database error must not be swallowed.
+        import pytest
+
         from hunt.session.registry import SessionRegistry
 
         with patch("hunt.session.registry.connection", side_effect=Exception("no db")):
-            # Should not raise
-            SessionRegistry().register("abc", 1)
+            with pytest.raises(Exception, match="no db"):
+                SessionRegistry().register("abc", 1)
 
     def test_register_truncates_user_agent(self):
         from hunt.session.registry import SessionRegistry
@@ -63,11 +68,15 @@ class TestSessionRegistryDeregister:
         sql = str(conn.execute.call_args[0][0])
         assert "DELETE" in sql.upper()
 
-    def test_deregister_silences_db_error(self):
+    def test_deregister_raises_db_error(self):
+        # HTTP-06: deregister is on the revoke path and must not fail silently.
+        import pytest
+
         from hunt.session.registry import SessionRegistry
 
         with patch("hunt.session.registry.connection", side_effect=Exception("no db")):
-            SessionRegistry().deregister("x")
+            with pytest.raises(Exception, match="no db"):
+                SessionRegistry().deregister("x")
 
 
 class TestSessionRegistryTouch:
@@ -102,11 +111,16 @@ class TestSessionRegistryGet:
             result = SessionRegistry().get("missing")
         assert result is None
 
-    def test_get_silences_db_error(self):
+    def test_get_raises_db_error(self):
+        # HTTP-06: revoke_session() relies on get(); "database down" must not
+        # read as "no such session".
+        import pytest
+
         from hunt.session.registry import SessionRegistry
 
         with patch("hunt.session.registry.connection", side_effect=Exception("no db")):
-            assert SessionRegistry().get("x") is None
+            with pytest.raises(Exception, match="no db"):
+                SessionRegistry().get("x")
 
 
 class TestSessionRegistryAllSessions:
@@ -131,7 +145,9 @@ class TestSessionRegistryAllSessions:
 
         assert total == 3
         assert len(rows) == 2
-        assert rows[0] == {"id": "s1", "user_id": 1}
+        # The id column already holds sha256(session id); public_id is that stored value.
+        assert {k: v for k, v in rows[0].items() if k != "public_id"} == {"id": "s1", "user_id": 1}
+        assert rows[0]["public_id"] == "s1"
 
     def test_returns_empty_on_error(self):
         from hunt.session.registry import SessionRegistry
@@ -216,14 +232,19 @@ class TestDeleteSessionData:
             _delete_session_data("sid456")
         mock_redis.assert_called_once_with("sid456")
 
-    def test_silences_errors(self):
+    def test_propagates_errors(self):
+        # HTTP-06: a session that could not be deleted is still alive; the
+        # revoke path must report that instead of swallowing it.
+        import pytest
+
         from hunt.session.registry import _delete_session_data
 
         with (
             patch.dict("os.environ", {"SESSION_DRIVER": "file"}),
             patch("hunt.session.registry._delete_session_file", side_effect=Exception("oops")),
         ):
-            _delete_session_data("sid")  # should not raise
+            with pytest.raises(Exception, match="oops"):
+                _delete_session_data("sid")
 
     def test_delete_session_redis_calls_get_redis(self):
         from hunt.session.registry import _delete_session_redis
@@ -231,7 +252,14 @@ class TestDeleteSessionData:
         mock_redis = MagicMock()
         with patch("hunt.redis_connection.get_redis", return_value=mock_redis):
             _delete_session_redis("abc")
-        mock_redis.delete.assert_called_once_with("hunt:session:abc")
+        # "abc" is the value of user_sessions.id: normally the hash, which keys
+        # the session directly. The other two keys are where the data of a row
+        # that still holds a raw (pre-hash) id can be.
+        mock_redis.delete.assert_called_once_with(
+            "hunt:session:sha256:abc",
+            "hunt:session:abc",
+            "hunt:session:sha256:" + hashlib.sha256(b"abc").hexdigest(),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -262,41 +290,53 @@ class TestPasswordBrokerRevokeFlag:
         from hunt.auth.passwords import PasswordBroker
 
         broker = PasswordBroker()
-        broker.token_valid = MagicMock(return_value=True)
+        # AUTH-L1: reset() matches and consumes the token row atomically.
+        broker._matching_row = MagicMock(return_value={"email": "a@b.com", "token": "stored-hash"})
+        broker._consume = MagicMock(return_value=True)
 
         user = MagicMock()
-        user._attributes = {"id": 7, "password": "old"}
+        user._attributes = {"id": 7, "email": "a@b.com", "password": "old"}
         broker._find_user = MagicMock(return_value=user)
-        broker.delete_token = MagicMock()
 
         with (
             patch("hunt.auth.manager.hash_password", return_value="hashed"),
             patch("hunt.session.registry.revoke_sessions_for") as mock_revoke,
         ):
             result = broker.reset(
-                {"email": "a@b.com", "token": "tok", "password": "new"},
+                {"email": "a@b.com", "token": "tok", "password": "new-password"},
                 revoke_sessions=True,
             )
 
         assert result is True
         mock_revoke.assert_called_once_with(7)
 
-    def test_reset_does_not_revoke_by_default(self):
+    def test_reset_revokes_by_default_and_can_opt_out(self):
         from hunt.auth.passwords import PasswordBroker
 
         broker = PasswordBroker()
-        broker.token_valid = MagicMock(return_value=True)
+        # AUTH-L1: reset() matches and consumes the token row atomically.
+        broker._matching_row = MagicMock(return_value={"email": "a@b.com", "token": "stored-hash"})
+        broker._consume = MagicMock(return_value=True)
 
         user = MagicMock()
-        user._attributes = {"id": 7, "password": "old"}
+        user._attributes = {"id": 7, "email": "a@b.com", "password": "old"}
         broker._find_user = MagicMock(return_value=user)
-        broker.delete_token = MagicMock()
 
         with (
             patch("hunt.auth.manager.hash_password", return_value="hashed"),
             patch("hunt.session.registry.revoke_sessions_for") as mock_revoke,
         ):
-            broker.reset({"email": "a@b.com", "token": "tok", "password": "new"})
+            # AUTH-L1: sessions are revoked by default after a password reset.
+            assert broker.reset({"email": "a@b.com", "token": "tok", "password": "new-password"}) is True
+            mock_revoke.assert_called_once_with(7)
+            mock_revoke.reset_mock()
+            assert (
+                broker.reset(
+                    {"email": "a@b.com", "token": "tok", "password": "new-password"},
+                    revoke_sessions=False,
+                )
+                is True
+            )
 
         mock_revoke.assert_not_called()
 

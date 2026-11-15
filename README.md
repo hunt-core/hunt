@@ -43,6 +43,16 @@ Or with pip:
 pip install hunt-framework
 ```
 
+Optional integrations are installed as extras, only when you use them:
+
+```bash
+pip install "hunt-framework[postgres]"   # PostgreSQL driver (psycopg2)
+pip install "hunt-framework[redis]"      # Redis cache, sessions, queue and rate limiting
+pip install "hunt-framework[s3]"         # S3 storage disk (boto3)
+pip install "hunt-framework[sentry]"     # Sentry error reporting
+pip install "hunt-framework[tinker]"     # IPython shell for `hunt tinker`
+```
+
 To install the `hunt` CLI as a global tool:
 
 ```bash
@@ -682,3 +692,5 @@ pytest
 - Quick start: [hunt-framework.com/docs/installation](https://hunt-framework.com/docs/installation)
 - AI agents: [hunt-framework.com/docs/ai-agents](https://hunt-framework.com/docs/ai-agents)
 - Full docs: [hunt-framework.com](https://hunt-framework.com)
+- Upgrading between versions: [UPGRADE.md](UPGRADE.md)
+- Release notes: [CHANGELOG.md](CHANGELOG.md)

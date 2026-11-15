@@ -22,12 +22,6 @@ def admin_publish_command(force: bool) -> None:
         click.echo("  Error: admin template source directory not found.", err=True)
         raise SystemExit(1)
 
-    if dest.exists() and not force:
-        click.echo(
-            f"  Destination {dest.relative_to(Path.cwd())} already exists.\n  Use --force to overwrite existing files."
-        )
-        return
-
     copied = 0
     skipped = 0
     for src_file in src.rglob("*"):

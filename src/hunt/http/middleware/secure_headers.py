@@ -19,6 +19,8 @@ class SecureHeaders(Middleware):
       SECURE_CONTENT_SECURITY_POLICY — raw CSP header value (default "default-src 'self'")
     """
 
+    reads_body = False  # never touches the request body
+
     async def handle(self, request: Request, next: Next) -> Response:
         response = await next(request)
         self._apply(response)
@@ -41,7 +43,11 @@ class SecureHeaders(Middleware):
             response.header("Referrer-Policy", referrer)
 
         # Strict-Transport-Security — 1 year by default; set to 0 to disable (local dev)
-        hsts_seconds = int(os.environ.get("SECURE_HSTS_SECONDS", "31536000"))
+        try:
+            hsts_seconds = int(os.environ.get("SECURE_HSTS_SECONDS", "31536000").strip())
+        except ValueError:
+            # A typo in the env var must not turn every response into a 500.
+            hsts_seconds = 31536000
         if hsts_seconds > 0:
             hsts = f"max-age={hsts_seconds}"
             if os.environ.get("SECURE_HSTS_SUBDOMAINS", "false").lower() == "true":
@@ -52,7 +58,7 @@ class SecureHeaders(Middleware):
         # Skip if the response already carries a CSP (e.g. set by a route-specific handler).
         # The default also forbids plugins (object-src) and framing (frame-ancestors),
         # and pins base-uri to defend against <base> tag injection.
-        if "Content-Security-Policy" not in response._headers:
+        if response.get_header("Content-Security-Policy") is None:
             csp = os.environ.get(
                 "SECURE_CONTENT_SECURITY_POLICY",
                 "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'",

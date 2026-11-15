@@ -34,6 +34,8 @@ class CompressResponse(Middleware):
       GZIP_LEVEL        — zlib compression level 1-9 (default 6)
     """
 
+    reads_body = False  # never touches the request body
+
     compressible_types: ClassVar[tuple[str, ...]] = _DEFAULT_COMPRESSIBLE
 
     async def handle(self, request: Request, next: Next) -> Response:
@@ -58,8 +60,30 @@ class CompressResponse(Middleware):
 
     @staticmethod
     def _client_accepts_gzip(request: Request) -> bool:
+        """True when Accept-Encoding allows gzip (``gzip;q=0`` is a refusal)."""
         accept = request.header("accept-encoding", "") or ""
-        return "gzip" in accept.lower()
+        gzip_q: float | None = None
+        star_q: float | None = None
+        for item in accept.lower().split(","):
+            coding, _, params = item.strip().partition(";")
+            coding = coding.strip()
+            if coding not in ("gzip", "x-gzip", "*"):
+                continue
+            q = 1.0
+            for param in params.split(";"):
+                name, _, value = param.strip().partition("=")
+                if name.strip() == "q":
+                    try:
+                        q = float(value.strip())
+                    except ValueError:
+                        q = 0.0
+            if coding == "*":
+                star_q = q
+            else:
+                gzip_q = q if gzip_q is None else max(gzip_q, q)
+        if gzip_q is not None:
+            return gzip_q > 0
+        return star_q is not None and star_q > 0
 
     def _should_compress(self, response: Response) -> bool:
         # Don't double-encode or touch bodiless/cache-revalidation responses.
@@ -75,11 +99,7 @@ class CompressResponse(Middleware):
 
     @staticmethod
     def _add_vary(response: Response, value: str) -> None:
-        existing = next((v for k, v in response._headers.items() if k.lower() == "vary"), None)
-        if existing is None:
-            response.header("Vary", value)
-        elif value.lower() not in {p.strip().lower() for p in existing.split(",")}:
-            response.header("Vary", f"{existing}, {value}")
+        response.vary(value)
 
     @staticmethod
     def _int_env(name: str, default: int, *, lo: int | None, hi: int | None) -> int:

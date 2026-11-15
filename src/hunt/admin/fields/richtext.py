@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as _html
 import re
 from typing import Any
 
@@ -46,8 +47,10 @@ def _sanitize_html(raw: str) -> str:
             link_rel="noopener noreferrer nofollow",
         )
     except ImportError:
-        # Fallback: strip all tags. Install nh3 for rich-text rendering.
-        return _TAG_RE.sub("", raw)
+        # Fallback: no sanitizer available, so escape everything. A tag-strip
+        # regex is not safe here (``<img onerror=...`` with no closing ``>``
+        # survives it). Install nh3 for rich-text rendering.
+        return _html.escape(raw)
 
 
 class RichText(Field):

@@ -2,45 +2,37 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 
+from hunt.console.commands.db.boot import boot_application, is_production, warn_if_throwaway_database
+
 
 def _load_env() -> None:
-    from dotenv import load_dotenv
-
-    env_file = Path.cwd() / ".env"
-    if env_file.exists():
-        load_dotenv(env_file, override=False)
+    """Boot the app (or load .env) so the configured database is the one migrated."""
+    boot_application()
 
 
-def _get_migrator() -> any:
+def _get_migrator(warn: bool = True) -> Any:
     _load_env()
+    if warn:
+        warn_if_throwaway_database()
     from hunt.database.schema.migration import Migrator
 
     migrations_path = Path.cwd() / "database" / "migrations"
     return Migrator(migrations_path)
 
 
-@click.group("migrate", invoke_without_command=True)
-@click.pass_context
-def migrate_group(ctx: click.Context) -> None:
-    """Run pending migrations (or use a sub-command: rollback, fresh, status)."""
-    if ctx.invoked_subcommand is None:
-        migrator = _get_migrator()
-        ran = migrator.run()
-        if not ran:
-            click.echo("Nothing to migrate.")
-        else:
-            for name in ran:
-                click.echo(f"  Migrated: {name}")
+def _run_pending() -> None:
+    from hunt.database.schema.migration import MigrationError
 
-
-@migrate_group.command("run")
-def migrate_run() -> None:
-    """Run pending migrations."""
     migrator = _get_migrator()
-    ran = migrator.run()
+    try:
+        ran = migrator.run()
+    except MigrationError as exc:
+        click.echo(f"  ERROR: {exc}", err=True)
+        raise SystemExit(1) from exc
     if not ran:
         click.echo("Nothing to migrate.")
     else:
@@ -48,11 +40,47 @@ def migrate_run() -> None:
             click.echo(f"  Migrated: {name}")
 
 
+def _refuse_in_production(action: str, force: bool) -> None:
+    if is_production() and not force:
+        click.echo(
+            f"  ERROR: refusing to {action} while APP_ENV=production. Re-run with --force if you really mean it.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+
+@click.group("migrate", invoke_without_command=True)
+@click.pass_context
+def migrate_group(ctx: click.Context) -> None:
+    """Run pending migrations (or use a sub-command: rollback, fresh, status)."""
+    if ctx.invoked_subcommand is None:
+        _run_pending()
+
+
+@migrate_group.command("run")
+def migrate_run() -> None:
+    """Run pending migrations."""
+    _run_pending()
+
+
 @migrate_group.command("rollback")
-def migrate_rollback() -> None:
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Allow in production, and drop tracking rows whose migration file is missing.",
+)
+def migrate_rollback(force: bool) -> None:
     """Rollback the last batch of migrations."""
+    from hunt.database.schema.migration import MigrationError
+
     migrator = _get_migrator()
-    rolled = migrator.rollback()
+    _refuse_in_production("roll back migrations", force)
+    try:
+        rolled = migrator.rollback(force=force)
+    except MigrationError as exc:
+        click.echo(f"  ERROR: {exc}", err=True)
+        raise SystemExit(1) from exc
     if not rolled:
         click.echo("Nothing to rollback.")
     else:
@@ -61,11 +89,19 @@ def migrate_rollback() -> None:
 
 
 @migrate_group.command("fresh")
+@click.option("--force", is_flag=True, default=False, help="Allow in production.")
 @click.confirmation_option(prompt="This will drop all tables. Continue?")
-def migrate_fresh() -> None:
+def migrate_fresh(force: bool) -> None:
     """Drop all tables and re-run all migrations."""
+    from hunt.database.schema.migration import MigrationError
+
     migrator = _get_migrator()
-    ran = migrator.fresh()
+    _refuse_in_production("drop all tables", force)
+    try:
+        ran = migrator.fresh()
+    except MigrationError as exc:
+        click.echo(f"  ERROR: {exc}", err=True)
+        raise SystemExit(1) from exc
     for name in ran:
         click.echo(f"  Migrated: {name}")
 
@@ -85,7 +121,12 @@ def migrate_status(pending: bool) -> None:
     for s in statuses:
         if not s["ran"]:
             has_pending = True
-        status = click.style("Ran", fg="green") if s["ran"] else click.style("Pending", fg="yellow")
+        if s.get("dirty"):
+            status = click.style("Dirty (started, not finished)", fg="red")
+        elif s["ran"]:
+            status = click.style("Ran", fg="green")
+        else:
+            status = click.style("Pending", fg="yellow")
         click.echo(f"{s['migration']:<50} {status}")
     if pending and has_pending:
         sys.exit(1)

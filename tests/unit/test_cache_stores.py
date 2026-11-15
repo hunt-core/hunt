@@ -296,15 +296,15 @@ class TestCacheManagerEnv:
         monkeypatch.setenv("REDIS_DB", "3")
         monkeypatch.setenv("REDIS_PASSWORD", "s3cret")
         monkeypatch.setenv("CACHE_PREFIX", "myapp:")
-        mock_module = MagicMock()
-        with patch.dict(sys.modules, {"redis": mock_module}):
+        # REDIS-L1: with env-only settings the cache shares the one client
+        # factory (REDIS_URL, timeouts) instead of building its own client.
+        shared = MagicMock()
+        with patch("hunt.redis_connection.get_redis", return_value=shared):
             mgr = self._manager()
             store = mgr._get_store()
         assert isinstance(store, RedisStore)
         assert store._prefix == "myapp:"
-        mock_module.Redis.assert_called_once_with(
-            host="redis.example.com", port=6380, db=3, password="s3cret", decode_responses=False
-        )
+        assert store._redis is shared
 
     def test_explicit_args_override_env(self, monkeypatch):
         import sys
@@ -317,7 +317,13 @@ class TestCacheManagerEnv:
             mgr = self._manager()
             mgr.configure("redis", host="explicit", port=7000, password="arg-pass")
         mock_module.Redis.assert_called_once_with(
-            host="explicit", port=7000, db=0, password="arg-pass", decode_responses=False
+            host="explicit",
+            port=7000,
+            db=0,
+            password="arg-pass",
+            decode_responses=False,
+            socket_timeout=5,
+            socket_connect_timeout=5,
         )
 
     def test_empty_redis_password_env_is_none(self, monkeypatch):
@@ -329,7 +335,13 @@ class TestCacheManagerEnv:
         mock_module = MagicMock()
         with patch.dict(sys.modules, {"redis": mock_module}):
             mgr = self._manager()
-            mgr.configure("redis")
+            mgr.configure("redis", db=0)
         mock_module.Redis.assert_called_once_with(
-            host="127.0.0.1", port=6379, db=0, password=None, decode_responses=False
+            host="127.0.0.1",
+            port=6379,
+            db=0,
+            password=None,
+            decode_responses=False,
+            socket_timeout=5,
+            socket_connect_timeout=5,
         )

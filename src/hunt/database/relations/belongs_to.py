@@ -17,7 +17,7 @@ class BelongsTo:
         fk_val = self._child._attributes.get(self._foreign_key)
         if fk_val is None:
             return None
-        return self._related.query().where(self._owner_key, fk_val).first()
+        return self._related.query()._add_scope_clause("basic", (self._owner_key, "=", fk_val)).first()
 
     def eager_load_for(
         self,
@@ -35,7 +35,9 @@ class BelongsTo:
                 inst._relations[rel_name] = None
             return
 
-        qb = related.query().where_in(ok, fk_values)
+        # The key restriction is a scope predicate: a constraint that uses
+        # or_where cannot widen it.
+        qb = related.query()._add_scope_clause("basic", (ok, "IN", fk_values))
         if constraint:
             qb = constraint(qb)
         results = qb.get()

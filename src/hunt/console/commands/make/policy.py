@@ -11,26 +11,38 @@ from __future__ import annotations
 
 
 class {class_name}:
+    \"\"\"Authorization policy.
+
+    Every ability is denied until you implement it. Return True to allow, e.g.
+    an owner check::
+
+        return model.user_id == user.id
+
+    or an administrator check::
+
+        return bool(user.is_admin)
+    \"\"\"
+
     def view_any(self, user) -> bool:
-        return True
+        return False
 
     def view(self, user, model) -> bool:
-        return True
+        return False
 
     def create(self, user) -> bool:
-        return True
+        return False
 
     def update(self, user, model) -> bool:
-        return True
+        return False
 
     def delete(self, user, model) -> bool:
-        return True
+        return False
 
     def restore(self, user, model) -> bool:
-        return True
+        return False
 
     def force_delete(self, user, model) -> bool:
-        return True
+        return False
 """
 
 
@@ -50,8 +62,12 @@ def make_policy_command(name: str, model: str | None, dry_run: bool, as_json: bo
 
 def _create_policy(name: str, model: str | None = None) -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make._output import output
 
+    validate_identifier(name, "policy name")
+    if model:
+        validate_identifier(model, "model name")
     class_name = Str.pascal(Str.snake(name))
     content = load_stub("policy", _STUB).format(class_name=class_name)
 

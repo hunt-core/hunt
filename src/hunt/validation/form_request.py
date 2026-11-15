@@ -8,6 +8,37 @@ if TYPE_CHECKING:
     from hunt.http.request import Request
 
 
+def request_data(request: Any) -> dict:
+    """Everything a request submitted that rules may refer to: input plus uploaded files.
+
+    ``request.all()`` does not contain uploads, so without this merge file rules would
+    never see a file (``image`` would be skipped and ``required`` would always fail).
+    """
+    data = request.all()
+    data = dict(data) if isinstance(data, dict) else {}
+    try:
+        content_type = request.header("content-type", "") or ""
+        if "multipart/form-data" not in str(content_type).lower():
+            return data
+        request._form()  # parsing the form is what fills the upload maps
+        lists = getattr(request, "_parsed_file_lists", None)
+        if isinstance(lists, dict) and lists:
+            grouped = {name: list(items) for name, items in lists.items()}
+        else:
+            single = getattr(request, "_parsed_files", None)
+            grouped = {name: [item] for name, item in single.items()} if isinstance(single, dict) else {}
+    except Exception:
+        return data
+    for name, items in grouped.items():
+        # A file input left empty is still submitted, as a zero-byte part: that is "no file".
+        items = [item for item in items if getattr(item, "size", 1)]
+        if not items:
+            continue
+        # One file per name is the file itself; a repeated name (``multiple``) is a list.
+        data[name] = items[0] if len(items) == 1 else items
+    return data
+
+
 class FormRequest:
     def __init__(self, request: Request) -> None:
         self.request = request
@@ -34,7 +65,11 @@ class FormRequest:
     # ------------------------------------------------------------------
 
     def validated(self) -> dict:
-        """Return only the fields declared in rules(), after validation passes."""
+        """Return only the validated fields declared in rules() (uploaded files included).
+
+        Nested rules return just the validated leaves: a rule on ``address.city`` yields
+        ``{"address": {"city": ...}}`` and never the rest of ``address``.
+        """
         if self._validated_data is None:
             self._validated_data = self._run_validation()
         return self._validated_data
@@ -61,20 +96,13 @@ class FormRequest:
 
             raise HttpException(403, "Forbidden")
 
-        v = Validator.make(self.request.all(), self.rules())
+        v = Validator.make(request_data(self.request), self.rules())
         if self.messages():
             v.messages(self.messages())
 
-        all_data = v.validate()
+        # Only the leaves addressed by rules() are returned — mass-assignment safety.
+        validated = v.validate()
 
         self.after_validation(v)
 
-        # Return only top-level keys declared in rules() — mass-assignment safety.
-        # 'address.city' → top key 'address'; 'items.*.name' → top key 'items'.
-        safe_keys: set[str] = set()
-        for field in self.rules():
-            top = field.split(".")[0].rstrip("*").strip()
-            if top:
-                safe_keys.add(top)
-
-        return {k: v for k, v in all_data.items() if k in safe_keys}
+        return validated

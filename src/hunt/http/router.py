@@ -118,7 +118,7 @@ class Router:
     def dispatch(self, method: str, path: str, host: str | None = None) -> tuple[Route, dict[str, str]]:
         # Normalize trailing slash — /foo/ and /foo are the same route.
         if path != "/" and path.endswith("/"):
-            path = path.rstrip("/")
+            path = path.rstrip("/") or "/"
         for route in self._routes:
             matched, params = route.matches(method, path, host)
             if matched:
@@ -135,13 +135,29 @@ class Router:
 
     def allowed_methods(self, path: str) -> list[str]:
         """Return all HTTP methods registered for routes whose pattern matches path."""
-        if path != "/" and path.endswith("/"):
-            path = path.rstrip("/")
         methods: set[str] = set()
-        for route in self._routes:
-            if route._pattern.fullmatch(path) is not None:
-                methods.update(route.methods)
+        for route in self.routes_matching_path(path):
+            methods.update(route.methods)
         return sorted(methods)
+
+    def routes_matching_path(self, path: str) -> list[Route]:
+        """Return every route whose URI pattern matches path, whatever its method."""
+        if path != "/" and path.endswith("/"):
+            path = path.rstrip("/") or "/"
+        return [route for route in self._routes if route._pattern.fullmatch(path) is not None]
+
+    def method_override_targets(self, path: str, host: str | None = None) -> list[Route]:
+        """Routes a POST form's ``_method`` field could redirect this path to:
+        those registered for PUT, PATCH or DELETE that match path and host."""
+        if path != "/" and path.endswith("/"):
+            path = path.rstrip("/") or "/"
+        targets: list[Route] = []
+        for route in self._routes:
+            for method in ("PUT", "PATCH", "DELETE"):
+                if route.matches(method, path, host)[0]:
+                    targets.append(route)
+                    break
+        return targets
 
     # ------------------------------------------------------------------
     # Internal
@@ -157,17 +173,26 @@ class Router:
             action,
             middleware=list(self._group_middleware),
             domain=self._group_domain,
+            router=self,
         )
         self._routes.append(route)
         return route
 
-    def _register_named(self, route: Route) -> None:
+    def _register_named(self, route: Route, previous: str | None = None) -> None:
+        """Index *route* under its name. Called by ``Route.named()``.
+
+        Registering the same route under the same name again is a no-op; a name
+        already held by a different route raises.
+        """
         if route.name:
-            if route.name in self._named:
+            existing = self._named.get(route.name)
+            if existing is not None and existing is not route:
                 raise ValueError(
                     f"Route name '{route.name}' is already registered. Each named route must have a unique name."
                 )
             self._named[route.name] = route
+        if previous and previous != route.name and self._named.get(previous) is route:
+            del self._named[previous]
 
 
 class _PrefixGroup:

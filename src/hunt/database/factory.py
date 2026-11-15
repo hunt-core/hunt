@@ -45,13 +45,18 @@ class Factory:
     def make(self, overrides: dict[str, Any] | None = None) -> Any:
         data = {**self.definition(), **self._state_overrides, **(overrides or {})}
         instance = self.model.__new__(self.model)
-        instance._attributes = data
+        instance._attributes = {**getattr(self.model, "attributes", {}), **data}
+        instance._original = {}
         instance._exists = False
+        instance._relations = {}
         return instance
 
     def create(self, overrides: dict[str, Any] | None = None) -> Any:
-        data = {**self.definition(), **self._state_overrides, **(overrides or {})}
-        return self.model.create(**data)
+        # Factory data is trusted test/seed data: bypass the mass-assignment
+        # guards so every defined attribute is stored, whatever `fillable` says.
+        instance = self.make(overrides)
+        instance.save()
+        return instance
 
     def make_many(self, count: int, overrides: dict[str, Any] | None = None) -> list:
         return [self.make(overrides) for _ in range(count)]

@@ -16,12 +16,44 @@ _listeners: list[logging.handlers.QueueListener] = []
 _atexit_registered = False
 
 
+def _stop_listener(listener: logging.handlers.QueueListener) -> None:
+    """Flush and stop one listener, then close the real handlers it owns."""
+    try:
+        _listeners.remove(listener)
+    except ValueError:
+        pass
+    try:
+        listener.stop()
+    except Exception:
+        pass
+    for handler in listener.handlers:
+        try:
+            handler.close()
+        except Exception:
+            pass
+
+
 def _stop_listeners() -> None:
     """Flush and stop all background log listeners."""
     while _listeners:
-        listener = _listeners.pop()
+        _stop_listener(_listeners[-1])
+
+
+def _close_handlers(logger: logging.Logger) -> None:
+    """Detach and close every handler of *logger*.
+
+    A queue handler's background listener (and the file handler behind it) is
+    stopped and closed too.  Only this logger's listeners are touched, so
+    rebuilding one channel never silences another.
+    """
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        listener = getattr(handler, "_hunt_listener", None)
+        if listener is not None:
+            _stop_listener(listener)
         try:
-            listener.stop()
+            handler.flush()
+            handler.close()
         except Exception:
             pass
 
@@ -47,7 +79,11 @@ def _maybe_non_blocking(handler: logging.Handler) -> logging.Handler:
     if not _atexit_registered:
         atexit.register(_stop_listeners)
         _atexit_registered = True
-    return logging.handlers.QueueHandler(q)
+    queue_handler = logging.handlers.QueueHandler(q)
+    queue_handler.setLevel(handler.level)
+    # Lets _close_handlers stop exactly this channel's listener.
+    queue_handler._hunt_listener = listener  # type: ignore[attr-defined]
+    return queue_handler
 
 
 def _make_formatter(fmt: str = "[%(asctime)s] %(levelname)-8s %(message)s") -> logging.Formatter:
@@ -77,15 +113,37 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-def _build_channel(name: str, config: dict, base_path: Path | None = None) -> logging.Logger:
-    """Build and return a named stdlib logger from a channel config dict."""
+def _channel_level(config: dict) -> int:
+    level_str = config.get("level") or os.environ.get("LOG_LEVEL", "debug")
+    level = getattr(logging, str(level_str).upper(), logging.DEBUG)
+    return level if isinstance(level, int) else logging.DEBUG
+
+
+def _build_channel(
+    name: str,
+    config: dict,
+    base_path: Path | None = None,
+    channels: dict[str, logging.Logger] | None = None,
+) -> logging.Logger:
+    """Build and return a named stdlib logger from a channel config dict.
+
+    The channel level is set on the logger *and* on each of its handlers, so
+    it still applies when the channel receives records through a ``stack``.
+
+    For a ``stack`` channel, *channels* maps the already-built channel names it
+    may fan out to; a member missing from it raises ``ValueError``.
+
+    Note: the ``file`` driver rotates by size and must be written by a single
+    process per file (several processes rotating the same file corrupt it).
+    With multiple workers give each its own path, or use the ``daily`` or
+    ``stderr`` driver and let the process manager collect the output.
+    """
     logger = logging.getLogger(f"hunt.{name}")
-    logger.handlers.clear()
+    _close_handlers(logger)
     logger.propagate = False
 
     driver = config.get("driver", "file")
-    level_str = config.get("level", os.environ.get("LOG_LEVEL", "debug"))
-    level = getattr(logging, level_str.upper(), logging.DEBUG)
+    level = _channel_level(config)
     logger.setLevel(level)
 
     use_json = os.environ.get("LOG_FORMAT", "text").lower() == "json"
@@ -106,6 +164,7 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
             log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
         )
         handler.setFormatter(_JsonFormatter() if use_json else _make_formatter())
+        handler.setLevel(level)
         logger.addHandler(_maybe_non_blocking(handler))
 
     elif driver == "daily":
@@ -123,42 +182,85 @@ def _build_channel(name: str, config: dict, base_path: Path | None = None) -> lo
             log_path, when="midnight", backupCount=days, encoding="utf-8"
         )
         handler.setFormatter(_JsonFormatter() if use_json else _make_formatter())
+        handler.setLevel(level)
         logger.addHandler(_maybe_non_blocking(handler))
 
     elif driver == "stderr":
         handler = logging.StreamHandler()
         stderr_fmt = _JsonFormatter() if use_json else _make_formatter("%(levelname)-8s %(message)s")
         handler.setFormatter(stderr_fmt)
+        handler.setLevel(level)
         logger.addHandler(handler)
 
     elif driver == "stack":
-        # Fan out to each named channel listed in config["channels"]
-        # The stack channel itself has no handlers — output flows via propagation
-        # to sub-loggers, so we attach sub-loggers via a custom handler instead.
-        channels = config.get("channels", [])
-        for ch_name in channels:
-            sub = logging.getLogger(f"hunt.{ch_name}")
-            if sub.handlers:
-                logger.addHandler(_PropagateHandler(sub))
+        # Fan out to each named channel listed in config["channels"] through a
+        # forwarding handler per member. Each member's handlers carry that
+        # member's level, so e.g. a "warning" stderr member drops debug records.
+        members = config.get("channels", [])
+        if not members:
+            raise ValueError(f"Log stack channel '{name}' lists no channels.")
+        for ch_name in members:
+            if ch_name == name:
+                raise ValueError(f"Log stack channel '{name}' cannot contain itself.")
+            sub = channels.get(ch_name) if channels is not None else None
+            if sub is None:
+                raise ValueError(f"Log stack channel '{name}' references unknown channel '{ch_name}'.")
+            forward = _PropagateHandler(sub)
+            forward.setLevel(level)
+            logger.addHandler(forward)
 
     else:
         # Unknown driver — fall back to stderr
         handler = logging.StreamHandler()
         handler.setFormatter(_JsonFormatter() if use_json else _make_formatter("%(levelname)-8s %(message)s"))
+        handler.setLevel(level)
         logger.addHandler(handler)
 
     return logger
 
 
+def _build_channels(configs: dict[str, dict], base_path: Path | None = None) -> dict[str, logging.Logger]:
+    """Build every channel: plain channels first, then stacks once their members exist.
+
+    Definition order does not matter.  A stack naming a channel that is not
+    configured (or stacks that only reference each other) raises ``ValueError``.
+    """
+    built: dict[str, logging.Logger] = {}
+    stacks: dict[str, dict] = {}
+    for name, cfg in configs.items():
+        if cfg.get("driver", "file") == "stack":
+            stacks[name] = cfg
+        else:
+            built[name] = _build_channel(name, cfg, base_path=base_path)
+
+    for name, cfg in stacks.items():
+        for member in cfg.get("channels", []):
+            if member not in configs:
+                raise ValueError(f"Log stack channel '{name}' references unknown channel '{member}'.")
+
+    pending = dict(stacks)
+    while pending:
+        ready = [n for n, cfg in pending.items() if all(m in built for m in cfg.get("channels", []))]
+        if not ready:
+            raise ValueError(f"Log stack channels reference each other in a cycle: {', '.join(sorted(pending))}.")
+        for name in ready:
+            built[name] = _build_channel(name, pending.pop(name), base_path=base_path, channels=built)
+
+    # Keep the order the channels were declared in.
+    return {name: built[name] for name in configs}
+
+
 class _PropagateHandler(logging.Handler):
-    """Forward records to a specific logger."""
+    """Forward records to a specific logger, honouring that logger's level."""
 
     def __init__(self, target: logging.Logger) -> None:
         super().__init__()
         self._target = target
 
     def emit(self, record: logging.LogRecord) -> None:
-        self._target.handle(record)
+        # Logger.handle() skips the logger's own level check, so apply it here.
+        if record.levelno >= self._target.getEffectiveLevel():
+            self._target.handle(record)
 
 
 class _LogManager:
@@ -196,12 +298,24 @@ class _LogManager:
                 },
                 default="stack",
             )
+
+        Channel levels apply inside a stack too (``stderr`` above only gets
+        warnings).  A stack may be declared before its members; naming an
+        unknown channel raises ``ValueError``.  Calling ``configure()`` again
+        replaces all channels and closes the previous handlers.
+
+        The ``file`` driver must have one writing process per file; see
+        ``_build_channel``.
         """
-        # Stop any listeners from a previous configuration before rebuilding.
-        _stop_listeners()
+        # Reconfiguring replaces the whole channel set: close the handlers (and
+        # stop the background listeners) of every channel this manager built,
+        # then rebuild from the new config.
+        for old in self._channels.values():
+            _close_handlers(old)
+        self._channels = {}
+        self._default_logger = None
         if channels:
-            for name, cfg in channels.items():
-                self._channels[name] = _build_channel(name, cfg, base_path=base_path)
+            self._channels = _build_channels(channels, base_path=base_path)
             if default not in self._channels:
                 default = None
             self._default = default or next(iter(channels))
@@ -225,6 +339,7 @@ class _LogManager:
             if os.environ.get("APP_DEBUG", "false").lower() == "true":
                 sh = logging.StreamHandler()
                 sh.setFormatter(logging.Formatter("%(levelname)-8s %(message)s"))
+                sh.setLevel(logger.level)
                 logger.addHandler(sh)
             self._channels["single"] = logger
             self._default = "single"
@@ -263,7 +378,7 @@ class _LogManager:
         self._get().critical(self._format(message, context))
 
     def exception(self, message: str, exc: Exception | None = None) -> None:
-        self._get().exception(message, exc_info=exc)
+        self._get().exception(message, exc_info=exc if exc is not None else True)
 
     @staticmethod
     def _format(message: str, context: dict) -> str:
@@ -299,7 +414,7 @@ class _ChannelProxy:
         self._logger.critical(_LogManager._format(message, context))
 
     def exception(self, message: str, exc: Exception | None = None) -> None:
-        self._logger.exception(message, exc_info=exc)
+        self._logger.exception(message, exc_info=exc if exc is not None else True)
 
 
 Log = _LogManager()

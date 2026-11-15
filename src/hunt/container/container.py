@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import typing
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -86,9 +87,46 @@ class Container:
         resolved = self._resolve_dependencies(concrete, params)
         return concrete(**resolved)
 
+    @staticmethod
+    def _signature(func: Callable) -> inspect.Signature:
+        """Signature with string annotations (``from __future__ import annotations``) resolved.
+
+        Annotations are resolved one by one when resolving them all at once fails, so a
+        single name that only exists under ``TYPE_CHECKING`` does not hide the others.
+        Annotations that cannot be resolved stay strings.
+        """
+        sig = inspect.signature(func)
+        if not any(isinstance(p.annotation, str) for p in sig.parameters.values()):
+            return sig
+        target = getattr(func, "__func__", func)
+        try:
+            target = inspect.unwrap(target)
+        except ValueError:
+            pass
+        globalns = getattr(target, "__globals__", None)
+        if globalns is None:
+            module = inspect.getmodule(target)
+            globalns = getattr(module, "__dict__", {})
+
+        def _resolve(name: str, annotation: str) -> Any:
+            def _probe() -> None:  # carrier for a single annotation
+                return None
+
+            _probe.__annotations__ = {name: annotation}
+            try:
+                return typing.get_type_hints(_probe, globalns=dict(globalns))[name]
+            except Exception:
+                return annotation
+
+        params = [
+            p.replace(annotation=_resolve(p.name, p.annotation)) if isinstance(p.annotation, str) else p
+            for p in sig.parameters.values()
+        ]
+        return sig.replace(parameters=params)
+
     def _resolve_dependencies(self, func: Callable, overrides: dict, skip_self: bool = False) -> dict:
         try:
-            sig = inspect.signature(func)
+            sig = self._signature(func)
         except (ValueError, TypeError):
             return overrides
 
@@ -96,18 +134,28 @@ class Container:
         for name, param in sig.parameters.items():
             if skip_self and name == "self":
                 continue
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
             if name in overrides:
                 resolved[name] = overrides[name]
                 continue
-            if param.annotation is inspect.Parameter.empty:
-                if param.default is not inspect.Parameter.empty:
+            has_default = param.default is not inspect.Parameter.empty
+            annotation = param.annotation
+            if annotation is inspect.Parameter.empty:
+                if has_default:
                     resolved[name] = param.default
                 continue
-            annotation = param.annotation
             if inspect.isclass(annotation) and self.bound(annotation):
                 resolved[name] = self.make(annotation)
-            elif param.default is not inspect.Parameter.empty:
+            elif has_default:
                 resolved[name] = param.default
+            elif isinstance(annotation, str):
+                owner = getattr(func, "__qualname__", repr(func))
+                raise BindingResolutionError(
+                    f"Cannot resolve parameter '{name}' of {owner}: annotation {annotation!r} could not be "
+                    "evaluated. Import the type at module level (not only under TYPE_CHECKING) or pass the "
+                    "value explicitly."
+                )
 
         return resolved
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import sys
@@ -8,6 +9,12 @@ from pathlib import Path
 
 from hunt.http.request import Request
 from hunt.http.response import Response
+
+_log = logging.getLogger(__name__)
+
+# Shown instead of raw exception text, which can contain hostnames,
+# credentials from a DSN or file paths. The detail goes to the log.
+_ERROR_DETAIL = "Check failed. See the application log for details."
 
 
 def _check_database() -> dict:
@@ -18,8 +25,9 @@ def _check_database() -> dict:
         raw("SELECT 1").fetchone()
         ms = (time.monotonic() - start) * 1000
         return {"ok": True, "label": "Connected", "detail": f"{ms:.1f} ms"}
-    except Exception as exc:
-        return {"ok": False, "label": "Error", "detail": str(exc)[:120]}
+    except Exception:
+        _log.exception("Admin health: database check failed")
+        return {"ok": False, "label": "Error", "detail": _ERROR_DETAIL}
 
 
 def _check_cache() -> dict:
@@ -35,8 +43,9 @@ def _check_cache() -> dict:
             return {"ok": False, "label": "Error", "detail": "Read-back mismatch"}
         driver = type(store).__name__.replace("Store", "").lower()
         return {"ok": True, "label": "Connected", "detail": driver}
-    except Exception as exc:
-        return {"ok": False, "label": "Error", "detail": str(exc)[:120]}
+    except Exception:
+        _log.exception("Admin health: cache check failed")
+        return {"ok": False, "label": "Error", "detail": _ERROR_DETAIL}
 
 
 def _check_queue() -> dict:
@@ -50,7 +59,8 @@ def _check_queue() -> dict:
         msg = str(exc)
         if "no such table" in msg.lower() or "doesn't exist" in msg.lower():
             return {"ok": None, "label": "Not configured", "detail": "jobs table missing — run migrations"}
-        return {"ok": False, "label": "Error", "detail": msg[:120]}
+        _log.exception("Admin health: queue check failed")
+        return {"ok": False, "label": "Error", "detail": _ERROR_DETAIL}
 
 
 def _storage_size(path: Path) -> str:
@@ -71,6 +81,7 @@ def index(request: Request) -> Response:
     from hunt import __version__
     from hunt.admin.application import Admin
 
+    Admin.require_tool(request, "health")
     storage = Path.cwd() / "storage"
 
     checks = [

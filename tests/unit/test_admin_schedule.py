@@ -37,16 +37,21 @@ class TestNextRun:
         assert result == "2024-06-15 13:00"
 
     def test_weekly_finds_next(self):
-        # "0 0 * * 0" — Mondays at midnight (weekday() == 0)
+        # "0 0 * * 1" — Mondays at midnight (cron day-of-week: 0/7 = Sunday, 1 = Monday)
         monday = datetime(2024, 6, 17, 0, 0)  # known Monday
         after = datetime(2024, 6, 15, 12, 0)
-        result = _next_run("0 0 * * 0", after)
+        result = _next_run("0 0 * * 1", after)
         assert result == monday.strftime("%Y-%m-%d %H:%M")
 
-    def test_far_future_returns_dash(self):
-        # expression that will never match in 8 days
-        # "0 0 29 2 *" — Feb 29 midnight — won't occur in any 8-day window
+    def test_far_future_is_found(self):
+        # "0 0 29 2 *" — Feb 29 midnight — is years away, well past the old
+        # 8-day scan window, and must still be computed.
         result = _next_run("0 0 29 2 *", datetime(2024, 6, 15, 0, 0))
+        assert result == "2028-02-29 00:00"
+
+    def test_impossible_date_returns_dash(self):
+        # February 31st never occurs.
+        result = _next_run("0 0 31 2 *", datetime(2024, 6, 15, 0, 0))
         assert result == "—"
 
     def test_returns_string_format(self):

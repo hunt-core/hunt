@@ -384,7 +384,8 @@ class TestFreezeTime:
 
         frozen = datetime.datetime(2024, 7, 4, 0, 0, 0)
         with freeze_time(frozen):
-            assert datetime.datetime.utcnow() == frozen
+            # A naive frozen value is local time; utcnow() is that instant in UTC (TEST-02).
+            assert datetime.datetime.utcnow() == frozen.astimezone(datetime.UTC).replace(tzinfo=None)
 
     def test_yields_the_frozen_datetime(self):
         from hunt.testing.fakes import freeze_time

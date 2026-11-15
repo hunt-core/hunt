@@ -78,9 +78,13 @@ class ApiResource:
 
             **self.merge_when(is_admin, {"admin_note": self.instance.note})
         """
+        if not condition:
+            # Do not evaluate a lazy value whose condition is false: it is
+            # usually guarded precisely because it is expensive or unsafe.
+            return {}
         if callable(data):
             data = data()
-        return data if condition else {}
+        return data or {}
 
     # ------------------------------------------------------------------
     # Resolution and response

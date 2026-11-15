@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt_mod
+import sys
 from contextlib import contextmanager
 from typing import Any
 from unittest.mock import patch
@@ -177,6 +178,9 @@ class NotificationFake:
             def send(self) -> None:
                 fake._sent.append((self._notifiable, self._notification))
 
+            # notify_now() must be recorded too, not delivered for real.
+            send_now = send
+
         from hunt.notifications import notifiable as _notifiable_mod
 
         self._patcher = patch.object(_notifiable_mod, "_NotificationSender", _FakeSender)
@@ -212,6 +216,11 @@ class NotificationFake:
 class MailFake:
     """Replace the mail transport with a recording fake.
 
+    Built on ``Mail.fake()`` / ``Mail.stop_faking()``: while the block is
+    active every ``Mail.send()``, ``Mail.to(...).send()``, ``queue()`` and
+    ``later()`` is recorded and nothing reaches the configured transport or
+    the queue.  The previous state is restored on exit.
+
     Usage::
 
         with MailFake() as fake:
@@ -221,87 +230,208 @@ class MailFake:
     """
 
     def __init__(self) -> None:
-        self._sent: list[tuple[str, Any]] = []  # [(to_address, mailable), ...]
+        from hunt.mail.manager import _MailFake
+
+        # Replaced by the installed fake on __enter__; kept so assertions made
+        # after the block still see what was recorded.
+        self._fake: Any = _MailFake()
+        self._previous: Any = None
 
     def __enter__(self) -> MailFake:
-        fake = self
-
-        class _FakeTransport:
-            def send(self, to: str, subject: str, html: str, text: str = "") -> None:
-                pass
-
         from hunt.mail.manager import Mail
 
-        # Patch send_now on the Mailer so it records instead of sending
-        def _fake_send_now(mailer_self: Any, mailable: Any) -> None:
-            to = getattr(mailer_self, "_to", "")
-            fake._sent.append((to, mailable))
-
-        self._patcher = patch.object(Mail, "send_now", _fake_send_now, create=True)
-        self._patcher.start()
+        self._previous = Mail._fake
+        self._fake = Mail.fake()
         return self
 
     def __exit__(self, *args: Any) -> None:
-        self._patcher.stop()
+        from hunt.mail.manager import Mail
 
-    def assert_sent(self, cls: type, count: int | None = None) -> None:
-        found = [m for _, m in self._sent if isinstance(m, cls)]
-        if count is not None:
-            assert len(found) == count, f"Expected {count} send(s) of {cls.__name__}, got {len(found)}"
-        else:
-            assert found, f"Expected {cls.__name__} to be sent, but it was not"
+        Mail.stop_faking()
+        # Restore an outer fake (nested use) instead of the real transport.
+        Mail._fake = self._previous
+        self._previous = None
+
+    def assert_sent(self, cls: type, count: int | None = None, callback: Any = None) -> None:
+        self._fake.assert_sent(cls, count, callback)
 
     def assert_not_sent(self, cls: type) -> None:
-        found = [m for _, m in self._sent if isinstance(m, cls)]
-        assert not found, f"Expected {cls.__name__} NOT to be sent, but it was"
+        self._fake.assert_not_sent(cls)
 
     def assert_sent_to(self, to: str, cls: type | None = None) -> None:
-        if cls is None:
-            found = [m for addr, m in self._sent if addr == to]
-        else:
-            found = [m for addr, m in self._sent if addr == to and isinstance(m, cls)]
-        assert found, f"Expected mail to '{to}' but none found"
+        self._fake.assert_sent_to(to, cls)
+
+    def assert_queued(self, cls: type, count: int | None = None) -> None:
+        self._fake.assert_queued(cls, count)
 
     def assert_nothing_sent(self) -> None:
-        assert not self._sent, f"Expected no mail sent, got {len(self._sent)}"
+        self._fake.assert_nothing_sent()
 
-    def sent(self, cls: type) -> list[Any]:
-        return [m for _, m in self._sent if isinstance(m, cls)]
+    def sent(self, cls: type | None = None) -> list[Any]:
+        return self._fake.sent(cls)
+
+    def queued(self, cls: type | None = None) -> list[Any]:
+        return self._fake.queued(cls)
 
 
 # ---------------------------------------------------------------------------
 # freeze_time
 # ---------------------------------------------------------------------------
 
+_real_datetime = _dt_mod.datetime
+_real_date = _dt_mod.date
+
+# Unix timestamps of the active freezes (innermost last).
+_frozen_stack: list[float] = []
+
+
+class _FrozenDateMeta(type):
+    """Make ``isinstance`` / ``issubclass`` against the patched ``datetime.date`` behave like the real class."""
+
+    def __instancecheck__(cls, obj: Any) -> bool:
+        return isinstance(obj, _real_date)
+
+    def __subclasscheck__(cls, sub: type) -> bool:
+        return issubclass(sub, _real_date)
+
+
+class _FrozenDatetimeMeta(type):
+    """Make ``isinstance`` / ``issubclass`` against the patched ``datetime.datetime`` behave like the real class."""
+
+    def __instancecheck__(cls, obj: Any) -> bool:
+        return isinstance(obj, _real_datetime)
+
+    def __subclasscheck__(cls, sub: type) -> bool:
+        return issubclass(sub, _real_datetime)
+
+
+class _FrozenDate(_real_date, metaclass=_FrozenDateMeta):
+    """``datetime.date`` stand-in whose ``today()`` is the frozen day.
+
+    It never produces instances of itself: constructing it, and every
+    classmethod, returns a plain ``datetime.date``.
+    """
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        return _real_date(*args, **kwargs)
+
+    @classmethod
+    def today(cls) -> Any:
+        if not _frozen_stack:
+            return _real_date.today()
+        return _real_datetime.fromtimestamp(_frozen_stack[-1]).date()
+
+
+class _FrozenDatetime(_real_datetime, metaclass=_FrozenDatetimeMeta):
+    """``datetime.datetime`` stand-in whose "now" is the frozen instant.
+
+    It never produces instances of itself: constructing it, ``now()`` and the
+    other classmethods all return plain ``datetime.datetime`` objects, so the
+    values behave exactly like ordinary datetimes (database drivers,
+    serializers, ``type(x) is datetime``).  ``isinstance(x, datetime.datetime)``
+    keeps working while the class is patched in because of the metaclass.
+    Outside a ``freeze_time`` block it behaves exactly like ``datetime``.
+    """
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        return _real_datetime(*args, **kwargs)
+
+    @classmethod
+    def now(cls, tz: Any = None) -> Any:
+        if not _frozen_stack:
+            return _real_datetime.now(tz)
+        # fromtimestamp converts the frozen instant into tz (or local time).
+        return _real_datetime.fromtimestamp(_frozen_stack[-1], tz)
+
+    @classmethod
+    def today(cls) -> Any:
+        return cls.now()
+
+    @classmethod
+    def utcnow(cls) -> Any:
+        if not _frozen_stack:
+            return _real_datetime.now(_dt_mod.UTC).replace(tzinfo=None)
+        return _real_datetime.fromtimestamp(_frozen_stack[-1], _dt_mod.UTC).replace(tzinfo=None)
+
+
+def _modules_to_patch(prefixes: tuple[str, ...]) -> list[Any]:
+    found = []
+    for name, module in list(sys.modules.items()):
+        if module is None or module is _dt_mod or name == __name__:
+            continue
+        if any(name == p or name.startswith(p + ".") for p in prefixes):
+            found.append(module)
+    return found
+
 
 @contextmanager
-def freeze_time(frozen_dt: _dt_mod.datetime | None = None):
-    """Freeze time.time() and datetime.datetime.now() to a fixed instant.
+def freeze_time(frozen_dt: _dt_mod.datetime | None = None, modules: tuple[str, ...] | list[str] = ()):
+    """Freeze the clock at a fixed instant.
 
     Usage::
 
         with freeze_time(datetime(2026, 1, 1, 12, 0, 0)) as frozen:
             assert time.time() == frozen.timestamp()
+            assert datetime.datetime.now() == frozen
+
+    *frozen_dt* may be naive (interpreted as local time, like
+    ``datetime.timestamp()``) or timezone-aware; it defaults to the current
+    time.  The block yields *frozen_dt*.
+
+    What is frozen:
+
+    * ``time.time()``, ``time.time_ns()`` and ``time.monotonic()``;
+    * ``datetime.datetime.now()`` / ``today()`` / ``utcnow()`` and
+      ``datetime.date.today()`` reached through the ``datetime`` module.
+      ``now(tz)`` converts the frozen instant into ``tz``.  The values are
+      plain ``datetime`` / ``date`` instances, and ``isinstance(x,
+      datetime.datetime)`` works for them and for any other datetime created
+      before or during the block;
+    * the names ``datetime`` / ``date`` (under any alias) imported with
+      ``from datetime import datetime`` into modules that are already loaded
+      and belong to the ``hunt`` package (e.g. ``hunt.scheduling``) or to a
+      package listed in *modules* (pass your app's package:
+      ``freeze_time(dt, modules=["app"])``).
+
+    Limits:
+
+    * a module outside ``hunt`` / *modules* that did ``from datetime import
+      datetime`` (or ``from time import time``) keeps the real clock;
+    * C extensions and anything calling the OS clock directly (database
+      ``CURRENT_TIMESTAMP``, ``asyncio`` loop time, ``time.sleep``,
+      ``time.perf_counter``) are not affected;
+    * the patch is process-global and not thread-safe: do not run frozen
+      blocks concurrently in several threads.
     """
     if frozen_dt is None:
-        frozen_dt = _dt_mod.datetime.now()
+        frozen_dt = _real_datetime.now()
 
     frozen_ts = frozen_dt.timestamp()
 
-    class _FakeDatetime(_dt_mod.datetime):
-        @classmethod
-        def now(cls, tz: Any = None) -> _FakeDatetime:
-            if tz is not None:
-                return frozen_dt.replace(tzinfo=tz)  # type: ignore[return-value]
-            return frozen_dt  # type: ignore[return-value]
-
-        @classmethod
-        def utcnow(cls) -> _FakeDatetime:
-            return frozen_dt  # type: ignore[return-value]
-
-    with (
+    patches: list[Any] = [
         patch("time.time", return_value=frozen_ts),
+        patch("time.time_ns", return_value=int(frozen_ts * 1_000_000_000)),
         patch("time.monotonic", return_value=frozen_ts),
-        patch("datetime.datetime", _FakeDatetime),
-    ):
+        patch("datetime.datetime", _FrozenDatetime),
+        patch("datetime.date", _FrozenDate),
+    ]
+    # Rebind names captured by "from datetime import datetime/date" in
+    # framework (and requested) modules.
+    for module in _modules_to_patch(("hunt", *modules)):
+        for attr, value in list(vars(module).items()):
+            if value is _real_datetime:
+                patches.append(patch.object(module, attr, _FrozenDatetime))
+            elif value is _real_date:
+                patches.append(patch.object(module, attr, _FrozenDate))
+
+    _frozen_stack.append(frozen_ts)
+    started: list[Any] = []
+    try:
+        for p in patches:
+            p.start()
+            started.append(p)
         yield frozen_dt
+    finally:
+        for p in reversed(started):
+            p.stop()
+        _frozen_stack.pop()

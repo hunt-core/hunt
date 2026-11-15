@@ -30,6 +30,8 @@ def _is_debug() -> bool:
 class DebugPanel(Middleware):
     """Injects an HTML debug toolbar into every text/html response when APP_DEBUG=true."""
 
+    reads_body = False  # never touches the request body
+
     async def handle(self, request: Request, next: Next) -> Response:
         if not _is_debug():
             return await next(request)
@@ -40,6 +42,11 @@ class DebugPanel(Middleware):
 
         if "text/html" not in response.content_type:
             return response
+        if not _inline_scripts_allowed(response):
+            # The panel is inline markup and script. A page whose
+            # Content-Security-Policy forbids inline scripts (the admin panel)
+            # would show a panel that cannot be opened, so leave it out.
+            return response
 
         body = response._body.decode("utf-8", errors="replace")
         close_idx = body.lower().rfind("</body>")
@@ -49,6 +56,26 @@ class DebugPanel(Middleware):
         panel = _build_panel(request, response, elapsed_ms)
         response._body = (body[:close_idx] + panel + body[close_idx:]).encode("utf-8")
         return response
+
+
+def _inline_scripts_allowed(response: Response) -> bool:
+    """False when the response's Content-Security-Policy would block an inline script."""
+    policy = ""
+    for name, value in getattr(response, "_headers", {}).items():
+        if str(name).lower() == "content-security-policy":
+            policy = str(value)
+            break
+    if not policy:
+        return True
+    directives: dict[str, list[str]] = {}
+    for part in policy.split(";"):
+        tokens = part.split()
+        if tokens:
+            directives.setdefault(tokens[0].lower(), [t.lower() for t in tokens[1:]])
+    sources = directives.get("script-src", directives.get("default-src"))
+    if sources is None:
+        return True
+    return "'unsafe-inline'" in sources and not any(s.startswith(("'nonce-", "'sha")) for s in sources)
 
 
 # ---------------------------------------------------------------------------

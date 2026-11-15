@@ -12,6 +12,20 @@ def _write(path: Path, content: str) -> None:
 
 def apply(target: Path) -> None:
     """Overlay SaaS starter kit files on the base skeleton."""
+    from hunt.console.commands.new import csrf_middleware_source, secure_headers_source
+
+    # The Stripe webhook is authenticated by its signature, not by the session
+    # cookie, so it is the one route exempt from CSRF.
+    _write(
+        target / "app" / "middleware" / "verify_csrf_token.py",
+        csrf_middleware_source(["/api/billing/webhook"]),
+    )
+    # The SaaS layout loads Tailwind from its CDN.
+    _write(
+        target / "app" / "middleware" / "secure_headers.py",
+        secure_headers_source("https://cdn.tailwindcss.com"),
+    )
+    _add_billing_extra(target / "pyproject.toml")
     _write(target / "app" / "models" / "team.py", _TEAM_MODEL)
     _write(target / "app" / "models" / "membership.py", _MEMBERSHIP_MODEL)
     _write(target / "app" / "controllers" / "team_controller.py", _TEAM_CONTROLLER)
@@ -29,6 +43,18 @@ def apply(target: Path) -> None:
     _write(target / "README.md", _README)
 
 
+def _add_billing_extra(pyproject: Path) -> None:
+    """Declare the optional `billing` extra (stripe) used by the webhook."""
+    if not pyproject.exists():
+        return
+    text = pyproject.read_text(encoding="utf-8")
+    anchor = "\n[tool.hatch.build.targets.wheel]"
+    if "billing = [" in text or anchor not in text:
+        return
+    extra = 'billing = [\n    "stripe>=8.0",\n]\n'
+    pyproject.write_text(text.replace(anchor, extra + anchor, 1), encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -39,7 +65,10 @@ from hunt.database.model import Model
 
 class Team(Model):
     table = "teams"
-    fillable = ["name", "slug", "plan", "owner_id"]
+    # plan and owner_id are deliberately not fillable: the plan changes only
+    # through billing, and the owner is the logged-in user. Set them explicitly
+    # (team.plan = "pro") and never from request input.
+    fillable = ["name", "slug"]
 
     def owner(self):
         from app.models.user import User
@@ -56,6 +85,8 @@ from hunt.database.model import Model
 
 class Membership(Model):
     table = "memberships"
+    # Memberships grant access. Build them from values your code decided on
+    # (as TeamController.store does); never pass request input to create().
     fillable = ["team_id", "user_id", "role"]
 
     ROLES = ("owner", "admin", "member")
@@ -76,6 +107,7 @@ class Membership(Model):
 _TEAM_CONTROLLER = """\
 import re
 
+from hunt.auth.manager import Auth
 from hunt.http.controller import Controller
 from hunt.http.request import Request
 from hunt.http.response import Response, RedirectResponse
@@ -88,9 +120,18 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+def _unique_slug(name: str) -> str:
+    \"\"\"Slug for *name*; a counter is appended when another team already uses it.\"\"\"
+    base = _slugify(name) or "team"
+    slug, counter = base, 2
+    while Team.where("slug", slug).first() is not None:
+        slug = f"{base}-{counter}"
+        counter += 1
+    return slug
+
+
 class TeamController(Controller):
     def index(self, request: Request) -> Response:
-        from hunt.auth.manager import Auth
         user = Auth.user()
         memberships = Membership.where("user_id", user._attributes["id"]).get() if user else []
         team_ids = [m._attributes["team_id"] for m in memberships]
@@ -101,24 +142,21 @@ class TeamController(Controller):
         return self.view("teams.create", {"errors": {}, "old": {}})
 
     def store(self, request: Request) -> Response:
-        from hunt.auth.manager import Auth
         user = Auth.user()
-        data = {
-            "name": request.input("name", ""),
-            "plan": request.input("plan", "free"),
-        }
+        data = {"name": request.input("name", "")}
         v = Validator.make(data, {"name": "required|string|max:255"})
         if v.fails():
             return self.view("teams.create", {
                 "errors": v.errors()._errors,
                 "old": data,
             })
-        team = Team.create({
-            "name": data["name"],
-            "slug": _slugify(data["name"]),
-            "plan": data["plan"],
-            "owner_id": user._attributes["id"],
-        })
+        team = Team()
+        team.fill({"name": data["name"], "slug": _unique_slug(data["name"])})
+        # Every team starts on the free plan, whatever the form submitted.
+        # Paid plans are set by the billing flow after a successful payment.
+        team.plan = "free"
+        team.owner_id = user._attributes["id"]
+        team.save()
         Membership.create({
             "team_id": team._attributes["id"],
             "user_id": user._attributes["id"],
@@ -129,9 +167,13 @@ class TeamController(Controller):
 
 _BILLING_CONTROLLER = """\
 \"\"\"Billing stub — wire up Stripe or your payment provider here.\"\"\"
+import os
+
+from hunt.auth.manager import Auth
 from hunt.http.controller import Controller
 from hunt.http.request import Request
-from hunt.http.response import Response, RedirectResponse
+from hunt.http.response import HttpException, Response, RedirectResponse
+from app.models.membership import Membership
 from app.models.team import Team
 
 PLANS = {
@@ -140,32 +182,76 @@ PLANS = {
     "enterprise": {"name": "Enterprise", "price": 99, "features": ["Unlimited members", "Custom domain", "SLA", "Dedicated support"]},
 }
 
+# Roles that may see and change a team's billing.
+BILLING_ROLES = ("owner", "admin")
+
+
+def _team_for(user, team_id) -> Team:
+    \"\"\"Return the team if *user* manages its billing.
+
+    404 when the team does not exist, 403 when the user is not an owner or
+    admin of it.
+    \"\"\"
+    try:
+        team = Team.find(int(team_id))
+    except (TypeError, ValueError):
+        team = None
+    if team is None:
+        raise HttpException(404, "Team not found.")
+    if user is None:
+        raise HttpException(403, "Forbidden.")
+    membership = (
+        Membership.where("team_id", team._attributes["id"])
+        .where("user_id", user._attributes["id"])
+        .first()
+    )
+    if membership is None or membership._attributes.get("role") not in BILLING_ROLES:
+        raise HttpException(403, "You are not allowed to manage billing for this team.")
+    return team
+
+
+def _fake_billing_enabled() -> bool:
+    \"\"\"BILLING_FAKE=true lets plans change without payment. Local development only.\"\"\"
+    return os.environ.get("BILLING_FAKE", "false").lower() == "true" and os.environ.get("APP_ENV") != "production"
+
 
 class BillingController(Controller):
-    def show(self, request: Request, team_id: int) -> Response:
-        team = Team.find(team_id)
+    def _page(self, team: Team, error: str | None = None, status: int = 200) -> Response:
         current_plan = PLANS.get(team._attributes.get("plan", "free"), PLANS["free"])
-        return self.view("billing.show", {
+        response = self.view("billing.show", {
             "team": team,
             "current_plan": current_plan,
             "plans": PLANS,
+            "error": error,
         })
+        response.status = status
+        return response
+
+    def show(self, request: Request, team_id: int) -> Response:
+        return self._page(_team_for(Auth.user(), team_id))
 
     def update_plan(self, request: Request, team_id: int) -> Response:
-        team = Team.find(team_id)
+        team = _team_for(Auth.user(), team_id)
         plan = request.input("plan", "free")
         if plan not in PLANS:
             plan = "free"
 
-        # TODO: create Stripe checkout session / subscription here
-        # stripe.Subscription.modify(team._attributes["stripe_subscription_id"], items=[{"price": PLAN_PRICE_IDS[plan]}])
+        if PLANS[plan]["price"] > 0 and not _fake_billing_enabled():
+            # No payment provider is wired up yet, so a paid plan cannot be
+            # granted. Create a checkout session here and set the plan from
+            # the webhook once the payment succeeded:
+            #   stripe.checkout.Session.create(mode="subscription", ...)
+            return self._page(
+                team,
+                error="Paid plans are not available yet: no payment provider is configured.",
+                status=402,
+            )
 
-        team._attributes["plan"] = plan
+        team.plan = plan
         team.save()
-        return RedirectResponse(f"/teams/{team_id}/billing")
+        return RedirectResponse(f"/teams/{team._attributes['id']}/billing")
 
     def webhook(self, request: Request) -> Response:
-        import os
         secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
         if not secret:
             return Response(
@@ -174,10 +260,19 @@ class BillingController(Controller):
                 content_type="application/json",
             )
 
-        sig = request.header("Stripe-Signature", "")
         try:
             import stripe
-            event = stripe.Webhook.construct_event(request.body(), sig, secret)
+        except ImportError:
+            return Response(
+                '{"error": "The stripe package is not installed. Install the billing extra: pip install stripe"}',
+                status=500,
+                content_type="application/json",
+            )
+
+        sig = request.header("Stripe-Signature", "") or ""
+        try:
+            # request.body is the raw bytes Stripe signed.
+            event = stripe.Webhook.construct_event(request.body, sig, secret)
         except Exception:
             return Response(
                 '{"error": "Webhook signature verification failed"}',
@@ -185,15 +280,17 @@ class BillingController(Controller):
                 content_type="application/json",
             )
 
-        # Handle Stripe events here — see https://stripe.com/docs/webhooks
+        self._handle_event(event)
+        return Response('{"received": true}', status=200, content_type="application/json")
+
+    def _handle_event(self, event) -> None:
+        \"\"\"Handle verified Stripe events — see https://stripe.com/docs/webhooks\"\"\"
         # if event["type"] == "customer.subscription.updated":
         #     subscription = event["data"]["object"]
         #     team = Team.where("stripe_subscription_id", subscription["id"]).first()
         #     if team:
-        #         team._attributes["plan"] = subscription["metadata"].get("plan", "free")
+        #         team.plan = subscription["metadata"].get("plan", "free")
         #         team.save()
-
-        return Response('{"received": true}', status=200, content_type="application/json")
 """
 
 # ---------------------------------------------------------------------------
@@ -240,6 +337,7 @@ class TenantMiddleware(Middleware):
 _TEAM_ADMIN = """\
 from hunt.admin import AdminResource
 from hunt.admin.fields import Text, DateTime
+from app.admin.user_resource import is_admin
 from app.models.team import Team
 
 
@@ -259,17 +357,18 @@ class TeamResource(AdminResource):
             DateTime("Created At", attribute="created_at").sortable().hide_from_forms(),
         ]
 
+    # Administrators only. Narrow these (or return False) to restrict the panel further.
     def can_view_any(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_create(self, request) -> bool:
-        return True
+        return is_admin(request)
 
     def can_update(self, request, instance=None) -> bool:
-        return True
+        return is_admin(request)
 
     def can_delete(self, request, instance=None) -> bool:
-        return True
+        return is_admin(request)
 """
 
 # ---------------------------------------------------------------------------
@@ -410,27 +509,14 @@ _TEAMS_CREATE = """\
         @csrf
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
-            <input type="text" name="name" value="@old('name')" placeholder="Acme Corp"
+            <input type="text" name="name" value="{{ old.get('name', '') }}" placeholder="Acme Corp"
                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
             {% if errors.name %}<p class="text-red-500 text-xs mt-1">{{ errors.name[0] }}</p>{% endif %}
         </div>
-        <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Plan</label>
-            <div class="space-y-2">
-                <label class="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-gray-50">
-                    <input type="radio" name="plan" value="free" checked class="text-indigo-600">
-                    <div><div class="font-medium">Free</div><div class="text-xs text-gray-500">1 member · 5 projects</div></div>
-                </label>
-                <label class="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-gray-50">
-                    <input type="radio" name="plan" value="pro" class="text-indigo-600">
-                    <div><div class="font-medium">Pro — $29/mo</div><div class="text-xs text-gray-500">10 members · Unlimited projects</div></div>
-                </label>
-                <label class="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-gray-50">
-                    <input type="radio" name="plan" value="enterprise" class="text-indigo-600">
-                    <div><div class="font-medium">Enterprise — $99/mo</div><div class="text-xs text-gray-500">Unlimited · Custom domain · SLA</div></div>
-                </label>
-            </div>
-        </div>
+        <p class="text-sm text-gray-500">
+            New teams start on the <strong>Free</strong> plan. You can change the plan
+            later from the team's billing page.
+        </p>
         <div class="flex gap-3 pt-2">
             <button type="submit" class="bg-indigo-600 text-white px-5 py-2 rounded-md hover:bg-indigo-700">Create Team</button>
             <a href="/teams" class="text-gray-500 px-5 py-2 hover:underline">Cancel</a>
@@ -450,6 +536,10 @@ _BILLING_SHOW = """\
         Current plan: <span class="font-semibold capitalize">{{ current_plan.name }}</span>
         {% if current_plan.price > 0 %} · ${{ current_plan.price }}/month{% else %} · Free{% endif %}
     </p>
+
+    {% if error %}
+    <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-sm text-red-800">{{ error }}</div>
+    {% endif %}
 
     <form method="POST" action="/teams/{{ team._attributes.id }}/billing/plan" class="space-y-4">
         @csrf
@@ -506,6 +596,8 @@ def register(router: Router) -> None:
         router.get("/teams/{team_id}/billing", billing.show).named("teams.billing.show")
         router.post("/teams/{team_id}/billing/plan", billing.update_plan).named("teams.billing.update")
 
+    # Called by Stripe: authenticated by the webhook signature and exempt from
+    # CSRF in app/middleware/verify_csrf_token.py.
     router.post("/api/billing/webhook", billing.webhook).named("billing.webhook")
 """
 
@@ -536,6 +628,12 @@ def register(router: Router) -> None:
         lambda request: Auth.check()
         and bool(getattr(Auth.user(), "_attributes", {}).get("is_admin"))
     )
+    # The system tools (sessions, cache, logs, queue) expose operational data
+    # and are denied by default. Enable the ones you need, for administrators:
+    # Admin.authorize_tool("sessions")
+    # Admin.authorize_tool("cache")
+    # Admin.authorize_tool("logs")
+    # Admin.authorize_tool("queue")
     Admin.register_to(router)
 """
 
@@ -569,13 +667,23 @@ hunt serve
 Then visit:
 - `http://localhost:8000/register` — create your first account
 - `http://localhost:8000/teams` — create a team
-- `http://localhost:8000/admin` — admin panel (requires `is_admin = True`)
+- `http://localhost:8000/hunt-admin` — admin panel (requires `is_admin = True`)
 
 ## Billing integration
 
-Edit `app/controllers/billing_controller.py` and add your payment provider
-credentials to `.env`. The `update_plan` method has a commented-out Stripe
-stub. The `webhook` method is pre-wired at `POST /api/billing/webhook`.
+Only a team's owners and admins can open its billing page or change its plan.
+New teams always start on the `free` plan, and `update_plan` refuses paid plans
+until a payment provider is wired up in `app/controllers/billing_controller.py`.
+For local experiments set `BILLING_FAKE=true` in `.env` (ignored when
+`APP_ENV=production`) to switch plans without payment.
+
+The Stripe webhook is pre-wired at `POST /api/billing/webhook`. Install the
+optional dependency and set the signing secret:
+
+```bash
+uv pip install -e ".[billing]"
+echo "STRIPE_WEBHOOK_SECRET=whsec_..." >> .env
+```
 
 ## Subdomain-based tenancy
 

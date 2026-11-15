@@ -15,9 +15,10 @@ def _middleware_name(mw: object) -> str:
 def index(request: Request) -> Response:
     from hunt.admin.application import Admin
 
+    Admin.require_tool(request, "routes")
     router = getattr(Admin, "_router", None)
-    search = (request.query("search") or "").strip().lower()
-    method_filter = (request.query("method") or "").upper()
+    search = str(request.query("search") or "").strip().lower()
+    method_filter = str(request.query("method") or "").upper()
 
     try:
         page = max(1, int(request.query("page", "1") or "1"))

@@ -299,7 +299,9 @@ class TestS3DiskInterface:
 
     def test_put_bytes(self):
         self.disk.put("path/file.txt", b"data")
-        self._mock_client.put_object.assert_called_once_with(Bucket="my-bucket", Key="path/file.txt", Body=b"data")
+        self._mock_client.put_object.assert_called_once_with(
+            Bucket="my-bucket", Key="path/file.txt", Body=b"data", ContentType="text/plain"
+        )
 
     def test_put_str_encodes(self):
         self.disk.put("f.txt", "text")
@@ -318,12 +320,19 @@ class TestS3DiskInterface:
     def test_exists_true(self):
         assert self.disk.exists("present.txt") is True
 
+    @staticmethod
+    def _not_found():
+        # Shaped like botocore's ClientError: only a 404 / NoSuchKey means "absent" (STOR-01).
+        exc = Exception("NoSuchKey")
+        exc.response = {"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}}
+        return exc
+
     def test_exists_false(self):
-        self._mock_client.head_object.side_effect = Exception("NoSuchKey")
+        self._mock_client.head_object.side_effect = self._not_found()
         assert self.disk.exists("absent.txt") is False
 
     def test_missing(self):
-        self._mock_client.head_object.side_effect = Exception("NoSuchKey")
+        self._mock_client.head_object.side_effect = self._not_found()
         assert self.disk.missing("absent.txt") is True
 
     def test_delete_single(self):
@@ -383,9 +392,10 @@ class TestS3DiskInterface:
         self._mock_client.put_object.assert_called_once_with(Bucket="my-bucket", Key="uploads/", Body=b"")
 
     def test_files_non_recursive(self):
-        self._mock_client.list_objects_v2.return_value = {
-            "Contents": [{"Key": "dir/a.txt"}, {"Key": "dir/"}, {"Key": "dir/b.txt"}]
-        }
+        # Listings go through the paginator so they are not truncated at 1000 keys (STOR-01).
+        self._mock_client.get_paginator.return_value.paginate.return_value = [
+            {"Contents": [{"Key": "dir/a.txt"}, {"Key": "dir/"}, {"Key": "dir/b.txt"}]}
+        ]
         files = self.disk.files("dir")
         assert "dir/a.txt" in files
         assert "dir/b.txt" in files
@@ -417,7 +427,8 @@ class TestS3DiskInterface:
     def test_put_file_explicit_name_uses_basename(self):
         # An explicit name is reduced to its basename so it cannot escape the
         # target directory (same as LocalDisk).
-        f = _FakeFile(filename="upload.jpg", _data=b"imgdata")
+        # The extension of an explicit name must match the content (STOR-L1).
+        f = _FakeFile(filename="upload.jpg", content_type="image/png", _data=b"imgdata")
         stored = self.disk.put_file("photos", f, name="a/b/avatar.png")
         assert stored == "photos/avatar.png"
 
@@ -425,9 +436,9 @@ class TestS3DiskInterface:
         assert self.disk.mime_type("dir/photo.png") == "image/png"
 
     def test_directories(self):
-        self._mock_client.list_objects_v2.return_value = {
-            "CommonPrefixes": [{"Prefix": "dir/sub1/"}, {"Prefix": "dir/sub2/"}]
-        }
+        self._mock_client.get_paginator.return_value.paginate.return_value = [
+            {"CommonPrefixes": [{"Prefix": "dir/sub1/"}, {"Prefix": "dir/sub2/"}]}
+        ]
         assert self.disk.directories("dir") == ["dir/sub1", "dir/sub2"]
 
     def test_append_read_modify_write(self):
@@ -449,7 +460,7 @@ class TestS3DiskInterface:
         assert self._mock_client.put_object.call_args[1]["Body"] == b"defabc"
 
     def test_append_when_missing_creates(self):
-        self._mock_client.head_object.side_effect = Exception("NoSuchKey")
+        self._mock_client.get_object.side_effect = self._not_found()
         self.disk.append("new.txt", b"data")
         assert self._mock_client.put_object.call_args[1]["Body"] == b"data"
 

@@ -6,7 +6,7 @@ from hunt.database.schema.migration import Migration
 class {{class}}(Migration):
     def up(self) -> None:
         Schema.create("{{table}}", lambda bp: [
-            bp.id(),
+            bp.id(),{{columns}}
             bp.timestamps(),
         ])
 

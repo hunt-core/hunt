@@ -37,16 +37,32 @@ def app_key_bytes() -> bytes:
 _get_app_key = app_key_bytes
 
 
-def sign(payload: str) -> str:
-    """Return an HMAC-SHA256 hex digest for the given payload string."""
+def _signing_key(purpose: str | None) -> bytes:
+    """Return the HMAC key for *purpose*.
+
+    ``None`` uses APP_KEY directly (the original behaviour). A purpose derives
+    an independent sub-key, ``HMAC(APP_KEY, b"hunt." + purpose)``, so that a
+    signature issued for one feature cannot be replayed against another.
+    """
     key = _get_app_key()
-    return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
+    if purpose is None:
+        return key
+    return hmac.new(key, b"hunt." + purpose.encode(), hashlib.sha256).digest()
 
 
-def verify(payload: str, signature: str) -> bool:
-    """Return True if signature matches the HMAC of payload."""
+def sign(payload: str, *, purpose: str | None = None) -> str:
+    """Return an HMAC-SHA256 hex digest for the given payload string.
+
+    Pass *purpose* (for example ``"queue.v1"`` or ``"email-verify"``) to sign
+    with a key derived for that purpose only.
+    """
+    return hmac.new(_signing_key(purpose), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def verify(payload: str, signature: str, *, purpose: str | None = None) -> bool:
+    """Return True if signature matches the HMAC of payload for *purpose*."""
     try:
-        expected = sign(payload)
+        expected = sign(payload, purpose=purpose)
         return hmac.compare_digest(expected, signature)
     except Exception:
         return False

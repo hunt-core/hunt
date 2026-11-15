@@ -12,14 +12,16 @@ from hunt.support.str import Str
 def make_notification_command(name: str) -> None:
     """Create a new Notification class."""
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
+    from hunt.console.commands.make._output import output
 
+    validate_identifier(name, "notification name")
+    output.configure()
     class_name = Str.pascal(Str.snake(name))
     content = load_stub("notification", _STUB).replace("{{class}}", class_name)
 
     out = Path.cwd() / "app" / "notifications" / f"{Str.snake(name)}.py"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content, encoding="utf-8")
-    click.echo(f"  Created Notification: {out.relative_to(Path.cwd())}")
+    output.write(out, content, label="Created Notification")
 
 
 _STUB = """\

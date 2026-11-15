@@ -25,9 +25,14 @@ class Controller:
         return response(str(rendered))
 
     def validate(self, request: Request, rules: dict) -> dict:
+        """Validate the request input and uploaded files against ``rules``.
+
+        Returns only the validated fields (the keys that have rules), not the whole input.
+        """
+        from hunt.validation.form_request import request_data
         from hunt.validation.validator import Validator
 
-        v = Validator.make(request.all(), rules)
+        v = Validator.make(request_data(request), rules)
         return v.validate()
 
     def authorize(self, ability: str, *args: Any) -> None:

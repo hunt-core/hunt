@@ -556,3 +556,471 @@ class TestMigrations:
             status = m.status()
         assert any(s["migration"] == "0001_create_items" and s["ran"] for s in status)
         drop(conn, MIGRATIONS_TABLE, "mig_items")
+
+
+# ===========================================================================
+# Database audit fixes (DB-01 .. DB-16, DB-L*, TEST-03) against real engines
+# ===========================================================================
+
+import importlib  # noqa: E402
+
+from hunt.database.connection import begin as db_begin  # noqa: E402
+from hunt.database.connection import raw as db_raw  # noqa: E402
+from hunt.database.model import Model  # noqa: E402
+from hunt.database.query_builder import QueryBuilder  # noqa: E402
+from hunt.database.soft_deletes import SoftDeletes  # noqa: E402
+
+_conn_mod = importlib.import_module("hunt.database.connection")
+
+_FIX_TABLES = (
+    "fx_users",
+    "fx_posts",
+    "fx_tags",
+    "fx_post_tag",
+    "fx_codes",
+    "fx_children",
+    "fx_parents",
+    "fx_misc",
+    "fx_pairs",
+    "fx_partial",
+    "fx_stray",
+    "fx_mig_a",
+)
+
+
+def _drop_fix_tables(engine) -> None:
+    dialect = engine.dialect.name
+    with engine.connect() as c:
+        if dialect == "sqlite":
+            c.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        elif dialect == "mysql":
+            c.exec_driver_sql("SET FOREIGN_KEY_CHECKS=0")
+        try:
+            cascade = " CASCADE" if dialect == "postgresql" else ""
+            for t in (*_FIX_TABLES, MIGRATIONS_TABLE):
+                c.exec_driver_sql(f"DROP TABLE IF EXISTS {t}{cascade}")
+            c.commit()
+        finally:
+            # The connection goes back to the pool: restore enforcement.
+            if dialect == "sqlite":
+                c.exec_driver_sql("PRAGMA foreign_keys=ON")
+            elif dialect == "mysql":
+                c.exec_driver_sql("SET FOREIGN_KEY_CHECKS=1")
+            c.commit()
+
+
+@pytest.fixture
+def orm(db, monkeypatch):
+    """Make *db* the framework's default connection (ORM, Schema, raw, migrator)."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(_conn_mod, "_config", {"default": "itest"})
+    monkeypatch.setattr(_conn_mod, "_connections", {"itest": db})
+    if db.dialect.name == "sqlite":
+        # Same setup the framework applies to the SQLite engines it creates.
+        _conn_mod._enable_sqlite_foreign_keys(db)
+    _drop_fix_tables(db)
+    Schema.create(
+        "fx_users",
+        lambda bp: (bp.id(), bp.string("name"), bp.string("email").nullable(), bp.integer("credits").default(0)),
+    )
+    Schema.create(
+        "fx_posts",
+        lambda bp: (
+            bp.id(),
+            bp.foreign_id("user_id").nullable().references("id").on("fx_users").on_delete("cascade"),
+            bp.string("title"),
+            bp.string("status").default("draft"),
+            bp.timestamps(),
+            bp.soft_deletes(),
+        ),
+    )
+    yield db
+    assert _conn_mod._pinned == {}
+    _drop_fix_tables(db)
+    if db.dialect.name == "sqlite":
+        db.dispose()
+
+
+class FxUser(Model):
+    table = "fx_users"
+    timestamps = False
+    fillable = ["name", "email", "credits"]
+
+    def posts(self):
+        return self.has_many(FxPost, "user_id")
+
+
+class FxPost(SoftDeletes, Model):
+    table = "fx_posts"
+    fillable = ["user_id", "title", "status"]
+
+    def tags(self):
+        return self.belongs_to_many(FxTag, "fx_post_tag", "fx_post_id", "fx_tag_id")
+
+
+class FxTag(SoftDeletes, Model):
+    table = "fx_tags"
+    timestamps = False
+    fillable = ["name"]
+
+
+class FxCode(Model):
+    table = "fx_codes"
+    primary_key = "code"
+    timestamps = False
+    fillable = ["label"]
+
+
+def _fresh_count(engine, table: str) -> int:
+    with engine.connect() as c:
+        return int(c.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar())
+
+
+class TestFixQueryBuilder:
+    def test_where_like_escapes_wildcards(self, orm):
+        FxUser.create(name="100% legit", email="a_b@example.com")
+        FxUser.create(name="100 percent", email="aXb@example.com")
+        FxUser.create(name="Bang! Smith", email="c@example.com")
+        assert [u.name for u in FxUser.where_like("name", "100%").get()] == ["100% legit"]
+        assert [u.name for u in FxUser.where_like("email", "a_b").get()] == ["100% legit"]
+        assert [u.name for u in FxUser.where_like("name", "!").get()] == ["Bang! Smith"]
+        assert FxUser.where_like("name", "%").count() == 1
+        assert FxUser.where_like("name", "_").count() == 0
+        assert FxUser.where_like("name", "").count() == 3
+        # Case-insensitive on every dialect, and usable on a non-text column.
+        assert FxUser.where_like("name", "bang").count() == 1
+        assert FxUser.where_like("id", "1").or_where_like("name", "SMITH").count() == 2
+
+    def test_empty_in_between_and_ilike(self, orm):
+        for name in ("Alice", "bob", "Carol"):
+            FxUser.create(name=name)
+        assert FxUser.where_in("id", []).count() == 0
+        assert FxUser.where_not_in("id", []).count() == 3
+        assert FxUser.where("name", "x").or_where("id", "IN", [1, 2]).count() == 2
+        ids = sorted(u.id for u in FxUser.all().get())
+        assert FxUser.where("id", "BETWEEN", [ids[1], ids[2]]).count() == 2
+        assert FxUser.where("name", "ILIKE", "ALICE").count() == 1
+        assert FxUser.where("name", "NOT ILIKE", "ALICE").count() == 2
+        assert FxUser.where("email", None).count() == 3
+        assert FxUser.where("email", "!=", None).count() == 0
+
+    def test_paging_inputs_are_clamped_and_offset_alone_is_valid(self, orm):
+        for name in ("a", "b", "c"):
+            FxUser.create(name=name)
+        page = FxUser.order_by("id").paginate(per_page=0, page=-4)
+        assert (page.per_page, page.current_page, page.total) == (1, 1, 3)
+        assert [u.name for u in page.data] == ["a"]
+        assert [u.name for u in FxUser.order_by("id").offset(1).get()] == ["b", "c"]
+        with pytest.raises(ValueError):
+            FxUser.query().offset(-1)
+
+    def test_count_with_group_by_and_distinct(self, orm):
+        u1 = FxUser.create(name="a")
+        u2 = FxUser.create(name="b")
+        for uid in (u1.id, u1.id, u2.id):
+            FxPost.create(user_id=uid, title="t")
+        assert FxPost.query().select("user_id").group_by("user_id").count() == 2
+        assert FxPost.query().select("user_id").distinct().count() == 2
+        page = QueryBuilder("fx_posts").select("user_id").group_by("user_id").order_by("user_id").paginate(1, 2)
+        assert page.total == 2 and len(page.data) == 1
+
+    def test_or_where_stays_inside_soft_delete_scope(self, orm):
+        FxPost.create(title="a")
+        FxPost.create(title="b").delete()
+        assert [p.title for p in FxPost.where("title", "a").or_where("title", "b").get()] == ["a"]
+        assert FxPost.where("title", "a").or_where("title", "b").update({"status": "x"}) == 1
+        assert FxPost.query().only_trashed().first().status == "draft"
+        assert FxPost.where("title", "zzz").or_where("title", "a").delete() == 1
+        assert FxPost.query().with_trashed().count() == 2
+        assert FxPost.query().with_trashed().where("title", "b").force_delete() == 1
+        assert _fresh_count(orm, "fx_posts") == 1
+
+    def test_insert_many_and_string_primary_key(self, orm):
+        Schema.create("fx_codes", lambda bp: (bp.string("code", 32).primary_key(), bp.string("label").nullable()))
+        QueryBuilder("fx_codes").insert_many([{"code": "A", "label": "la"}, {"label": "lb", "code": "B"}])
+        assert FxCode.find("B").label == "lb"
+        with pytest.raises(ValueError):
+            QueryBuilder("fx_codes").insert_many([{"code": "C"}, {"code) VALUES ('x'); --": "D"}])
+        code = FxCode().force_fill({"code": "X1", "label": "l"})
+        code.save()
+        assert code.code == "X1"
+        code.update(label="changed")
+        assert FxCode.find("X1").label == "changed"
+        assert code.delete() is True and FxCode.find("X1") is None
+
+    def test_generated_id_increment_and_json_free_roundtrip(self, orm):
+        user = FxUser.create(name="a")
+        assert isinstance(user.id, int) and user.id > 0
+        assert user.increment("credits", 5) is True
+        assert FxUser.query().where("id", user.id).decrement("credits", 2) == 1
+        assert FxUser.find(user.id).credits == 3
+
+    def test_eager_loading_relations(self, orm):
+        Schema.create("fx_tags", lambda bp: (bp.id(), bp.string("name"), bp.soft_deletes()))
+        Schema.create("fx_post_tag", lambda bp: (bp.integer("fx_post_id"), bp.integer("fx_tag_id")))
+        user = FxUser.create(name="a")
+        other = FxUser.create(name="b")
+        post = FxPost.create(user_id=user.id, title="p", status="live")
+        FxPost.create(user_id=other.id, title="q", status="live")
+        live, gone = FxTag.create(name="live"), FxTag.create(name="gone")
+        post.get_relation("tags").sync([live.id, gone.id])
+        gone.delete()
+
+        users = FxUser.where("id", user.id).with_(
+            {"posts": lambda q: q.where("title", "zzz").or_where("status", "live")}
+        ).get()
+        assert [p.title for p in users[0]._relations["posts"]] == ["p"]
+        posts = FxPost.where("id", post.id).with_("tags").get()
+        assert [t.name for t in posts[0]._relations["tags"]] == ["live"]
+        assert [t.name for t in post.tags()] == ["live"]
+        with pytest.raises(ValueError):
+            FxUser.with_("delete")
+
+
+class TestFixTransactions:
+    def test_rollback_and_savepoints(self, orm):
+        with pytest.raises(RuntimeError):
+            with db_begin():
+                FxUser.create(name="rolled back")
+                db_raw("INSERT INTO fx_users (name) VALUES ('raw')")
+                assert FxUser.query().count() == 2
+                raise RuntimeError("abort")
+        assert _fresh_count(orm, "fx_users") == 0
+
+        with db_begin():
+            FxUser.create(name="outer")
+            with pytest.raises(ValueError):
+                with db_begin():
+                    FxUser.create(name="inner")
+                    raise ValueError("abort inner")
+        assert [u.name for u in FxUser.all().get()] == ["outer"]
+        if hasattr(orm.pool, "checkedout"):
+            assert orm.pool.checkedout() == 0
+
+    def test_uncommitted_orm_writes_are_invisible_elsewhere(self, orm):
+        if orm.dialect.name == "sqlite":
+            pytest.skip("the in-memory SQLite engine has a single shared connection")
+        with db_begin():
+            FxUser.create(name="a")
+            assert _fresh_count(orm, "fx_users") == 0
+        assert _fresh_count(orm, "fx_users") == 1
+
+    def test_database_transactions_mixin(self, orm):
+        from hunt.testing.test_case import DatabaseTransactions
+
+        FxUser.create(name="before")
+        case = DatabaseTransactions()
+        case.setup_method()
+        try:
+            FxUser.create(name="during")
+            with db_begin():
+                FxUser.where("name", "before").update({"name": "changed"})
+            assert FxUser.query().count() == 2
+        finally:
+            case.teardown_method()
+        assert [u.name for u in FxUser.all().get()] == ["before"]
+
+    def test_refresh_database_mixin_orders_by_foreign_keys(self, orm):
+        from hunt.testing.test_case import RefreshDatabase
+
+        user = FxUser.create(name="a")
+        FxPost.create(user_id=user.id, title="t")
+
+        class Case(RefreshDatabase):
+            refresh_tables = ["fx_users", "fx_posts"]
+
+        Case().teardown_method()
+        assert _fresh_count(orm, "fx_users") == 0 and _fresh_count(orm, "fx_posts") == 0
+
+
+class TestFixSchema:
+    def test_id_and_foreign_id_are_compatible_and_enforced(self, orm):
+        user = FxUser.create(name="a")
+        FxPost.create(user_id=user.id, title="t")
+        with pytest.raises(IntegrityError):
+            QueryBuilder("fx_posts").insert({"user_id": 999_999, "title": "orphan"})
+        # ON DELETE CASCADE declared through column.references().on().on_delete()
+        FxUser.where("id", user.id).delete()
+        assert _fresh_count(orm, "fx_posts") == 0
+
+    def test_explicit_id_is_accepted(self, orm):
+        # PostgreSQL: GENERATED BY DEFAULT (ALWAYS rejected explicit ids).
+        QueryBuilder("fx_users").insert({"id": 5000, "name": "explicit"})
+        assert FxUser.find(5000).name == "explicit"
+
+    def test_timestamps_hold_values_past_2038(self, orm):
+        big = 2**33
+        QueryBuilder("fx_posts").insert({"title": "t", "created_at": big, "deleted_at": big})
+        row = QueryBuilder("fx_posts").first()
+        assert row["created_at"] == big and row["deleted_at"] == big
+
+    def test_alter_adds_and_drops_indexes_and_foreign_keys(self, orm):
+        Schema.create("fx_parents", lambda bp: (bp.id(), bp.string("name")))
+        Schema.create("fx_children", lambda bp: (bp.id(), bp.foreign_id("parent_id"), bp.string("slug")))
+        Schema.table(
+            "fx_children",
+            lambda bp: (
+                bp.unique("slug"),
+                bp.index(["parent_id", "slug"]),
+                bp.foreign("parent_id").references("id").on("fx_parents").on_delete("cascade"),
+            ),
+        )
+        db_raw("INSERT INTO fx_parents (name) VALUES ('p')")
+        parent_id = db_raw("SELECT id FROM fx_parents").scalar()
+        db_raw("INSERT INTO fx_children (parent_id, slug) VALUES (:p, 'a')", {"p": parent_id})
+        with pytest.raises(IntegrityError):
+            db_raw("INSERT INTO fx_children (parent_id, slug) VALUES (:p, 'a')", {"p": parent_id})
+        with pytest.raises(IntegrityError):
+            db_raw("INSERT INTO fx_children (parent_id, slug) VALUES (999999, 'b')")
+
+        Schema.table(
+            "fx_children",
+            lambda bp: (bp.drop_foreign(["parent_id"]), bp.drop_unique(["slug"]), bp.drop_index(["parent_id", "slug"])),
+        )
+        db_raw("INSERT INTO fx_children (parent_id, slug) VALUES (999999, 'a')")
+        assert _fresh_count(orm, "fx_children") == 2
+
+    def test_new_column_with_reference_gets_a_foreign_key(self, orm):
+        Schema.table(
+            "fx_posts", lambda bp: bp.foreign_id("editor_id").nullable().references("id").on("fx_users")
+        )
+        with pytest.raises(IntegrityError):
+            QueryBuilder("fx_posts").insert({"title": "t", "editor_id": 999_999})
+
+    def test_composite_primary_key(self, orm):
+        Schema.create(
+            "fx_pairs", lambda bp: (bp.integer("a"), bp.integer("b"), bp.primary(["a", "b"]))
+        )
+        db_raw("INSERT INTO fx_pairs (a, b) VALUES (1, 1)")
+        db_raw("INSERT INTO fx_pairs (a, b) VALUES (1, 2)")
+        with pytest.raises(IntegrityError):
+            db_raw("INSERT INTO fx_pairs (a, b) VALUES (1, 1)")
+
+    def test_change_column_type_and_keep_constraints(self, orm):
+        Schema.create(
+            "fx_misc",
+            lambda bp: (
+                bp.id(),
+                bp.string("amount"),
+                bp.string("slug").unique(),
+                bp.string("note").nullable(),
+                bp.index("note"),
+            ),
+        )
+        db_raw("INSERT INTO fx_misc (amount, slug) VALUES ('42', 'a')")
+
+        def alter(bp):
+            bp.integer("amount").default(7).change()  # VARCHAR -> INTEGER needs USING on PostgreSQL
+            bp.datetime("note").nullable().change()  # DATETIME is not a PostgreSQL type
+            bp.string("extra").nullable().after("amount")
+
+        Schema.table("fx_misc", alter)
+        assert db_raw("SELECT amount FROM fx_misc").scalar() == 42
+        db_raw("INSERT INTO fx_misc (slug) VALUES ('b')")
+        assert db_raw("SELECT amount FROM fx_misc WHERE slug = 'b'").scalar() == 7
+        # The untouched UNIQUE constraint and the index survive (SQLite rebuild).
+        with pytest.raises(IntegrityError):
+            db_raw("INSERT INTO fx_misc (slug) VALUES ('a')")
+        from sqlalchemy import inspect as sa_inspect
+
+        index_names = {i["name"] for i in sa_inspect(orm).get_indexes("fx_misc")}
+        assert "fx_misc_note_index" in index_names
+        assert Schema.has_column("fx_misc", "extra")
+
+    def test_defaults_with_colons_percents_quotes_and_backslashes(self, orm):
+        value = "t: %H:%M :smile: it's a\\b"
+        Schema.create("fx_misc", lambda bp: (bp.id(), bp.string("fmt").default(value), bp.string("x").nullable()))
+        db_raw("INSERT INTO fx_misc (x) VALUES ('1')")
+        assert db_raw("SELECT fmt FROM fx_misc").scalar() == value
+
+    def test_drop_column_if_exists(self, orm):
+        Schema.table("fx_users", lambda bp: bp.drop_column_if_exists("email", "no_such_column"))
+        assert not Schema.has_column("fx_users", "email")
+
+
+_FX_MIG_OK = """
+from hunt.database.schema.builder import Schema
+from hunt.database.schema.migration import Migration
+
+
+class CreateFxMigA(Migration):
+    def up(self):
+        Schema.create("fx_mig_a", lambda bp: (bp.id(), bp.string("name")))
+
+    def down(self):
+        Schema.drop_if_exists("fx_mig_a")
+"""
+
+_FX_MIG_FAIL = """
+from hunt.database.connection import raw
+from hunt.database.schema.builder import Schema
+from hunt.database.schema.migration import Migration
+
+
+class Failing(Migration):
+    def up(self):
+        Schema.create("fx_partial", lambda bp: (bp.id(), bp.string("name")))
+        raw("INSERT INTO fx_partial (name) VALUES ('seed')")
+        raw("INSERT INTO fx_no_such_table (name) VALUES ('boom')")
+"""
+
+
+class TestFixMigrations:
+    def test_failed_migration_is_atomic_or_reported_dirty(self, orm, tmp_path):
+        from hunt.database.schema.migration import MigrationError
+
+        (tmp_path / "0001_ok.py").write_text(_FX_MIG_OK)
+        (tmp_path / "0002_fail.py").write_text(_FX_MIG_FAIL)
+        m = Migrator(tmp_path)
+        with pytest.raises(Exception, match="fx_no_such_table"):
+            m.run()
+        assert Schema.has_table("fx_mig_a")
+        assert m._ran() == ["0001_ok"]
+        if orm.dialect.name == "mysql":
+            # No transactional DDL: the half-applied migration is flagged.
+            assert m._dirty() == ["0002_fail"]
+            with pytest.raises(MigrationError):
+                m.run()
+            assert {"migration": "0002_fail", "ran": False, "dirty": True} in m.status()
+        else:
+            assert not Schema.has_table("fx_partial")
+            assert m._dirty() == []
+            (tmp_path / "0002_fail.py").write_text(_FX_MIG_OK.replace("fx_mig_a", "fx_partial"))
+            assert Migrator(tmp_path).run() == ["0002_fail"]
+
+    def test_tracking_table_is_unique_and_reinitialisable(self, orm, tmp_path):
+        Migrator(tmp_path)
+        Migrator(tmp_path)
+        db_raw(f"INSERT INTO {MIGRATIONS_TABLE} (migration, batch) VALUES ('x', 1)")
+        with pytest.raises(IntegrityError):
+            db_raw(f"INSERT INTO {MIGRATIONS_TABLE} (migration, batch) VALUES ('x', 2)")
+
+    def test_fresh_drops_all_tables(self, orm, tmp_path):
+        (tmp_path / "0001_ok.py").write_text(_FX_MIG_OK.replace('Schema.drop_if_exists("fx_mig_a")', "pass"))
+        (tmp_path / "__init__.py").write_text("")
+        m = Migrator(tmp_path)
+        assert m.run() == ["0001_ok"]
+        db_raw("INSERT INTO fx_mig_a (name) VALUES ('old')")
+        Schema.create(
+            "fx_stray", lambda bp: (bp.id(), bp.foreign_id("a_id").references("id").on("fx_mig_a"))
+        )
+        aid = db_raw("SELECT id FROM fx_mig_a").scalar()
+        db_raw("INSERT INTO fx_stray (a_id) VALUES (:a)", {"a": aid})
+
+        assert m.fresh() == ["0001_ok"]
+        assert not Schema.has_table("fx_stray")
+        assert not Schema.has_table("fx_users")
+        assert _fresh_count(orm, "fx_mig_a") == 0
+        assert m._ran() == ["0001_ok"]
+
+    def test_rollback_missing_file(self, orm, tmp_path):
+        from hunt.database.schema.migration import MigrationError
+
+        (tmp_path / "0001_ok.py").write_text(_FX_MIG_OK)
+        m = Migrator(tmp_path)
+        m.run()
+        (tmp_path / "0001_ok.py").unlink()
+        with pytest.raises(MigrationError):
+            m.rollback()
+        assert m._ran() == ["0001_ok"]
+        assert m.rollback(force=True) == ["0001_ok"]

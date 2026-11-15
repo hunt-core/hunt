@@ -73,17 +73,19 @@
                 <td class="py-4 pr-4 pl-3 sm:pr-6 whitespace-nowrap text-right text-sm font-medium">
                     <div class="flex items-center justify-end gap-x-3">
                         {# Revoke all for this user #}
-                        <form method="post" action="{{ prefix }}/sessions/user/{{ sess.user_id }}/revoke"
-                              onsubmit="return confirm('Revoke all sessions for user {{ sess.user_id }}?')">
+                        <form method="post" action="{{ prefix }}/sessions/user/{{ sess.user_id | urlencode }}/revoke"
+                              data-confirm="Revoke all sessions for user {{ sess.user_id }}?">
                             <input type="hidden" name="_token" value="{{ csrf_token }}">
                             <button type="submit" class="text-yellow-400 hover:text-yellow-300 text-xs">Revoke all for user</button>
                         </form>
-                        {# Revoke this single session #}
-                        <form method="post" action="{{ prefix }}/sessions/{{ sess.id }}/revoke"
-                              onsubmit="return confirm('Revoke this session?')">
+                        {# Revoke this single session, addressed by its public id (never the session id) #}
+                        {% if sess.public_id %}
+                        <form method="post" action="{{ prefix }}/sessions/{{ sess.public_id | urlencode }}/revoke"
+                              data-confirm="Revoke this session?">
                             <input type="hidden" name="_token" value="{{ csrf_token }}">
                             <button type="submit" class="text-red-400 hover:text-red-300">Revoke</button>
                         </form>
+                        {% endif %}
                     </div>
                 </td>
             </tr>

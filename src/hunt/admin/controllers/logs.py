@@ -21,6 +21,19 @@ def _log_path() -> Path:
     return Path.cwd() / "storage" / "logs" / "hunt.log"
 
 
+def _text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, default=str)
+        except Exception:
+            return str(value)
+    return str(value)
+
+
 def _parse_line(line: str) -> dict | None:
     line = line.strip()
     if not line:
@@ -28,13 +41,17 @@ def _parse_line(line: str) -> dict | None:
     if line.startswith("{"):
         try:
             obj = json.loads(line)
-            return {
-                "ts": obj.get("ts", ""),
-                "level": obj.get("level", "info").lower(),
-                "message": obj.get("message", ""),
-                "request_id": obj.get("request_id") or "",
-                "exception": obj.get("exception") or "",
-            }
+            if isinstance(obj, dict):
+                # Structured log fields can be any JSON type (a dict message, a
+                # numeric request id): coerce to text so filtering and
+                # rendering never fail on them.
+                return {
+                    "ts": _text(obj.get("ts", "")),
+                    "level": _text(obj.get("level") or "info").lower(),
+                    "message": _text(obj.get("message", "")),
+                    "request_id": _text(obj.get("request_id") or ""),
+                    "exception": _text(obj.get("exception") or ""),
+                }
         except Exception:
             pass
     m = _TEXT_RE.match(line)
@@ -65,12 +82,13 @@ def _tail(path: Path, n: int) -> list[str]:
 def index(request: Request) -> Response:
     from hunt.admin.application import Admin
 
+    Admin.require_tool(request, "logs")
     ctx = Admin._base_context(request)
 
-    level_filter = (request.query("level") or "").lower()
+    level_filter = str(request.query("level") or "").lower()
     if level_filter not in _LEVELS:
         level_filter = ""
-    search = (request.query("search") or "").strip().lower()
+    search = str(request.query("search") or "").strip().lower()
 
     try:
         page = max(1, int(request.query("page", "1") or "1"))
@@ -89,7 +107,11 @@ def index(request: Request) -> Response:
                 continue
             if level_filter and entry["level"] != level_filter:
                 continue
-            if search and search not in entry["message"].lower() and search not in entry["request_id"].lower():
+            if (
+                search
+                and search not in str(entry["message"]).lower()
+                and search not in str(entry["request_id"]).lower()
+            ):
                 continue
             all_entries.append(entry)
 

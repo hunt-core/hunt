@@ -192,14 +192,22 @@ class TestPasswordBroker:
         self.broker.set_model(model)
 
     def test_send_reset_link_returns_token(self):
-        with patch.object(self.broker, "_delete_existing"), patch.object(self.broker, "_insert_token"):
+        with (
+            patch.object(self.broker, "_delete_existing"),
+            patch.object(self.broker, "_insert_token"),
+            patch.object(self.broker, "_get_row", return_value=None),  # AUTH-L1 cooldown lookup
+        ):
             token = self.broker.send_reset_link("user@example.com")
         assert token is not None
         assert len(token) == 64  # 32 bytes → 64 hex chars
 
     def test_send_reset_link_returns_none_for_unknown_email(self):
         self.broker._model.where.return_value.first.return_value = None
-        with patch.object(self.broker, "_delete_existing"), patch.object(self.broker, "_insert_token"):
+        with (
+            patch.object(self.broker, "_delete_existing"),
+            patch.object(self.broker, "_insert_token"),
+            patch.object(self.broker, "_get_row", return_value=None),  # AUTH-L1 cooldown lookup
+        ):
             result = self.broker.send_reset_link("nope@example.com")
         assert result is None
 
@@ -233,10 +241,13 @@ class TestPasswordBroker:
         row = {"email": "user@example.com", "token": hashed_token, "created_at": int(time.time())}
         with (
             patch.object(self.broker, "_get_row", return_value=row),
-            patch.object(self.broker, "_delete_existing"),
+            # AUTH-L1: the token is consumed with one conditional DELETE (single use).
+            patch.object(self.broker, "_consume", return_value=True),
+            patch("hunt.session.registry.revoke_sessions_for"),
             patch("hunt.auth.manager.hash_password", return_value="newhash"),
         ):
-            result = self.broker.reset({"email": "user@example.com", "token": raw, "password": "newpass"})
+            # AUTH-L1: passwords below the minimum length are refused, so use a real one.
+            result = self.broker.reset({"email": "user@example.com", "token": raw, "password": "newpassword"})
         assert result is True
         assert self.user._attributes["password"] == "newhash"
 
@@ -479,8 +490,16 @@ class TestTokenGuard:
 
     def test_user_found_via_query_param(self):
         req = self._mock_request(bearer=None, query_token="qtoken")
+        # AUTH-L5: tokens in the query string leak into logs and Referer, so the
+        # fallback is off by default and must be enabled per guard.
         with patch("hunt.auth.manager._get_current_request", return_value=req):
-            u = self.guard.user()
+            assert self.guard.user() is None
+
+        from hunt.auth.manager import _TokenGuard
+
+        opt_in = _TokenGuard("api", self.model, "api_token", allow_query=True)
+        with patch("hunt.auth.manager._get_current_request", return_value=req):
+            u = opt_in.user()
         assert u is self.user
 
     def test_check_true_when_user_found(self):
@@ -681,6 +700,14 @@ class TestCanDirectives:
         out = preprocess(source)
         assert "{% if not can('delete') %}" in out
         assert "{% endif %}" in out
+        # @endcannot must be consumed whole (it used to leave a literal "not" behind)
+        assert out == "{% if not can('delete') %}\n<p>Not allowed</p>\n{% endif %}"
+
+        from jinja2 import Environment
+
+        template = Environment(autoescape=True).from_string(out)
+        assert template.render(can=lambda *a: False) == "\n<p>Not allowed</p>\n"
+        assert template.render(can=lambda *a: True) == ""
 
     def test_can_with_model_arg(self):
         from hunt.view.directives import preprocess

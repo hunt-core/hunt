@@ -38,7 +38,11 @@ class {class_name}(Job):
 def make_listener_command(name: str, event_name: str, queued: bool) -> None:
     """Create a new Listener class."""
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
 
+    validate_identifier(name, "listener name")
+    if event_name:
+        validate_identifier(event_name, "event name")
     stub_name = "listener.queued" if queued else "listener"
     stub = load_stub(stub_name, _QUEUED_STUB if queued else _STUB)
     out = Path.cwd() / "app" / "listeners" / f"{name}.py"

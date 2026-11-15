@@ -8,6 +8,20 @@ if TYPE_CHECKING:
     from hunt.mail.message import MailMessage
 
 
+def qualified_name(cls: type) -> str:
+    """Fully-qualified class name (``module.QualName``) used for stored type columns."""
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def type_names(cls: type) -> tuple[str, str]:
+    """Return ``(fully-qualified name, legacy bare name)`` for *cls*.
+
+    New rows store the qualified name; rows written by older versions hold the
+    bare class name, so lookups match either.
+    """
+    return qualified_name(cls), cls.__name__
+
+
 class Notification:
     """Base class for all notifications.
 
@@ -31,6 +45,13 @@ class Notification:
 
             def to_database(self, notifiable):
                 return {"invoice_id": self.invoice.id}
+
+    Set ``should_queue = True`` to deliver through the queue.  A queued
+    notification is stored as its class path plus its instance attributes
+    (JSON-safe values, dates, decimals, bytes or saved models), and the
+    notifiable as ``(model class, primary key)`` which the worker re-fetches;
+    the class must be importable and the notifiable must be a saved model.
+    ``notifiable.notify_now(...)`` always delivers immediately.
     """
 
     def __init__(self) -> None:

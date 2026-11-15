@@ -7,11 +7,10 @@ import click
 
 
 def _get_migrator():
-    from dotenv import load_dotenv
+    from hunt.console.commands.db.boot import boot_application
 
-    env_file = Path.cwd() / ".env"
-    if env_file.exists():
-        load_dotenv(env_file, override=False)
+    # Boot the app so config/database.py selects the database, as for the web process.
+    boot_application()
     from hunt.database.schema.migration import Migrator
 
     return Migrator(Path.cwd() / "database" / "migrations")
@@ -45,5 +44,8 @@ def db_status_command(as_json: bool) -> None:
     click.echo(f"  {'Migration':<55} Status")
     click.echo("  " + "-" * 65)
     for s in statuses:
-        label = click.style("Ran", fg="green") if s["ran"] else click.style("Pending", fg="yellow")
+        if s.get("dirty"):
+            label = click.style("Dirty", fg="red")
+        else:
+            label = click.style("Ran", fg="green") if s["ran"] else click.style("Pending", fg="yellow")
         click.echo(f"  {s['migration']:<55} {label}")

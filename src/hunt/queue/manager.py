@@ -23,7 +23,9 @@ def _build_driver(driver: str, **config: Any) -> Any:
     if driver == "database":
         from hunt.queue.drivers.database import DatabaseDriver
 
-        return DatabaseDriver()
+        return DatabaseDriver(
+            retry_after=config.get("retry_after"), processed_retention=config.get("processed_retention")
+        )
     elif driver == "redis":
         from hunt.queue.drivers.redis import RedisDriver
 

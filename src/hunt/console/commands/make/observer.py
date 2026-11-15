@@ -49,7 +49,11 @@ class {class_name}:
 def make_observer_command(name: str, model: str | None) -> None:
     """Create a new model observer class."""
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
 
+    validate_identifier(name, "observer name")
+    if model:
+        validate_identifier(model, "model name")
     class_name = Str.pascal(Str.snake(name))
     content = load_stub("observer", _STUB).format(class_name=class_name)
 

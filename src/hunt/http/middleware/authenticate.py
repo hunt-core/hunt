@@ -8,6 +8,8 @@ from hunt.http.response import HttpException, RedirectResponse, Response
 class Authenticate(Middleware):
     """Redirect unauthenticated requests to the login page."""
 
+    reads_body = False  # never touches the request body
+
     redirect_to: str = "/login"
 
     async def handle(self, request: Request, next: Next) -> Response:

@@ -13,7 +13,20 @@ def set_facade_application(app: Application) -> None:
     _app = app
 
 
-class Facade:
+class _FacadeMeta(type):
+    """Forward unknown *class* attributes to the facade's container binding.
+
+    ``__getattr__`` defined on a class only handles instance attribute access, so the
+    proxy has to live on the metaclass for ``Cache.get(...)`` style calls to work.
+    """
+
+    def __getattr__(cls, name: str) -> Any:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        return getattr(cls._facade_root(), name)
+
+
+class Facade(metaclass=_FacadeMeta):
     """Base facade that proxies static calls to a container binding."""
 
     @classmethod
@@ -29,12 +42,7 @@ class Facade:
     def __class_getitem__(cls, item: Any) -> Any:
         return cls
 
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        super().__init_subclass__(**kwargs)
-
-    def __class__(self) -> Any:  # type: ignore[override]
-        return self._facade_root()
-
-    @classmethod
-    def __getattr__(cls, name: str) -> Any:  # type: ignore[misc]
-        return getattr(cls._facade_root(), name)
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        return getattr(type(self)._facade_root(), name)

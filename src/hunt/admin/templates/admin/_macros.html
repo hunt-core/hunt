@@ -1,5 +1,6 @@
 {% macro pagination_nav(pag, page_param="page", extra="") %}
-{% if pag.last_page > 1 %}
+{# pag is {} when the underlying table is missing: render nothing instead of failing #}
+{% if pag and pag.last_page is defined and pag.last_page > 1 %}
 {% set _sep = "&" if extra else "" %}
 <nav class="flex items-center justify-between mt-4 px-1" aria-label="Pagination">
     <p class="text-sm text-gray-400">

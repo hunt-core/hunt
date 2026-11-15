@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from hunt.support.str import Str
@@ -8,6 +9,15 @@ if TYPE_CHECKING:
     from hunt.admin.action import Action
     from hunt.admin.field import Field
     from hunt.admin.filter import Filter
+
+
+_SEARCH_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$")
+_UNSORTABLE_FIELD_TYPES = frozenset({"has_many", "belongs_to_many", "media_browser", "password"})
+
+
+def _escape_like(term: str) -> str:
+    """Escape LIKE wildcards with a backslash (fallback when the builder has no ``where_like``)."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class AdminResource:
@@ -125,34 +135,59 @@ class AdminResource:
         return query
 
     def _sortable_columns(self) -> set[str]:
-        """Return the set of column names that may be used for sorting."""
+        """Return the set of column names that may be used for sorting.
+
+        Only fields explicitly marked ``.sortable()`` qualify, plus the default
+        order column. Relation fields are never sortable (their attribute is
+        not a column on this table) and neither are sensitive fields.
+        """
         cols: set[str] = set()
         try:
             for f in self.fields():
-                if hasattr(f, "attribute") and f.attribute:
-                    cols.add(f.attribute)
+                if getattr(f, "_sortable", False) is not True:
+                    continue
+                if getattr(f, "sensitive", False) is True:
+                    continue
+                if getattr(f, "field_type", "") in _UNSORTABLE_FIELD_TYPES:
+                    continue
+                attribute = getattr(f, "attribute", None)
+                if isinstance(attribute, str) and attribute:
+                    cols.add(attribute)
         except Exception:
             pass
         cols.add(self.default_order[0])
         return cols
 
     def apply_search(self, query: Any, search_term: str) -> Any:
-        """Apply LIKE search across `search_columns`."""
-        if not self.search_columns:
+        """Apply LIKE search across `search_columns` as one AND-ed group."""
+        return self._search_group(query, search_term)
+
+    def _search_group(self, query: Any, search_term: Any) -> Any:
+        """AND ``(col0 LIKE ? OR col1 LIKE ? ...)`` onto ``query``.
+
+        The OR-ed columns are always wrapped in a single group so the search
+        can never widen the query past its other constraints (filters,
+        soft-delete scope, a parent foreign key, an ``index_query`` override).
+        """
+        term = str(search_term or "")
+        if not term or not self.search_columns:
             return query
-        # Escape LIKE wildcards in user input to prevent wildcard injection
-        escaped = search_term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        first_col = self.search_columns[0]
-        try:
-            query = query.where(first_col, "LIKE", f"%{escaped}%")
-        except ValueError:
+        columns = [c for c in self.search_columns if isinstance(c, str) and _SEARCH_IDENT_RE.match(c)]
+        if not columns:
             return query
-        for col in self.search_columns[1:]:
-            try:
-                query = query.or_where(col, "LIKE", f"%{escaped}%")
-            except ValueError:
-                continue
-        return query
+
+        def _group(q: Any) -> Any:
+            # Prefer the query builder's escape-aware helpers when it has them.
+            if callable(getattr(type(q), "where_like", None)) and callable(getattr(type(q), "or_where_like", None)):
+                for i, col in enumerate(columns):
+                    q = q.where_like(col, term) if i == 0 else q.or_where_like(col, term)
+                return q
+            pattern = "%" + _escape_like(term) + "%"
+            for i, col in enumerate(columns):
+                q = q.where(col, "LIKE", pattern) if i == 0 else q.or_where(col, "LIKE", pattern)
+            return q
+
+        return query.where_group(_group)
 
     def apply_filters(self, query: Any, request: Any) -> Any:
         """Apply each registered Filter using its query-string value."""

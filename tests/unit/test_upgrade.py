@@ -85,7 +85,7 @@ def test_skips_files_matching_canonical_content(project, monkeypatch):
         dest.write_text(content)
 
     # Pre-apply bootstrap patches so they don't fire on the run under test
-    CliRunner().invoke(upgrade_command, [])
+    CliRunner().invoke(upgrade_command, ["--yes", "--with-auth"])
     result = CliRunner().invoke(upgrade_command, [])
 
     assert "Already up to date" in result.output
@@ -198,7 +198,7 @@ def test_lock_file_stores_canonical_hash(project, monkeypatch):
 def test_patches_bootstrap_with_auth_routes(project, monkeypatch):
     monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", {})
 
-    CliRunner().invoke(upgrade_command, [])
+    CliRunner().invoke(upgrade_command, ["--yes", "--with-auth"])
 
     bootstrap = (project / "bootstrap" / "app.py").read_text()
     assert "from routes.auth import register as auth_routes" in bootstrap
@@ -208,7 +208,7 @@ def test_patches_bootstrap_with_auth_routes(project, monkeypatch):
 def test_patches_bootstrap_with_admin_routes(project, monkeypatch):
     monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", {})
 
-    CliRunner().invoke(upgrade_command, [])
+    CliRunner().invoke(upgrade_command, ["--yes", "--with-auth"])
 
     bootstrap = (project / "bootstrap" / "app.py").read_text()
     assert "from routes.admin import register as admin_routes" in bootstrap
@@ -218,8 +218,8 @@ def test_patches_bootstrap_with_admin_routes(project, monkeypatch):
 def test_does_not_duplicate_patches(project, monkeypatch):
     monkeypatch.setattr("hunt.console.commands.upgrade._SCAFFOLD_FILES", {})
 
-    CliRunner().invoke(upgrade_command, [])
-    CliRunner().invoke(upgrade_command, [])
+    CliRunner().invoke(upgrade_command, ["--yes", "--with-auth"])
+    CliRunner().invoke(upgrade_command, ["--yes", "--with-auth"])
 
     bootstrap = (project / "bootstrap" / "app.py").read_text()
     assert bootstrap.count("auth_routes(router)") == 1

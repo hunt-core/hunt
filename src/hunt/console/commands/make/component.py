@@ -12,7 +12,7 @@ _STUB = """\
   Props: (list the variables this component expects)
 --}}
 <div class="{{ class|default('') }}">
-    {{- _slot_default|default('')|safe }}
+    {{- _slot_default|default('') }}
 </div>
 """
 
@@ -21,6 +21,9 @@ _STUB = """\
 @click.argument("name")
 def make_component_command(name: str) -> None:
     """Create a new Blade component in resources/views/components/."""
+    from hunt.console.commands.make._naming import validate_identifier
+
+    validate_identifier(name.replace("-", "_"), "component name")
     slug = Str.snake(name).replace("_", "-")
     out = Path.cwd() / "resources" / "views" / "components" / f"{slug}.html"
     out.parent.mkdir(parents=True, exist_ok=True)

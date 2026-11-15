@@ -1,6 +1,38 @@
 from __future__ import annotations
 
+from email.utils import getaddresses
 from typing import Any
+
+
+def _clean_header(value: Any, field: str) -> str:
+    """Return *value* as a header string, rejecting CR/LF (header injection)."""
+    if not isinstance(value, str):
+        raise TypeError(f"Mail {field} must be a string, got {type(value).__name__}.")
+    if "\r" in value or "\n" in value:
+        raise ValueError(f"Mail {field} must not contain line breaks.")
+    return value
+
+
+def _clean_address(value: Any, field: str) -> str:
+    """Validate that *value* is exactly one email address (``a@b`` or ``Name <a@b>``)."""
+    value = _clean_header(value, field).strip()
+    if not value:
+        raise ValueError(f"Mail {field} address must not be empty.")
+    try:
+        parsed = [(name, addr) for name, addr in getaddresses([value]) if name or addr]
+    except Exception as exc:  # pragma: no cover - defensive
+        raise ValueError(f"Invalid mail {field} address: {value!r}") from exc
+    if len(parsed) != 1:
+        raise ValueError(f"Mail {field} must be a single address per value, got {value!r}. Pass a list instead.")
+    addr = parsed[0][1]
+    if not addr or " " in addr or addr.count("@") > 1 or addr.startswith("@") or addr.endswith("@"):
+        raise ValueError(f"Invalid mail {field} address: {value!r}")
+    return value
+
+
+def _clean_addresses(address: str | list[str] | tuple[str, ...], field: str) -> list[str]:
+    values = [address] if isinstance(address, str) else list(address)
+    return [_clean_address(v, field) for v in values]
 
 
 class Mailable:
@@ -18,6 +50,16 @@ class Mailable:
                     self.subject("Welcome!")
                         .view("emails.welcome", {"user": self.user})
                 )
+
+    Header values (subject, addresses, attachment names) are validated when
+    set: line breaks raise ``ValueError`` and each address value must be a
+    single address.
+
+    Queueing: ``Mail.queue()`` stores the class path and the instance
+    attributes as JSON.  Attributes must be JSON-safe values, dates, decimals,
+    bytes or saved models (stored as class + primary key and re-fetched by the
+    worker).  Override ``to_queue_payload()`` / ``from_queue_payload()`` for
+    anything else.
     """
 
     def __init__(self) -> None:
@@ -40,36 +82,24 @@ class Mailable:
     # ------------------------------------------------------------------
 
     def to(self, address: str | list[str]) -> Mailable:
-        if isinstance(address, str):
-            self._to_addresses.append(address)
-        else:
-            self._to_addresses.extend(address)
+        self._to_addresses.extend(_clean_addresses(address, "To"))
         return self
 
     def cc(self, address: str | list[str]) -> Mailable:
-        if isinstance(address, str):
-            self._cc_addresses.append(address)
-        else:
-            self._cc_addresses.extend(address)
+        self._cc_addresses.extend(_clean_addresses(address, "Cc"))
         return self
 
     def bcc(self, address: str | list[str]) -> Mailable:
-        if isinstance(address, str):
-            self._bcc_addresses.append(address)
-        else:
-            self._bcc_addresses.extend(address)
+        self._bcc_addresses.extend(_clean_addresses(address, "Bcc"))
         return self
 
     def reply_to(self, address: str | list[str]) -> Mailable:
-        if isinstance(address, str):
-            self._reply_to_addresses.append(address)
-        else:
-            self._reply_to_addresses.extend(address)
+        self._reply_to_addresses.extend(_clean_addresses(address, "Reply-To"))
         return self
 
     def from_address(self, address: str, name: str = "") -> Mailable:
-        self._from_addr = address
-        self._from_name = name
+        self._from_addr = _clean_address(address, "From")
+        self._from_name = _clean_header(name or "", "From name")
         return self
 
     # ------------------------------------------------------------------
@@ -77,7 +107,7 @@ class Mailable:
     # ------------------------------------------------------------------
 
     def subject(self, subject: str) -> Mailable:
-        self._subject_line = subject
+        self._subject_line = _clean_header(subject, "subject")
         return self
 
     def view(self, template: str, data: dict | None = None) -> Mailable:
@@ -99,13 +129,25 @@ class Mailable:
         return self
 
     def attach(self, file: str, options: dict | None = None) -> Mailable:
-        self._attachments.append({"file": file, **(options or {})})
+        """Attach a file from disk.
+
+        Options: ``as`` (or ``name``) sets the attachment filename, ``mime``
+        sets its content type.  A missing file raises ``FileNotFoundError``
+        when the message is built.
+        """
+        options = dict(options or {})
+        for key in ("as", "name", "mime"):
+            if options.get(key) is not None:
+                _clean_header(options[key], f"attachment {key}")
+        self._attachments.append({"file": str(file), **options})
         return self
 
     def attach_data(self, data: bytes | str, name: str, mime_type: str = "application/octet-stream") -> Mailable:
         """Attach raw bytes or a string without needing a file on disk."""
         if isinstance(data, str):
             data = data.encode()
+        _clean_header(name, "attachment name")
+        _clean_header(mime_type, "attachment mime type")
         self._attachments.append({"_raw_data": data, "_raw_name": name, "_raw_mime": mime_type})
         return self
 
@@ -121,18 +163,21 @@ class Mailable:
     # Rendering
     # ------------------------------------------------------------------
 
+    def has_html(self) -> bool:
+        """True when this mailable has a real HTML body (``html()``, a view, or a custom ``render()``)."""
+        return self._html_content is not None or bool(self._view_name) or type(self).render is not Mailable.render
+
     def render(self) -> str:
-        """Return the HTML body string."""
+        """Return the body string: the HTML body, or the text body for text-only mail.
+
+        A template that fails to render raises; the mail is not sent.
+        """
         if self._html_content is not None:
             return self._html_content
         if self._view_name:
-            try:
-                from hunt.support.helpers import view as make_view
+            from hunt.support.helpers import view as make_view
 
-                rendered = make_view(self._view_name, self._view_data)
-                return str(rendered)
-            except Exception:
-                pass
+            return str(make_view(self._view_name, self._view_data))
         return self._text_content or ""
 
     def _build_and_prepare(self, global_from: tuple[str, str] | None = None) -> Mailable:
@@ -141,3 +186,22 @@ class Mailable:
         if global_from and not self._from_addr:
             self._from_addr, self._from_name = global_from
         return self
+
+    # ------------------------------------------------------------------
+    # Queue serialization
+    # ------------------------------------------------------------------
+
+    def to_queue_payload(self) -> dict[str, Any]:
+        """Return this mailable's state as a JSON-safe dict for the queue."""
+        from hunt.mail._queue_payload import encode_state
+
+        return encode_state(self)
+
+    @classmethod
+    def from_queue_payload(cls, state: dict[str, Any]) -> Mailable:
+        """Rebuild a mailable from ``to_queue_payload()`` output (worker side, ``__init__`` is not called)."""
+        from hunt.mail._queue_payload import decode_state
+
+        obj = cls.__new__(cls)
+        obj.__dict__.update(decode_state(state))
+        return obj

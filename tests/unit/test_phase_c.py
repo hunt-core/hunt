@@ -8,7 +8,9 @@ import pytest
 
 from hunt.mail.mailable import Mailable
 from hunt.mail.manager import _ArrayDriver, _build_mime, _LogDriver, _MailManager
+from hunt.database.model import Model
 from hunt.mail.message import MailMessage
+from hunt.notifications.notification import Notification
 
 # ===========================================================================
 # Mailable — fluent builder
@@ -707,13 +709,19 @@ class TestApplicationMailWiring:
 # ===========================================================================
 
 
-class _PickleableNotification:
-    """Minimal notification stand-in; module-level so pickle can import it."""
+class _QueueableNotification(Notification):
+    """Minimal notification; module-level so the worker can import it by path."""
 
-    greeting = "hello"
+    def __init__(self, greeting="hello"):
+        super().__init__()
+        self.greeting = greeting
 
     def via(self, notifiable):
         return ["mail"]
+
+
+class _QueueableUser(Model):
+    table = "users"
 
 
 class TestQueuedJobRoundTrip:
@@ -749,22 +757,32 @@ class TestQueuedJobRoundTrip:
         from hunt.queue.drivers.database import _serialize_job
         from hunt.queue.job import Job as _Job
 
-        notification = _PickleableNotification()
-        notifiable = {"id": 7}
+        # QUE-04: no pickle. The notifiable travels as (model class, primary key)
+        # and is re-fetched by the worker; the notification as class + state.
+        notification = _QueueableNotification()
+        notifiable = _QueueableUser().force_fill({"id": 7, "password": "hash"})
         job = _SendNotificationJob(notification, notifiable, "mail")
 
-        body = _json.loads(_json.dumps(_serialize_job(job)))
+        encoded = _json.dumps(_serialize_job(job))
+        assert "hash" not in encoded
+        body = _json.loads(encoded)
         cls = _safe_import(body["class"], _Job)
         rebuilt = cls(**body["data"])
 
         delivered = []
         driver = MagicMock()
         driver.send.side_effect = lambda n, notif: delivered.append((n, notif))
-        with patch.object(_NotificationSender, "_resolve", return_value=driver):
+        fetched = _QueueableUser().force_fill({"id": 7})
+        with (
+            patch.object(_NotificationSender, "_resolve", return_value=driver),
+            patch.object(_QueueableUser, "find", return_value=fetched) as find,
+        ):
             rebuilt.handle()
+        find.assert_called_once_with(7)
         assert len(delivered) == 1
-        assert delivered[0][0] == {"id": 7}
+        assert delivered[0][0] is fetched
         assert delivered[0][1].greeting == "hello"
+        assert delivered[0][1].id == notification.id
 
     def test_jobs_are_job_subclasses(self):
         from hunt.mail.manager import _SendMailableJob

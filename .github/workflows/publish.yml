@@ -5,24 +5,71 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
 jobs:
-  publish:
-    name: Build and publish
+  test:
+    name: Tests
+    uses: ./.github/workflows/tests.yml
+
+  build:
+    name: Build
     runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          version: "0.13.8"
+
+      - name: Check the tag matches the package version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)"
+          if [ "v${version}" != "${TAG_NAME}" ]; then
+            echo "Tag ${TAG_NAME} does not match pyproject.toml version ${version}" >&2
+            exit 1
+          fi
+
+      - name: Check the tagged commit is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "Tagged commit ${GITHUB_SHA} is not on main" >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: build
     environment: pypi
     permissions:
       id-token: write  # for trusted publishing
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - name: Download distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          version: "latest"
-
-      - name: Build
-        run: uv build
+          name: dist
+          path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

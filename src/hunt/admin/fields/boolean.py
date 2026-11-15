@@ -13,3 +13,8 @@ class Boolean(Field):
         if val is None:
             return ""
         return "Yes" if val else "No"
+
+    def from_form_value(self, value: Any, current: Any = None) -> Any:
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "on", "yes")
+        return bool(value)

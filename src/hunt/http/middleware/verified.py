@@ -8,6 +8,8 @@ from hunt.http.response import RedirectResponse, Response
 class EnsureEmailIsVerified(Middleware):
     """Redirect unverified users to the email verification notice page."""
 
+    reads_body = False  # never touches the request body
+
     redirect_to: str = "/email/verify"
 
     async def handle(self, request: Request, next: Next) -> Response:

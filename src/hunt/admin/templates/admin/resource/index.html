@@ -87,7 +87,7 @@
         </div>
         {% else %}
         <div class="grid grid-cols-1">
-            <select name="filter_{{ f.slug() }}" onchange="this.form.submit()"
+            <select name="filter_{{ f.slug() }}" data-hunt-change="submit"
                     class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white/5 py-1.5 pr-8 pl-3 text-sm text-white inset-ring inset-ring-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 dark:*:bg-gray-800">
                 <option value="">{{ f.name }}</option>
                 {% for opt in f.options() %}
@@ -112,7 +112,7 @@
         {% endif %}
     </form>
     {% if actions %}
-    <button type="button" onclick="openActionsModal()"
+    <button type="button" data-hunt-action="actions-open"
             class="inline-flex items-center gap-x-1.5 rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">
         Actions
         <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -131,12 +131,11 @@
                 <div class="absolute top-0 left-14 z-10 hidden h-12 items-center space-x-3 bg-gray-900 group-has-checked/table:flex sm:left-12">
                     {% for action in actions %}
                     <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/actions/{{ action.slug() }}"
-                          id="action-form-{{ loop.index }}"
-                          {% if action.destructive %}onsubmit="return confirm('{{ action.confirmation_text or 'Are you sure?' }}')"{% endif %}>
+                          id="action-form-{{ loop.index }}" data-hunt-bulk
+                          {% if action.destructive %}data-confirm="{{ action.confirmation_text or 'Are you sure?' }}"{% endif %}>
                         <input type="hidden" name="_token" value="{{ csrf_token }}">
                         <input type="hidden" name="ids" id="bulk-ids-{{ loop.index }}">
                         <button type="submit"
-                                onclick="document.getElementById('bulk-ids-{{ loop.index }}').value = getSelectedIds()"
                                 class="inline-flex items-center rounded-sm px-2 py-1 text-sm font-semibold shadow-xs inset-ring {% if action.destructive %}bg-red-900/30 text-red-400 inset-ring-red-500/30 hover:bg-red-900/50{% else %}bg-white/10 text-white inset-ring-white/10 hover:bg-white/15{% endif %}">
                             {{ action.name }}
                         </button>
@@ -151,7 +150,7 @@
                             {% if actions %}
                             <th scope="col" class="relative px-7 sm:w-12 sm:px-6">
                                 <div class="group absolute top-1/2 left-4 -mt-2 grid size-4 grid-cols-1">
-                                    <input type="checkbox" id="select-all"
+                                    <input type="checkbox" id="select-all" data-hunt-change="select-all"
                                            class="col-start-1 row-start-1 appearance-none rounded-sm border border-white/20 bg-gray-800/50 checked:border-indigo-500 checked:bg-indigo-500 indeterminate:border-indigo-500 indeterminate:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 forced-colors:appearance-auto">
                                     <svg class="pointer-events-none col-start-1 row-start-1 size-3.5 self-center justify-self-center stroke-white" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                                         <path class="opacity-0 group-has-checked:opacity-100" d="M3 8L6 11L11 3.5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -164,7 +163,7 @@
                             <th scope="col" class="{% if loop.first and not actions %}py-3.5 pl-4 pr-3 sm:pl-0{% else %}px-3 py-3.5{% endif %} text-left text-sm font-semibold text-white">
                                 {% if field._sortable %}
                                 {% set next_dir = 'asc' if (sort == field.attribute and dir == 'desc') else 'desc' %}
-                                <a href="{{ prefix }}/resources/{{ resource_key }}?sort={{ field.attribute }}&dir={{ next_dir }}{% if search %}&search={{ search }}{% endif %}&per_page={{ per_page }}"
+                                <a href="{{ prefix }}/resources/{{ resource_key }}?{{ qs(base_query, sort=field.attribute, dir=next_dir, page=1) }}"
                                    class="group inline-flex items-center gap-x-1 {% if sort == field.attribute %}text-indigo-400{% else %}text-white hover:text-gray-300{% endif %}">
                                     {{ field.label }}
                                     {% if sort == field.attribute %}
@@ -211,11 +210,11 @@
                             <td class="{% if loop.first and not actions %}py-4 pl-4 pr-3 sm:pl-0 font-medium text-white group-has-checked:text-indigo-400{% else %}px-3 py-4 text-sm text-gray-400{% endif %} whitespace-nowrap text-sm">
                                 {% if field.field_type == 'boolean' %}
                                     {% set bool_val = field.value_for(item) %}
-                                    {% if can_update %}
+                                    {% if can_update and not field._readonly and field._show_on_edit %}
                                     <button type="button"
                                             data-toggle-url="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/field-toggle"
                                             data-attribute="{{ field.attribute }}"
-                                            onclick="huntToggleField(this)"
+                                            data-hunt-action="toggle-field"
                                             class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset cursor-pointer transition-colors {% if bool_val %}bg-green-500/10 text-green-400 ring-green-500/20{% else %}bg-gray-400/10 text-gray-400 ring-gray-400/20{% endif %}">
                                         {{ 'Yes' if bool_val else 'No' }}
                                     </button>
@@ -277,7 +276,7 @@
                                     {% endif %}
                                     {% if can_delete %}
                                     <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/{{ item._attributes.get('id') }}/delete"
-                                          style="display:inline" onsubmit="return confirm('Delete this record?')">
+                                          style="display:inline" data-confirm="Delete this record?">
                                         <input type="hidden" name="_token" value="{{ csrf_token }}">
                                         <button type="submit" class="text-gray-400 hover:text-red-400" title="Delete">
                                             <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
@@ -332,7 +331,7 @@
             <span class="font-medium text-white">{{ p.total }}</span>
         </span>
         <div class="grid grid-cols-1">
-            <select onchange="(function(v){var u=new URL(window.location);u.searchParams.set('per_page',v);u.searchParams.set('page','1');window.location=u;})(this.value)"
+            <select data-hunt-change="per-page" aria-label="Rows per page"
                     class="col-start-1 row-start-1 appearance-none rounded-md bg-white/5 py-1 pr-7 pl-2.5 text-sm text-white inset-ring inset-ring-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-500 dark:*:bg-gray-800">
                 {% for opt in per_page_options %}
                 <option value="{{ opt }}" {% if opt == per_page %}selected{% endif %}>{{ opt }} / page</option>
@@ -346,14 +345,14 @@
     {# Right: page navigation #}
     {% if p.last_page > 1 %}
     <nav aria-label="Pagination" class="isolate inline-flex -space-x-px rounded-md shadow-xs dark:shadow-none">
-        <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page - 1, 1] | max }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}&per_page={{ per_page }}"
+        <a href="{{ prefix }}/resources/{{ resource_key }}?{{ qs(base_query, page=[p.current_page - 1, 1] | max) }}"
            class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 inset-ring inset-ring-gray-700 hover:bg-white/5 focus:z-20 focus:outline-offset-0 {% if p.current_page <= 1 %}pointer-events-none opacity-40{% endif %}">
             <span class="sr-only">Previous</span>
             <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd"/></svg>
         </a>
         {% for page_num in range(1, p.last_page + 1) %}
             {% if page_num == 1 or page_num == p.last_page or (page_num >= p.current_page - 2 and page_num <= p.current_page + 2) %}
-            <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ page_num }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}&per_page={{ per_page }}"
+            <a href="{{ prefix }}/resources/{{ resource_key }}?{{ qs(base_query, page=page_num) }}"
                class="relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 {% if page_num == p.current_page %}z-10 bg-indigo-500 text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500{% else %}text-gray-200 inset-ring inset-ring-gray-700 hover:bg-white/5 focus:outline-offset-0{% endif %}">
                 {{ page_num }}
             </a>
@@ -361,7 +360,7 @@
             <span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-400 inset-ring inset-ring-gray-700">…</span>
             {% endif %}
         {% endfor %}
-        <a href="{{ prefix }}/resources/{{ resource_key }}?page={{ [p.current_page + 1, p.last_page] | min }}{% if search %}&search={{ search }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}&per_page={{ per_page }}"
+        <a href="{{ prefix }}/resources/{{ resource_key }}?{{ qs(base_query, page=[p.current_page + 1, p.last_page] | min) }}"
            class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 inset-ring inset-ring-gray-700 hover:bg-white/5 focus:z-20 focus:outline-offset-0 {% if p.current_page >= p.last_page %}pointer-events-none opacity-40{% endif %}">
             <span class="sr-only">Next</span>
             <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
@@ -374,7 +373,7 @@
 {# Actions modal #}
 {% if actions %}
 <div class="relative z-50 hidden" id="actions-modal" role="dialog" aria-modal="true">
-    <div class="fixed inset-0 bg-gray-900/75 transition-opacity" id="actions-backdrop" onclick="closeActionsModal()"></div>
+    <div class="fixed inset-0 bg-gray-900/75 transition-opacity" id="actions-backdrop" data-hunt-action="actions-close"></div>
     <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
         <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
             <div class="relative transform overflow-hidden rounded-lg bg-gray-800 px-4 pt-5 pb-4 text-left shadow-xl transition-all outline outline-1 -outline-offset-1 outline-white/10 sm:my-8 sm:w-full sm:max-w-sm sm:p-6">
@@ -382,14 +381,13 @@
                 <div class="space-y-3">
                     {% for action in actions %}
                     <form method="post" action="{{ prefix }}/resources/{{ resource_key }}/actions/{{ action.slug() }}"
-                          id="modal-form-{{ loop.index }}"
-                          {% if action.destructive %}onsubmit="return confirm('{{ action.confirmation_text or 'Are you sure?' }}')"{% endif %}>
+                          id="modal-form-{{ loop.index }}" data-hunt-bulk
+                          {% if action.destructive %}data-confirm="{{ action.confirmation_text or 'Are you sure?' }}"{% endif %}>
                         <input type="hidden" name="_token" value="{{ csrf_token }}">
                         <input type="hidden" name="ids" id="modal-ids-{{ loop.index }}">
                         <div class="flex items-center justify-between">
                             <span class="text-sm text-gray-300">{{ action.name }}</span>
                             <button type="submit"
-                                    onclick="document.getElementById('modal-ids-{{ loop.index }}').value = getSelectedIds()"
                                     class="rounded-md px-3 py-1.5 text-sm font-semibold shadow-xs {% if action.destructive %}bg-red-600 text-white hover:bg-red-500{% else %}bg-indigo-500 text-white hover:bg-indigo-400{% endif %}">
                                 Run
                             </button>
@@ -398,7 +396,7 @@
                     {% endfor %}
                 </div>
                 <div class="mt-5 sm:mt-6">
-                    <button type="button" onclick="closeActionsModal()"
+                    <button type="button" data-hunt-action="actions-close"
                             class="inline-flex w-full justify-center rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20">
                         Cancel
                     </button>
@@ -408,41 +406,4 @@
     </div>
 </div>
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script>
-var _huntCsrf = {{ csrf_token | tojson }};
-function huntToggleField(btn) {
-    var url = btn.dataset.toggleUrl;
-    var attr = btn.dataset.attribute;
-    fetch(url, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': _huntCsrf},
-        body: JSON.stringify({attribute: attr})
-    }).then(function(r) { return r.json(); }).then(function(data) {
-        var val = data.value;
-        btn.textContent = val ? 'Yes' : 'No';
-        btn.className = 'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset cursor-pointer transition-colors ' +
-            (val ? 'bg-green-500/10 text-green-400 ring-green-500/20' : 'bg-gray-400/10 text-gray-400 ring-gray-400/20');
-    }).catch(function() {});
-}
-function getSelectedIds() {
-    return Array.from(document.querySelectorAll('.row-select:checked')).map(function(el) { return el.value; }).join(',');
-}
-function openActionsModal() {
-    var ids = getSelectedIds();
-    if (!ids) { alert('Please select at least one record.'); return; }
-    document.getElementById('actions-modal').classList.remove('hidden');
-}
-function closeActionsModal() {
-    document.getElementById('actions-modal').classList.add('hidden');
-}
-var selectAll = document.getElementById('select-all');
-if (selectAll) {
-    selectAll.addEventListener('change', function() {
-        document.querySelectorAll('.row-select').forEach(function(el) { el.checked = selectAll.checked; });
-    });
-}
-</script>
 {% endblock %}

@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
-from hunt.database.connection import connection
+from hunt.database.connection import connection, use_connection
+from hunt.database.identifiers import simple_ident as _ident
 
 if TYPE_CHECKING:
     from hunt.database.model import Model
-
-_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-
-
-def _ident(name: str) -> str:
-    if not _IDENT_RE.match(name):
-        raise ValueError(f"Invalid SQL identifier: {name!r}")
-    return name
+    from hunt.database.query_builder import QueryBuilder
 
 
 class BelongsToMany:
@@ -34,30 +27,22 @@ class BelongsToMany:
         self._foreign_key = _ident(foreign_key)
         self._related_key = _ident(related_key)
 
+    def _joined_query(self) -> QueryBuilder:
+        """The related model's own query (soft-delete visibility and global
+        scopes included) joined to the pivot table."""
+        related = self._related
+        pivot = self._pivot_table
+        return related.query().join(
+            pivot,
+            f"{pivot}.{self._related_key}",
+            f"{related.table}.{related.primary_key}",
+        )
+
     def get_results(self) -> list:
         parent_id = self._parent._attributes.get(self._parent.primary_key)
-        related_table = self._related.table
-        sql = (
-            f"SELECT {related_table}.* FROM {related_table} "
-            f"INNER JOIN {self._pivot_table} ON "
-            f"{self._pivot_table}.{self._related_key} = {related_table}.{self._related.primary_key} "
-            f"WHERE {self._pivot_table}.{self._foreign_key} = :parent_id"
-        )
-        engine = connection(self._parent._connection)
-        with engine.connect() as conn:
-            result = conn.execute(text(sql), {"parent_id": parent_id})
-            keys = list(result.keys())
-            rows = [dict(zip(keys, row, strict=False)) for row in result.fetchall()]
-
-        instances = []
-        for row in rows:
-            instance = self._related.__new__(self._related)
-            instance._attributes = row
-            instance._original = dict(row)
-            instance._exists = True
-            instance._relations = {}
-            instances.append(instance)
-        return instances
+        qb = self._joined_query().select_raw(f"{_ident(self._related.table)}.*")
+        qb = qb._add_scope_clause("basic", (f"{self._pivot_table}.{self._foreign_key}", "=", parent_id))
+        return qb.get()
 
     def eager_load_for(
         self,
@@ -65,13 +50,9 @@ class BelongsToMany:
         instances: list[Model],
         constraint: Any = None,
     ) -> None:
-        related_table = self._related.table
         fk = self._foreign_key
-        rk = self._related_key
         pivot = self._pivot_table
-        related = self._related
         pk = instances[0].primary_key if instances else "id"
-        conn_name = getattr(instances[0], "_connection", None) if instances else None
 
         parent_ids = list({inst._attributes.get(pk) for inst in instances if inst._attributes.get(pk) is not None})
         if not parent_ids:
@@ -79,30 +60,18 @@ class BelongsToMany:
                 inst._relations[rel_name] = []
             return
 
-        placeholders = ", ".join(f":p{i}" for i in range(len(parent_ids)))
-        sql = (
-            f"SELECT {related_table}.*, {pivot}.{fk} AS _pivot_{fk} "
-            f"FROM {related_table} "
-            f"INNER JOIN {pivot} ON {pivot}.{rk} = {related_table}.{related.primary_key} "
-            f"WHERE {pivot}.{fk} IN ({placeholders})"
-        )
-        bindings = {f"p{i}": pid for i, pid in enumerate(parent_ids)}
-
-        engine = connection(conn_name)
-        with engine.connect() as conn:
-            result = conn.execute(text(sql), bindings)
-            keys = list(result.keys())
-            rows = [dict(zip(keys, row, strict=False)) for row in result.fetchall()]
-
         pivot_col = f"_pivot_{fk}"
+        qb = self._joined_query().select_raw(f"{_ident(self._related.table)}.*", f"{pivot}.{fk} AS {pivot_col}")
+        # The parent-key restriction is a scope predicate: a constraint that
+        # uses or_where cannot widen it to other parents' rows.
+        qb = qb._add_scope_clause("basic", (f"{pivot}.{fk}", "IN", parent_ids))
+        if constraint:
+            qb = constraint(qb)
+
         grouped: dict[Any, list] = {}
-        for row in rows:
-            pivot_fk_val = row.pop(pivot_col, None)
-            instance = related.__new__(related)
-            instance._attributes = row
-            instance._original = dict(row)
-            instance._exists = True
-            instance._relations = {}
+        for instance in qb.get():
+            pivot_fk_val = instance._attributes.pop(pivot_col, None)
+            instance._original.pop(pivot_col, None)
             grouped.setdefault(pivot_fk_val, []).append(instance)
 
         for inst in instances:
@@ -110,15 +79,15 @@ class BelongsToMany:
 
     def attach(self, related_id: Any, pivot_data: dict | None = None) -> None:
         parent_id = self._parent._attributes.get(self._parent.primary_key)
-        extra = {_ident(k): v for k, v in (pivot_data or {}).items()}
-        data = {self._foreign_key: parent_id, self._related_key: related_id, **extra}
+        data = {self._foreign_key: parent_id, self._related_key: related_id}
+        for k, v in (pivot_data or {}).items():
+            data[_ident(k)] = v
         columns = ", ".join(data.keys())
-        placeholders = ", ".join(f":{k}" for k in data.keys())
+        placeholders = ", ".join(f":_v{j}" for j in range(len(data)))
+        bindings = {f"_v{j}": v for j, v in enumerate(data.values())}
         sql = f"INSERT INTO {self._pivot_table} ({columns}) VALUES ({placeholders})"
-        engine = connection(self._parent._connection)
-        with engine.connect() as conn:
-            conn.execute(text(sql), data)
-            conn.commit()
+        with use_connection(connection(self._parent._connection)) as conn:
+            conn.execute(text(sql), bindings)
 
     def detach(self, related_id: Any | None = None) -> None:
         parent_id = self._parent._attributes.get(self._parent.primary_key)
@@ -128,7 +97,18 @@ class BelongsToMany:
         else:
             sql = f"DELETE FROM {self._pivot_table} WHERE {self._foreign_key} = :pid"
             bindings = {"pid": parent_id}
-        engine = connection(self._parent._connection)
-        with engine.connect() as conn:
+        with use_connection(connection(self._parent._connection)) as conn:
             conn.execute(text(sql), bindings)
-            conn.commit()
+
+    def sync(self, related_ids: list) -> None:
+        """Replace the attached set with *related_ids* atomically.
+
+        The detach and the attaches run in one transaction, so an error
+        part-way through leaves the previous pivot rows in place.
+        """
+        from hunt.database.connection import begin
+
+        with begin(self._parent._connection):
+            self.detach()
+            for related_id in related_ids:
+                self.attach(related_id)

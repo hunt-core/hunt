@@ -183,43 +183,114 @@ class TestSyncBelongsToMany:
     def _make_request(self, inputs: dict) -> MagicMock:
         req = MagicMock()
         req.input.side_effect = lambda key, default=None: inputs.get(key, default)
+        req.all.return_value = dict(inputs)
         return req
 
-    def test_detach_and_reattach(self):
+    @staticmethod
+    def _record(pk):
+        m = MagicMock()
+        m._attributes = {"id": pk}
+        return m
+
+    def _related_resource(self, existing_ids):
+        """A related resource class whose model knows the given primary keys."""
+        resource_cls = MagicMock()
+        query = resource_cls.return_value.model.query.return_value
+        query.where_in.side_effect = lambda pk, ids: MagicMock(
+            get=MagicMock(return_value=[self._record(i) for i in existing_ids if str(i) in ids])
+        )
+        return resource_cls
+
+    def test_only_the_difference_is_written(self):
         from hunt.admin.controllers.resource import _sync_belongs_to_many
         from hunt.admin.fields.belongs_to_many import BelongsToMany
 
-        MockResource = MagicMock()
-        f = BelongsToMany("Tags", MockResource, "tags")
+        f = BelongsToMany("Tags", self._related_resource([1, 2, 3, 5]), "tags")
 
         rel_obj = MagicMock()
+        rel_obj.get_results.return_value = [self._record(1), self._record(2)]
         instance = MagicMock()
         instance.tags.return_value = rel_obj
 
         request = self._make_request({"tags": "1,3,5"})
-        _sync_belongs_to_many(request, instance, [f])
+        changes = _sync_belongs_to_many(request, instance, [f])
 
-        rel_obj.detach.assert_called_once_with()
-        assert rel_obj.attach.call_count == 3
-        rel_obj.attach.assert_any_call(1)
+        # Never a blanket detach: only the removed id goes, only new ids are attached.
+        rel_obj.detach.assert_called_once_with(2)
+        assert rel_obj.attach.call_count == 2
         rel_obj.attach.assert_any_call(3)
         rel_obj.attach.assert_any_call(5)
+        assert changes == {"tags": {"old": ["1", "2"], "new": ["1", "3", "5"]}}
 
-    def test_empty_csv_detaches_all(self):
+    def test_string_keys_are_not_coerced_to_int(self):
         from hunt.admin.controllers.resource import _sync_belongs_to_many
         from hunt.admin.fields.belongs_to_many import BelongsToMany
 
-        MockResource = MagicMock()
-        f = BelongsToMany("Tags", MockResource, "tags")
+        f = BelongsToMany("Tags", self._related_resource(["a1b2", "c3d4"]), "tags")
 
         rel_obj = MagicMock()
+        rel_obj.get_results.return_value = [self._record("a1b2")]
+        instance = MagicMock()
+        instance.tags.return_value = rel_obj
+
+        _sync_belongs_to_many(self._make_request({"tags": "a1b2,c3d4"}), instance, [f])
+
+        rel_obj.detach.assert_not_called()
+        rel_obj.attach.assert_called_once_with("c3d4")
+
+    def test_empty_value_detaches_each_current_relation(self):
+        from hunt.admin.controllers.resource import _sync_belongs_to_many
+        from hunt.admin.fields.belongs_to_many import BelongsToMany
+
+        f = BelongsToMany("Tags", self._related_resource([1, 2]), "tags")
+
+        rel_obj = MagicMock()
+        rel_obj.get_results.return_value = [self._record(1), self._record(2)]
         instance = MagicMock()
         instance.tags.return_value = rel_obj
 
         request = self._make_request({"tags": ""})
         _sync_belongs_to_many(request, instance, [f])
 
-        rel_obj.detach.assert_called_once_with()
+        assert rel_obj.detach.call_count == 2
+        rel_obj.detach.assert_any_call(1)
+        rel_obj.detach.assert_any_call(2)
+        rel_obj.attach.assert_not_called()
+
+    def test_absent_input_leaves_pivots_alone(self):
+        from hunt.admin.controllers.resource import _sync_belongs_to_many
+        from hunt.admin.fields.belongs_to_many import BelongsToMany
+
+        f = BelongsToMany("Tags", self._related_resource([1, 2]), "tags")
+
+        rel_obj = MagicMock()
+        rel_obj.get_results.return_value = [self._record(1)]
+        instance = MagicMock()
+        instance.tags.return_value = rel_obj
+
+        _sync_belongs_to_many(self._make_request({"title": "x"}), instance, [f])
+
+        rel_obj.detach.assert_not_called()
+        rel_obj.attach.assert_not_called()
+
+    def test_unknown_id_is_a_validation_error_and_nothing_is_written(self):
+        import pytest
+
+        from hunt.admin.controllers.resource import _sync_belongs_to_many
+        from hunt.admin.fields.belongs_to_many import BelongsToMany
+        from hunt.validation.validator import ValidationException
+
+        f = BelongsToMany("Tags", self._related_resource([1]), "tags")
+
+        rel_obj = MagicMock()
+        rel_obj.get_results.return_value = [self._record(1)]
+        instance = MagicMock()
+        instance.tags.return_value = rel_obj
+
+        with pytest.raises(ValidationException):
+            _sync_belongs_to_many(self._make_request({"tags": "1,999"}), instance, [f])
+
+        rel_obj.detach.assert_not_called()
         rel_obj.attach.assert_not_called()
 
     def test_none_instance_skipped(self):
@@ -232,19 +303,22 @@ class TestSyncBelongsToMany:
         # Should not raise
         _sync_belongs_to_many(request, None, [f])
 
-    def test_exception_is_silenced(self):
+    def test_sync_failure_is_surfaced_not_silenced(self):
+        import pytest
+
         from hunt.admin.controllers.resource import _sync_belongs_to_many
         from hunt.admin.fields.belongs_to_many import BelongsToMany
+        from hunt.validation.validator import ValidationException
 
-        MockResource = MagicMock()
-        f = BelongsToMany("Tags", MockResource, "tags")
+        f = BelongsToMany("Tags", self._related_resource([1]), "tags")
 
         instance = MagicMock()
         instance.tags.side_effect = Exception("db error")
 
         request = self._make_request({"tags": "1"})
-        # Should not raise
-        _sync_belongs_to_many(request, instance, [f])
+        # A failed sync used to be swallowed (and flashed as success).
+        with pytest.raises(ValidationException):
+            _sync_belongs_to_many(request, instance, [f])
 
     def test_readonly_field_skipped(self):
         from hunt.admin.controllers.resource import _sync_belongs_to_many
@@ -293,6 +367,9 @@ class TestRelationSearchBelongsToMany:
 
         resource_inst = MagicMock()
         resource_inst.fields.return_value = [f]
+        # The picker requires update (or create) on the owner and view on the related resource.
+        resource_inst.can_update.return_value = True
+        related_resource_inst.can_view_any.return_value = True
 
         MockResourceCls = MagicMock(return_value=resource_inst)
 
@@ -312,6 +389,7 @@ class TestRelationSearchBelongsToMany:
 
         resource_inst = MagicMock()
         resource_inst.fields.return_value = [f]
+        resource_inst.can_update.return_value = True
         MockResourceCls = MagicMock(return_value=resource_inst)
 
         with patch("hunt.admin.application.Admin") as MockAdmin:

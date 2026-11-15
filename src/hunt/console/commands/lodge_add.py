@@ -8,10 +8,12 @@ import click
 from hunt.console.commands.lodge_install import (
     _ENV_UPDATES,
     _HAS_HEALTHCHECK,
+    _IMAGE_MINIO,
     _SERVICE_BLOCKS,
     _SERVICE_VOLUMES,
     _SERVICES,
-    _set_env,
+    _apply_service_env,
+    _driver_hint,
 )
 
 
@@ -97,12 +99,22 @@ def lodge_add_command(service: str) -> None:
     compose_file.write_text(content, encoding="utf-8")
     click.echo(f"  ✓  Added '{service}' to compose.yaml")
 
-    for env_file in (cwd / ".env", cwd / ".env.example"):
+    updated = False
+    for env_file, is_example in ((cwd / ".env", False), (cwd / ".env.example", True)):
         if env_file.exists() and service in _ENV_UPDATES:
-            env_content = env_file.read_text()
-            for key, value in _ENV_UPDATES[service].items():
-                env_content = _set_env(env_content, key, value)
+            # Existing non-empty credentials are kept; only wiring keys are set.
+            env_content, kept = _apply_service_env(env_file.read_text(), service, generate_secrets=not is_example)
             env_file.write_text(env_content, encoding="utf-8")
+            updated = True
+            if kept and not is_example:
+                click.echo(f"     kept existing values for: {', '.join(kept)}")
 
-    click.echo(f"  ✓  .env updated for {service}")
+    if updated:
+        click.echo(f"  ✓  .env updated for {service}")
+
+    hint = _driver_hint(service)
+    if hint:
+        click.echo("\n" + hint)
+    if service == "minio":
+        click.echo(f"\n  MinIO image: {_IMAGE_MINIO} (set LODGE_MINIO_IMAGE in .env to use a mirror).")
     click.echo("\n  Rebuild with: ./lodge build\n  Then restart: ./lodge up -d\n")

@@ -12,7 +12,9 @@ from hunt.validation.form_request import FormRequest
 
 class {class_name}(FormRequest):
     def authorize(self) -> bool:
-        return True
+        # Denied by default. Return True once you have decided who may submit
+        # this request, e.g. `return Auth.check()` or an ownership check.
+        return False
 
     def rules(self) -> dict:
         return {{
@@ -23,8 +25,10 @@ class {class_name}(FormRequest):
 
 def _create_form_request(name: str) -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.support.str import Str
 
+    validate_identifier(name, "request name")
     class_name = name if name.endswith("Request") else f"{name}Request"
     out = Path.cwd() / "app" / "requests" / f"{Str.snake(class_name)}.py"
     out.parent.mkdir(parents=True, exist_ok=True)

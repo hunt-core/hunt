@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import click
@@ -24,36 +23,46 @@ def make_migration_command(name: str, create: str | None, table: str | None, dry
 
 
 def _create_migration(name: str, create: str | None = None, table: str | None = None, fields: str = "") -> None:
+    from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import migration_timestamp, validate_identifier
     from hunt.console.commands.make._output import output
 
-    timestamp = time.strftime("%Y_%m_%d_%H%M%S")
-    filename = f"{timestamp}_{Str.snake(name)}"
+    validate_identifier(name, "migration name")
+    if create:
+        validate_identifier(create, "table name")
+    if table:
+        validate_identifier(table, "table name")
+
     class_name = Str.pascal(name)
 
     if create:
         stub = _create_stub_for(create, fields)
     elif table:
-        stub = _UPDATE_STUB.replace("{{table}}", table)
+        stub = load_stub("migration.update", _UPDATE_STUB).replace("{{table}}", table)
     else:
-        if name.startswith("create_") and name.endswith("_table"):
+        if name.startswith("create_") and name.endswith("_table") and len(name) > len("create__table"):
             inferred = name[7:-6]
             stub = _create_stub_for(inferred, fields)
         else:
-            stub = _BLANK_STUB
+            stub = load_stub("migration.blank", _BLANK_STUB)
 
     content = stub.replace("{{class}}", class_name)
+    filename = f"{migration_timestamp()}_{Str.snake(name)}"
     out = Path.cwd() / "database" / "migrations" / f"{filename}.py"
     output.write(out, content, label="Created Migration ")
 
 
 def _create_stub_for(table: str, fields: str = "") -> str:
-    if not fields:
-        return _CREATE_STUB.replace("{{table}}", table)
+    from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make.field_types import migration_columns, parse_fields
 
-    col_lines = migration_columns(parse_fields(fields))
+    validate_identifier(table, "table name")
+    col_lines = migration_columns(parse_fields(fields)) if fields else ""
     body = f"\n{col_lines}\n" if col_lines else ""
-    return _CREATE_STUB_FIELDS.replace("{{table}}", table).replace("{{columns}}", body)
+    # An application can override the stub with stubs/migration.stub ({{class}}, {{table}}, {{columns}}).
+    stub = load_stub("migration", _CREATE_STUB_FIELDS)
+    return stub.replace("{{table}}", table).replace("{{columns}}", body)
 
 
 _CREATE_STUB_FIELDS = """\

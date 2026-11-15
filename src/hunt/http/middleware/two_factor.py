@@ -11,6 +11,8 @@ _EXEMPT_PREFIXES = ("/login", "/logout", "/two-factor/challenge")
 class EnsureTwoFactorAuthenticated(Middleware):
     """Redirect users with a pending 2FA challenge to the challenge page."""
 
+    reads_body = False  # never touches the request body
+
     async def handle(self, request: Request, next: Next) -> Response:
         path = request.path.rstrip("/") or "/"
         for prefix in _EXEMPT_PREFIXES:

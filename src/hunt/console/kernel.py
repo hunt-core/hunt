@@ -46,6 +46,7 @@ from hunt.console.commands.new import new_command
 from hunt.console.commands.queue_failed import (
     queue_failed_command,
     queue_flush_command,
+    queue_prune_processed_command,
     queue_retry_command,
 )
 from hunt.console.commands.queue_table import queue_table_command
@@ -56,6 +57,7 @@ from hunt.console.commands.schedule_list import schedule_list_command
 from hunt.console.commands.schedule_run import schedule_run_command
 from hunt.console.commands.serve import serve_command
 from hunt.console.commands.serve_production import serve_production_command
+from hunt.console.commands.session_prune import session_hash_ids_command, session_prune_command
 from hunt.console.commands.session_table import session_table_command
 from hunt.console.commands.storage_link import storage_link_command
 from hunt.console.commands.tinker import tinker_command
@@ -64,15 +66,40 @@ from hunt.console.commands.vendor_publish import vendor_publish_command
 from hunt.console.commands.view_cache import view_cache_command, view_clear_command
 
 
-def _load_app_commands(cli: click.Group) -> None:
+def _invoked_command(argv: list[str] | None = None) -> str | None:
+    """Return the sub-command name from the process arguments, if any."""
+    import sys
+
+    args = sys.argv[1:] if argv is None else argv
+    for arg in args:
+        if not arg.startswith("-"):
+            return arg
+    return None
+
+
+def _should_load_app_commands(argv: list[str] | None = None) -> bool:
+    """App commands are only loaded inside a hunt application, and never for `hunt new`.
+
+    Executing ./app/console/kernel.py from an arbitrary directory would run whatever
+    Python file happens to live at that path.
+    """
+    from pathlib import Path
+
+    if _invoked_command(argv) == "new":
+        return False
+    cwd = Path.cwd()
+    return (cwd / "bootstrap" / "app.py").is_file() and (cwd / "app" / "console" / "kernel.py").is_file()
+
+
+def _load_app_commands(cli: click.Group, argv: list[str] | None = None) -> None:
     """Load app/console/kernel.py and call register(cli) if it exists."""
     import importlib.util
     import sys
     from pathlib import Path
 
-    kernel_file = Path.cwd() / "app" / "console" / "kernel.py"
-    if not kernel_file.exists():
+    if not _should_load_app_commands(argv):
         return
+    kernel_file = Path.cwd() / "app" / "console" / "kernel.py"
     sys.path.insert(0, str(Path.cwd()))
     try:
         spec = importlib.util.spec_from_file_location("app.console.kernel", kernel_file)
@@ -111,8 +138,11 @@ cli.add_command(queue_work_command, name="queue:work")
 cli.add_command(queue_failed_command, name="queue:failed")
 cli.add_command(queue_retry_command, name="queue:retry")
 cli.add_command(queue_flush_command, name="queue:flush")
+cli.add_command(queue_prune_processed_command, name="queue:prune-processed")
 cli.add_command(queue_table_command, name="queue:table")
 cli.add_command(session_table_command, name="session:table")
+cli.add_command(session_prune_command, name="session:prune")
+cli.add_command(session_hash_ids_command, name="session:hash-ids")
 cli.add_command(job_list_command, name="job:list")
 cli.add_command(job_run_command, name="job:run")
 cli.add_command(db_seed_command, name="db:seed")

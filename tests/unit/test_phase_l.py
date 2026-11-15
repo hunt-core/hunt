@@ -227,7 +227,8 @@ class TestRunInBackground:
         t.join(timeout=2)
         assert results == [1]
 
-    def test_thread_is_daemon(self):
+    def test_thread_is_not_daemon(self):
+        # SCH-02: a daemon thread is killed when schedule:run returns.
         barrier = threading.Barrier(2)
 
         def slow():
@@ -236,7 +237,7 @@ class TestRunInBackground:
         task = ScheduledTask(slow)
         task.run_in_background()
         t = task.run()
-        assert t.daemon is True
+        assert t.daemon is False
         barrier.wait()
         t.join(timeout=2)
 

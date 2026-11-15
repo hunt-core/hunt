@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as _html
 import re
 from typing import Any
 
@@ -64,7 +65,9 @@ def _render_markdown(raw: str) -> str:
             link_rel="noopener noreferrer nofollow",
         )
     except ImportError:
-        return _TAG_RE.sub("", html)
+        # No sanitizer available: escape instead of tag-stripping, which lets
+        # an unterminated ``<img onerror=...`` through.
+        return _html.escape(html)
 
 
 class Markdown(Field):

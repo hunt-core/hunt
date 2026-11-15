@@ -30,7 +30,7 @@
     </div>
     <div class="flex items-center gap-x-1.5 flex-wrap">
         {% for m in ["GET", "POST", "PUT", "PATCH", "DELETE"] %}
-        <a href="?method={{ m }}&search={{ search }}"
+        <a href="?{{ qs({'method': m, 'search': search}) }}"
            class="rounded-full px-3 py-1 text-xs font-medium
            {% if method_filter == m %}
                {% if m == 'GET' %}bg-blue-500 text-white
@@ -96,10 +96,7 @@
         </tbody>
     </table>
 </div>
-{% set _route_extra = "" %}
-{% if method_filter %}{% set _route_extra = "method=" ~ method_filter %}{% endif %}
-{% if search %}{% set _route_extra = _route_extra ~ ("&" if _route_extra else "") ~ "search=" ~ (search | urlencode) %}{% endif %}
-{{ pagination_nav(pagination, page_param="page", extra=_route_extra) }}
+{{ pagination_nav(pagination, page_param="page", extra=qs({'method': method_filter, 'search': search})) }}
 {% endif %}
 {% endif %}
 {% endblock %}

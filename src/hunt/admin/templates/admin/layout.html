@@ -19,7 +19,7 @@
 {% for item in nav %}
 {% if item.item_type == 'group' %}
 <li>
-    <button type="button" data-group="{{ item.label | lower | replace(' ', '-') }}" onclick="toggleNavGroup(this)" class="flex w-full items-center justify-between rounded px-1 text-xs/6 font-semibold text-gray-400 hover:text-gray-200 transition-colors">
+    <button type="button" data-group="{{ item.label | lower | replace(' ', '-') }}" data-hunt-action="nav-group-toggle" class="flex w-full items-center justify-between rounded px-1 text-xs/6 font-semibold text-gray-400 hover:text-gray-200 transition-colors">
         <span>{{ item.label }}</span>
         <svg class="nav-chevron size-3.5 shrink-0 transition-transform duration-200" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
     </button>
@@ -42,7 +42,10 @@
     <link rel="stylesheet" href="{{ prefix }}/assets/admin.css">
     <link rel="stylesheet" href="{{ prefix }}/assets/trix.css">
     <script type="text/javascript" src="{{ prefix }}/assets/trix.umd.min.js"></script>
-    <script>window._huntAdmin={prefix:{{ prefix | tojson }},resourceKey:{{ resource_key | default('') | tojson }},csrfToken:{{ csrf_token | tojson }}};</script>
+    {# The admin CSP is script-src 'self': no inline scripts or inline event handlers.
+       Page values are passed as JSON (data, never executed) and read by admin.js. #}
+    <script type="application/json" id="hunt-admin-config">{{ {'prefix': prefix, 'resourceKey': resource_key | default(''), 'csrfToken': csrf_token} | tojson }}</script>
+    <script src="{{ prefix }}/assets/admin.js"></script>
     <style>
         /* Collapsible nav groups */
         .nav-group-items { overflow: hidden; max-height: 600px; opacity: 1; transition: max-height .2s ease-out, opacity .15s ease, margin-top .2s ease; }
@@ -85,11 +88,11 @@
 
 <!-- Mobile sidebar -->
 <div id="mobile-sidebar" class="relative z-50 lg:hidden">
-    <div id="mobile-sidebar-backdrop" class="fixed inset-0 bg-gray-900/80" onclick="closeMobileSidebar()"></div>
+    <div id="mobile-sidebar-backdrop" class="fixed inset-0 bg-gray-900/80" data-hunt-action="sidebar-close"></div>
     <div class="fixed inset-0 flex">
         <div id="mobile-sidebar-panel" class="relative mr-16 flex w-full max-w-xs flex-1">
             <div class="absolute top-0 left-full flex w-16 justify-center pt-5">
-                <button type="button" onclick="closeMobileSidebar()" class="-m-2.5 p-2.5">
+                <button type="button" data-hunt-action="sidebar-close" class="-m-2.5 p-2.5">
                     <span class="sr-only">Close sidebar</span>
                     <svg class="size-6 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
                 </button>
@@ -158,7 +161,7 @@
 <div class="lg:pl-72">
     <!-- Topbar -->
     <div class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-white/10 bg-gray-900 px-4 sm:gap-x-6 sm:px-6 lg:px-8">
-        <button type="button" onclick="openMobileSidebar()" class="-m-2.5 p-2.5 text-gray-400 hover:text-white lg:hidden">
+        <button type="button" data-hunt-action="sidebar-open" class="-m-2.5 p-2.5 text-gray-400 hover:text-white lg:hidden">
             <span class="sr-only">Open sidebar</span>
             <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
         </button>
@@ -178,7 +181,7 @@
                 <div aria-hidden="true" class="hidden lg:block lg:h-6 lg:w-px lg:bg-white/10"></div>
                 {% if auth_user %}
                 <div class="relative">
-                    <button type="button" id="profile-btn" onclick="toggleProfileMenu()"
+                    <button type="button" id="profile-btn" data-hunt-action="profile-toggle"
                             class="flex items-center gap-x-2 rounded-md p-1.5 text-sm text-gray-400 hover:text-white focus:outline-none">
                         <span class="sr-only">Open user menu</span>
                         <span class="flex size-8 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 text-xs font-semibold uppercase">
@@ -228,7 +231,7 @@
 
 <!-- Media Manager Modal -->
 <div id="_hunt-media-modal" style="display:none;position:fixed;inset:0;z-index:9999;overflow:hidden;">
-    <div id="_hunt-media-backdrop" style="position:absolute;inset:0;background:rgba(0,0,0,.75);" onclick="window._huntAdmin._closeMedia()"></div>
+    <div id="_hunt-media-backdrop" style="position:absolute;inset:0;background:rgba(0,0,0,.75);" data-hunt-action="media-close"></div>
     <div style="position:absolute;inset:1rem;top:4rem;bottom:4rem;max-width:1000px;margin:0 auto;background:#111827;border-radius:.75rem;border:1px solid rgba(255,255,255,.1);display:flex;flex-direction:column;overflow:hidden;">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid rgba(255,255,255,.1);">
             <h2 style="font-size:.9375rem;font-weight:600;color:#fff;margin:0;">Media Manager</h2>
@@ -237,8 +240,8 @@
                     <svg style="width:1rem;height:1rem;" viewBox="0 0 20 20" fill="currentColor"><path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
                     Upload
                 </label>
-                <input type="file" id="_hunt-media-upload" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" multiple style="display:none;">
-                <button type="button" onclick="window._huntAdmin._closeMedia()" style="display:flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:.375rem;background:rgba(255,255,255,.07);border:none;cursor:pointer;color:#9ca3af;">
+                <input type="file" id="_hunt-media-upload" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none;">
+                <button type="button" data-hunt-action="media-close" style="display:flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:.375rem;background:rgba(255,255,255,.07);border:none;cursor:pointer;color:#9ca3af;">
                     <svg style="width:1.125rem;height:1.125rem;" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
                 </button>
             </div>
@@ -250,174 +253,6 @@
     </div>
 </div>
 
-<script>
-function openMobileSidebar() { document.getElementById('mobile-sidebar').classList.add('open'); document.body.style.overflow = 'hidden'; }
-function closeMobileSidebar() { document.getElementById('mobile-sidebar').classList.remove('open'); document.body.style.overflow = ''; }
-function toggleProfileMenu() { document.getElementById('profile-menu').classList.toggle('open'); }
-function toggleNavGroup(btn) {
-    var key = btn.dataset.group;
-    var ul = btn.nextElementSibling;
-    var collapsed = ul.classList.toggle('collapsed');
-    btn.querySelector('.nav-chevron').style.transform = collapsed ? 'rotate(-90deg)' : '';
-    try {
-        var s = JSON.parse(localStorage.getItem('_hunt_nav') || '{}');
-        s[key] = collapsed;
-        localStorage.setItem('_hunt_nav', JSON.stringify(s));
-    } catch(e) {}
-}
-document.addEventListener('DOMContentLoaded', function() {
-    var s = {};
-    try { s = JSON.parse(localStorage.getItem('_hunt_nav') || '{}'); } catch(e) {}
-    document.querySelectorAll('[data-group]').forEach(function(btn) {
-        var key = btn.dataset.group;
-        var ul = btn.nextElementSibling;
-        var hasActive = ul.querySelector('a.text-white') !== null;
-        if (!hasActive && s[key] === true) {
-            ul.classList.add('collapsed');
-            btn.querySelector('.nav-chevron').style.transform = 'rotate(-90deg)';
-        }
-    });
-});
-document.addEventListener('click', function(e) {
-    var btn = document.getElementById('profile-btn'), menu = document.getElementById('profile-menu');
-    if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) menu.classList.remove('open');
-});
-(function() {
-    var modal = document.getElementById('_hunt-media-modal');
-    var grid = document.getElementById('_hunt-media-grid');
-    var status = document.getElementById('_hunt-media-status');
-    var uploadInput = document.getElementById('_hunt-media-upload');
-    var _cb = null;
-    var _loaded = false;
-
-    function setStatus(msg) { if (status) status.textContent = msg; }
-
-    function buildCard(file) {
-        var card = document.createElement('div');
-        card.style.cssText = 'position:relative;aspect-ratio:1;background:rgba(255,255,255,.05);border-radius:.5rem;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;';
-        var img = document.createElement('img');
-        img.src = file.url;
-        img.alt = file.name;
-        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
-        img.onerror = function() {
-            img.style.display = 'none';
-            var ph = document.createElement('div');
-            ph.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#4b5563;';
-            ph.innerHTML = '<svg style="width:2rem;height:2rem;" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5M10.5 8.25h.008"/></svg>';
-            card.appendChild(ph);
-        };
-        card.appendChild(img);
-        var overlay = document.createElement('div');
-        overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.6);opacity:0;transition:opacity .15s;display:flex;align-items:flex-end;padding:.375rem;';
-        var nameEl = document.createElement('span');
-        nameEl.style.cssText = 'font-size:.625rem;color:#fff;word-break:break-all;line-height:1.2;';
-        nameEl.textContent = file.name;
-        overlay.appendChild(nameEl);
-        card.appendChild(overlay);
-        card.addEventListener('mouseenter', function() { overlay.style.opacity = '1'; });
-        card.addEventListener('mouseleave', function() { overlay.style.opacity = '0'; });
-        card.addEventListener('click', function() {
-            if (typeof _cb === 'function') {
-                _cb(file.url, file.name);
-                window._huntAdmin._closeMedia();
-            }
-        });
-        return card;
-    }
-
-    function loadMedia() {
-        if (status) status.textContent = '';
-        grid.innerHTML = '<div id="_hunt-media-loading" style="grid-column:1/-1;text-align:center;padding:3rem 0;color:#6b7280;font-size:.875rem;">Loading…</div>';
-        fetch(window._huntAdmin.prefix + '/media/api')
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                grid.innerHTML = '';
-                if (!data.files || !data.files.length) {
-                    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem 0;color:#6b7280;font-size:.875rem;">No media uploaded yet.</div>';
-                } else {
-                    data.files.forEach(function(f) { grid.appendChild(buildCard(f)); });
-                    setStatus(data.files.length + ' file' + (data.files.length !== 1 ? 's' : ''));
-                }
-            })
-            .catch(function() {
-                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem 0;color:#f87171;font-size:.875rem;">Failed to load media.</div>';
-            });
-    }
-
-    function uploadFiles(files) {
-        var queue = Array.from(files);
-        function next() {
-            if (!queue.length) { loadMedia(); return; }
-            var file = queue.shift();
-            setStatus('Uploading ' + file.name + '…');
-            var fd = new FormData();
-            fd.append('file', file);
-            fd.append('_token', window._huntAdmin.csrfToken);
-            fetch(window._huntAdmin.prefix + '/media/upload', {method: 'POST', body: fd})
-                .then(function(r) { return r.json(); })
-                .then(function() { next(); })
-                .catch(function() { setStatus('Upload failed: ' + file.name); next(); });
-        }
-        next();
-    }
-
-    if (uploadInput) {
-        uploadInput.addEventListener('change', function() {
-            if (uploadInput.files.length) uploadFiles(uploadInput.files);
-            uploadInput.value = '';
-        });
-    }
-
-    window._huntAdmin.openMediaManager = function(cb) {
-        _cb = cb || null;
-        modal.style.display = 'block';
-        document.body.style.overflow = 'hidden';
-        loadMedia();
-    };
-    window._huntAdmin._closeMedia = function() {
-        modal.style.display = 'none';
-        document.body.style.overflow = '';
-        _cb = null;
-    };
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && modal.style.display !== 'none') window._huntAdmin._closeMedia();
-    });
-})();
-(function() {
-    var inp = document.getElementById('global-search'), box = document.getElementById('search-results'), timer;
-    if (!inp) return;
-    function esc(s) {
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-    inp.addEventListener('input', function() {
-        clearTimeout(timer);
-        var q = inp.value.trim();
-        if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
-        timer = setTimeout(function() {
-            fetch('{{ prefix }}/search?q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    var groups = data.groups || [];
-                    if (!groups.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
-                    box.innerHTML = groups.map(function(g) {
-                        var items = g.items.map(function(r) {
-                            return '<a class="search-result-item" href="' + esc(r.url) + '">' + esc(r.title) + '</a>';
-                        }).join('');
-                        return '<div class="search-group">'
-                            + '<div class="search-group-label"><span>' + esc(g.resource) + '</span>'
-                            + '<a href="' + esc(g.resource_url) + '">View all</a></div>'
-                            + items
-                            + '</div>';
-                    }).join('');
-                    box.style.display = 'block';
-                }).catch(function() { box.style.display = 'none'; });
-        }, 250);
-    });
-    document.addEventListener('click', function(e) {
-        if (!inp.contains(e.target) && !box.contains(e.target)) box.style.display = 'none';
-    });
-})();
-</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

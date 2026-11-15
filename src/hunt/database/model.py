@@ -1,16 +1,27 @@
 from __future__ import annotations
 
-import contextvars
+import json
 import time
 from collections.abc import Callable
 from typing import Any, ClassVar
 
-from hunt.database.query_builder import QueryBuilder, _run_sync
+# _EAGER_MODE: when True, relationship helper methods return the Relation object
+# instead of executing the query. Used internally by the eager-loading
+# infrastructure. ``relation`` optionally marks a method as a relationship.
+from hunt.database.query_builder import _EAGER_MODE, _MISSING, QueryBuilder, _run_sync
+from hunt.database.query_builder import relation as relation
 from hunt.support.str import Str
 
-# When True, relationship helper methods return the Relation object instead of
-# executing the query. Used internally by the eager-loading infrastructure.
-_EAGER_MODE: contextvars.ContextVar[bool] = contextvars.ContextVar("eager_mode", default=False)
+_JSON_CASTS = ("json", "array")
+
+
+class MassAssignmentError(Exception):
+    """Raised when ``fill()`` / ``create()`` is given a key on a model that allows none.
+
+    A model is mass-assignable only for the columns it lists in ``fillable``
+    (or, with ``guarded = [...]``, every column except the listed ones). A model
+    that declares neither is totally guarded.
+    """
 
 
 class ModelMeta(type):
@@ -18,17 +29,37 @@ class ModelMeta(type):
 
     def __new__(mcs, name: str, bases: tuple, namespace: dict) -> type:
         cls = super().__new__(mcs, name, bases, namespace)
-        if name != "Model" and "table" not in namespace:
+        is_root = not any(isinstance(base, ModelMeta) for base in bases)
+        if not is_root and "table" not in namespace:
             cls.table = Str.plural(Str.snake(name)).lower()
         # Each subclass gets its own event listener dict so observers don't bleed across models
         if "_event_listeners" not in namespace:
             cls._event_listeners = {}
-        # Each subclass gets its own global scope dict
+        # Each subclass gets its own global scope dict, seeded with the scopes
+        # of its bases: a subclass of a tenant-scoped model stays tenant-scoped.
         if "_global_scopes" not in namespace:
-            cls._global_scopes = {}
-        if name != "Model" and "boot" in namespace:
+            inherited: dict = {}
+            for base in reversed(cls.__mro__[1:]):
+                inherited.update(vars(base).get("_global_scopes") or {})
+            cls._global_scopes = inherited
+        # Run boot() for every concrete model whose hierarchy (including plain
+        # mixins) defines one, so scopes and observers registered there apply
+        # to subclasses too.
+        if not is_root and _defines_boot(cls):
             cls.boot()
         return cls
+
+
+def _defines_boot(cls: type) -> bool:
+    """True when any class in the MRO other than the root Model (and object) defines boot()."""
+    for klass in cls.__mro__:
+        if klass is object:
+            continue
+        if isinstance(klass, ModelMeta) and not any(isinstance(b, ModelMeta) for b in klass.__bases__):
+            continue  # the root Model: its boot() is the documented no-op
+        if "boot" in vars(klass):
+            return True
+    return False
 
 
 class Model(metaclass=ModelMeta):
@@ -37,8 +68,14 @@ class Model(metaclass=ModelMeta):
     # ------------------------------------------------------------------
     table: ClassVar[str] = ""
     primary_key: ClassVar[str] = "id"
+    # Mass assignment (fill / create / update_or_create ...) is allow-list based:
+    #   fillable = ["title", "body"]   only these keys are accepted
+    #   guarded = ["is_admin"]         every key except these (and the primary key)
+    #   guarded = []                   every key except the primary key
+    # With neither declared the model is totally guarded and fill() raises
+    # MassAssignmentError. force_fill() and attribute assignment are never guarded.
     fillable: ClassVar[list[str]] = []
-    guarded: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
+    guarded: ClassVar[list[str]] = ["*"]
     hidden: ClassVar[list[str]] = []
     appends: ClassVar[list[str]] = []
     casts: ClassVar[dict[str, str]] = {}
@@ -65,9 +102,9 @@ class Model(metaclass=ModelMeta):
 
     def __getattr__(self, name: str) -> Any:
         # Accessor pattern: get_<name>_attribute
-        accessor = f"get_{name}_attribute"
-        if accessor in type(self).__dict__:
-            return type(self).__dict__[accessor](self)
+        accessor = _find_in_mro(type(self), f"get_{name}_attribute")
+        if accessor is not None:
+            return accessor(self)
         if name in self.__dict__.get("_attributes", {}):
             return self._cast(name, self._attributes[name])
         if name in self.__dict__.get("_relations", {}):
@@ -75,37 +112,86 @@ class Model(metaclass=ModelMeta):
         raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name.startswith("_") or any(name in klass.__dict__ for klass in type(self).__mro__):
+        if name.startswith("_"):
+            super().__setattr__(name, value)
+            return
+        # A name that is already a loaded column is stored as a column even
+        # when a class attribute has the same name (a ``table`` or ``hidden``
+        # column, say). Read such a column with get_attribute().
+        is_column = name in self.__dict__.get("_attributes", {})
+        if not is_column and any(name in klass.__dict__ for klass in type(self).__mro__):
             super().__setattr__(name, value)
             return
         # Mutator pattern: set_<name>_attribute
-        mutator = f"set_{name}_attribute"
-        if mutator in type(self).__dict__:
-            type(self).__dict__[mutator](self, value)
+        mutator = _find_in_mro(type(self), f"set_{name}_attribute")
+        if mutator is not None:
+            mutator(self, value)
             return
         self._attributes[name] = value
 
+    def get_attribute(self, key: str, default: Any = None) -> Any:
+        """Return a column value (cast), even when a class attribute shadows its name."""
+        if key in self._attributes:
+            return self._cast(key, self._attributes[key])
+        return default
+
+    def set_attribute(self, key: str, value: Any) -> Model:
+        """Set a column value, even when a class attribute shadows its name."""
+        self._attributes[key] = value
+        return self
+
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self._attributes!r})"
+        hidden = set(self.hidden)
+        visible = {k: v for k, v in self.__dict__.get("_attributes", {}).items() if k not in hidden}
+        return f"{type(self).__name__}({visible!r})"
 
     # ------------------------------------------------------------------
     # Fill
     # ------------------------------------------------------------------
 
     def fill(self, attributes: dict) -> Model:
+        """Mass-assign *attributes*, keeping only the keys the model allows.
+
+        Keys outside ``fillable`` (or inside ``guarded``) are dropped. On a
+        totally guarded model (no ``fillable``, default ``guarded``) nothing is
+        assignable, so a non-empty fill raises ``MassAssignmentError`` instead
+        of silently saving an empty row.
+        """
+        totally_guarded = self._totally_guarded()
         for key, value in attributes.items():
             if self._is_fillable(key):
                 self._attributes[key] = value
+            elif totally_guarded:
+                raise MassAssignmentError(
+                    f"Cannot mass-assign {key!r} on {type(self).__name__}: the model declares neither "
+                    "`fillable` nor `guarded`. List the assignable columns in `fillable` "
+                    "(or set `guarded = []` to allow all), or use force_fill() for trusted data."
+                )
         return self
 
     def force_fill(self, attributes: dict) -> Model:
         self._attributes.update(attributes)
         return self
 
+    def _totally_guarded(self) -> bool:
+        return not self.fillable and "*" in self.guarded
+
     def _is_fillable(self, key: str) -> bool:
+        # The primary key is mass-assignable only when `fillable` names it
+        # explicitly (models whose key is supplied by the application, such as
+        # a code or UUID). `guarded = []` alone never opens it up.
+        if key == self.primary_key:
+            return key in self.fillable
         if self.fillable:
             return key in self.fillable
+        if "*" in self.guarded:
+            return False
         return key not in self.guarded
+
+    def update(self, attributes: dict | None = None, **kwargs: Any) -> bool:
+        """Set the given attributes (bypassing mass-assignment guards) and save."""
+        self.force_fill({**(attributes or {}), **kwargs})
+        return self.save()
 
     # ------------------------------------------------------------------
     # Persistence
@@ -122,17 +208,30 @@ class Model(metaclass=ModelMeta):
             self._fire_event("updating")
             dirty = self._dirty()
             if dirty:
-                self.query().where(self.primary_key, self._attributes[self.primary_key]).update(dirty)
+                if self._instance_query().update(dirty) == 0:
+                    # The row is gone (deleted elsewhere): nothing was saved.
+                    return False
             self._fire_event("updated")
         else:
             self._fire_event("creating")
-            pk = self.query().insert(self._attributes, returning=self.primary_key)
-            self._attributes[self.primary_key] = pk
+            pk_name = self.primary_key
+            new_id = self.query().insert(self._db_values(self._attributes), returning=pk_name)
+            # Keep a key the caller supplied (UUID, natural key); only adopt
+            # the database-generated one when there was none.
+            if self._attributes.get(pk_name) is None:
+                self._attributes[pk_name] = new_id
             self._exists = True
             self._fire_event("created")
 
-        self._original = dict(self._attributes)
+        self._original = self._db_values(self._attributes)
         return True
+
+    def _instance_query(self) -> QueryBuilder:
+        """A query for exactly this row: by its stored primary key, ignoring
+        soft-delete visibility and global scopes (the instance is already loaded)."""
+        pk_name = self.primary_key
+        key = self._original[pk_name] if pk_name in self._original else self._attributes[pk_name]
+        return self.query().with_trashed().without_global_scopes().where(pk_name, key)
 
     def delete(self) -> bool:
         if not self._exists:
@@ -140,10 +239,14 @@ class Model(metaclass=ModelMeta):
         self._fire_event("deleting")
         if self._soft_deletes:
             now = int(time.time())
-            self.query().where(self.primary_key, self._attributes[self.primary_key]).update({"deleted_at": now})
+            if self._instance_query().update({"deleted_at": now}) == 0:
+                return False
             self._attributes["deleted_at"] = now
+            self._original["deleted_at"] = now
         else:
-            self.query().where(self.primary_key, self._attributes[self.primary_key]).delete()
+            if self._instance_query().force_delete() == 0:
+                self._exists = False
+                return False
             self._exists = False
         self._fire_event("deleted")
         return True
@@ -151,16 +254,19 @@ class Model(metaclass=ModelMeta):
     def restore(self) -> bool:
         if not self._soft_deletes:
             return False
-        self.query().with_trashed().where(self.primary_key, self._attributes[self.primary_key]).update(
-            {"deleted_at": None}
-        )
+        if self._instance_query().update({"deleted_at": None}) == 0:
+            return False
         self._attributes["deleted_at"] = None
+        self._original["deleted_at"] = None
         return True
 
     def force_delete(self) -> bool:
-        self.query().where(self.primary_key, self._attributes[self.primary_key]).delete()
+        """Permanently delete this row, including a soft-deleted one."""
+        if not self._exists:
+            return False
+        deleted = self._instance_query().force_delete()
         self._exists = False
-        return True
+        return deleted > 0
 
     def replicate(self, except_: list[str] | None = None) -> Model:
         """Return an unsaved copy of this model without the primary key."""
@@ -180,9 +286,19 @@ class Model(metaclass=ModelMeta):
     def _dirty(self) -> dict:
         dirty = {}
         for k, v in self._attributes.items():
-            if k not in self._original or self._original[k] != v:
-                dirty[k] = v
+            stored = self._db_value(k, v)
+            if k not in self._original or self._original[k] != stored:
+                dirty[k] = stored
         return dirty
+
+    def _db_value(self, key: str, value: Any) -> Any:
+        """The value as written to the database: ``json`` / ``array`` casts are serialised."""
+        if value is not None and not isinstance(value, (str, bytes)) and self.casts.get(key) in _JSON_CASTS:
+            return json.dumps(value)
+        return value
+
+    def _db_values(self, attributes: dict) -> dict:
+        return {k: self._db_value(k, v) for k, v in attributes.items()}
 
     def is_dirty(self, *keys: str) -> bool:
         dirty = self._dirty()
@@ -265,12 +381,18 @@ class Model(metaclass=ModelMeta):
     def find_or_fail(cls, id: Any) -> Model:
         instance = cls.find(id)
         if instance is None:
-            raise ValueError(f"{cls.__name__} not found with id={id}")
+            from hunt.http.response import HttpException
+
+            raise HttpException(404, f"{cls.__name__} not found.")
         return instance
 
     @classmethod
-    def where(cls, column: str, operator_or_value: Any, value: Any = None) -> QueryBuilder:
+    def where(cls, column: str, operator_or_value: Any = _MISSING, value: Any = _MISSING) -> QueryBuilder:
         return cls.query().where(column, operator_or_value, value)
+
+    @classmethod
+    def where_like(cls, column: str, term: Any) -> QueryBuilder:
+        return cls.query().where_like(column, term)
 
     @classmethod
     def where_in(cls, column: str, values: list) -> QueryBuilder:
@@ -281,7 +403,7 @@ class Model(metaclass=ModelMeta):
         return cls.query().where_not_in(column, values)
 
     @classmethod
-    def or_where(cls, column: str, operator_or_value: Any, value: Any = None) -> QueryBuilder:
+    def or_where(cls, column: str, operator_or_value: Any = _MISSING, value: Any = _MISSING) -> QueryBuilder:
         return cls.query().or_where(column, operator_or_value, value)
 
     @classmethod
@@ -353,17 +475,21 @@ class Model(metaclass=ModelMeta):
             if use_timestamps:
                 instance._attributes.setdefault("created_at", now)
                 instance._attributes["updated_at"] = now
-            prepared.append(dict(instance._attributes))
+            prepared.append(instance._db_values(instance._attributes))
         cls.query().insert_many(prepared)
 
     def increment(self, column: str, amount: int = 1) -> bool:
-        self.query().where(self.primary_key, self._attributes[self.primary_key]).increment(column, amount)
+        if self._instance_query().increment(column, amount) == 0:
+            return False
         self._attributes[column] = (self._attributes.get(column) or 0) + amount
+        self._original[column] = self._attributes[column]
         return True
 
     def decrement(self, column: str, amount: int = 1) -> bool:
-        self.query().where(self.primary_key, self._attributes[self.primary_key]).decrement(column, amount)
+        if self._instance_query().decrement(column, amount) == 0:
+            return False
         self._attributes[column] = (self._attributes.get(column) or 0) - amount
+        self._original[column] = self._attributes[column]
         return True
 
     # ------------------------------------------------------------------
@@ -428,7 +554,7 @@ class Model(metaclass=ModelMeta):
         from hunt.database.relations.belongs_to import BelongsTo
 
         fk = foreign_key or f"{Str.snake(related.__name__)}_id"
-        ok = owner_key or "id"
+        ok = owner_key or getattr(related, "primary_key", None) or "id"
         rel = BelongsTo(related, self, fk, ok)
         if _EAGER_MODE.get():
             return rel
@@ -458,19 +584,48 @@ class Model(metaclass=ModelMeta):
             return rel
         return rel.get_results()
 
+    def related(self, name: str) -> Any:
+        """Return the related model(s) for relationship *name*, loading them at most once.
+
+        After ``with_("author")`` this returns the eager-loaded value without a
+        query. Otherwise the relationship is queried on first use and the
+        result is kept on the instance::
+
+            for post in Post.query().with_("author").get():
+                post.related("author").name      # no extra query
+        """
+        if name not in self._relations:
+            relation = self.get_relation(name)  # also rejects names that are not relationships
+            loader = getattr(relation, "get_results", None) or relation.get_result
+            self._relations[name] = loader()
+        return self._relations[name]
+
+    def get_relation(self, name: str) -> Any:
+        """Return the Relation object (HasMany, BelongsToMany, ...) behind a relationship method.
+
+        Only genuine relationship methods are accepted (the same rules as
+        ``with_()``); anything else raises ``ValueError`` and no query runs.
+        Use it for ``attach`` / ``detach`` / ``sync`` or to inspect a relation::
+
+            post.get_relation("tags").sync([1, 2, 3])
+        """
+        from hunt.database.query_builder import _resolve_relation
+
+        return _resolve_relation(self, name)
+
     # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------
 
     def to_dict(self) -> dict:
-        data = {k: v for k, v in self._attributes.items() if k not in self.hidden}
+        data = {k: self._cast(k, v) for k, v in self._attributes.items() if k not in self.hidden}
         # Appended accessors
         for attr in self.appends:
-            accessor = f"get_{attr}_attribute"
-            if accessor in type(self).__dict__:
-                data[attr] = type(self).__dict__[accessor](self)
+            accessor = _find_in_mro(type(self), f"get_{attr}_attribute")
+            if accessor is not None:
+                data[attr] = accessor(self)
         # Loaded relations
-        for rel_name, rel_value in self._relations.items():
+        for rel_name, rel_value in self.__dict__.get("_relations", {}).items():
             if isinstance(rel_value, Model):
                 data[rel_name] = rel_value.to_dict()
             elif isinstance(rel_value, list):
@@ -480,8 +635,6 @@ class Model(metaclass=ModelMeta):
         return data
 
     def to_json(self) -> str:
-        import json
-
         return json.dumps(self.to_dict(), default=str)
 
     # ------------------------------------------------------------------
@@ -500,9 +653,22 @@ class Model(metaclass=ModelMeta):
         cls._event_listeners.setdefault(key, []).append(callback)
 
     def _fire_event(self, event: str) -> None:
-        key = f"{type(self).__name__}.{event}"
-        for cb in type(self)._event_listeners.get(key, []):
-            cb(self)
+        # Listeners registered on a parent model also fire for its subclasses.
+        # A subclass re-runs an inherited boot(), which registers the same
+        # observer again on the subclass: such a duplicate fires once.
+        seen: set = set()
+        for klass in type(self).__mro__:
+            listeners = vars(klass).get("_event_listeners")
+            if not listeners:
+                continue
+            own_keys = []
+            for cb in listeners.get(f"{klass.__name__}.{event}", []):
+                key = _listener_key(cb)
+                own_keys.append(key)
+                if key in seen:
+                    continue
+                cb(self)
+            seen.update(own_keys)
 
     # ------------------------------------------------------------------
     # Casting
@@ -520,8 +686,22 @@ class Model(metaclass=ModelMeta):
             return bool(value)
         if cast_type in ("str", "string"):
             return str(value)
-        if cast_type in ("json", "array"):
-            import json
-
+        if cast_type in _JSON_CASTS:
             return json.loads(value) if isinstance(value, str) else value
         return value
+
+
+def _find_in_mro(cls: type, name: str) -> Any:
+    """Look a plain attribute up through the class hierarchy (accessors and mutators are inherited)."""
+    for klass in cls.__mro__:
+        if name in klass.__dict__:
+            return klass.__dict__[name]
+    return None
+
+
+def _listener_key(cb: Any) -> Any:
+    """Identify "the same listener" across two registrations made by an inherited boot()."""
+    func = getattr(cb, "__func__", None)
+    if func is not None and hasattr(cb, "__self__"):
+        return (getattr(func, "__code__", func), type(cb.__self__))
+    return getattr(cb, "__code__", None) or id(cb)

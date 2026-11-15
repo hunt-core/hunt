@@ -11,7 +11,13 @@ _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 class VerifyCsrfToken(Middleware):
-    """Validate CSRF token on state-changing requests."""
+    """Validate CSRF token on state-changing requests.
+
+    The request body is only read when the form's ``_token`` field is needed:
+    a request carrying a valid ``X-CSRF-TOKEN`` header is verified without it.
+    """
+
+    reads_body = False  # loads the body itself, and only when the form token is needed
 
     except_urls: ClassVar[list[str]] = []
 
@@ -19,9 +25,16 @@ class VerifyCsrfToken(Middleware):
         if request.method in _SAFE_METHODS or self._is_exempt(request):
             return await next(request)
 
+        if self._needs_form_token(request):
+            loader = getattr(request, "load_body", None)
+            if loader is not None:
+                await loader()
+
         if not self._tokens_match(request):
             raise HttpException(419, "CSRF token mismatch.")
 
+        # Lets a nested CSRF layer (the admin group's own check) skip repeating it.
+        request._csrf_verified = True
         return await next(request)
 
     def _is_exempt(self, request: Request) -> bool:
@@ -31,15 +44,36 @@ class VerifyCsrfToken(Middleware):
                 return True
         return False
 
-    def _tokens_match(self, request: Request) -> bool:
+    @staticmethod
+    def _session_token(request: Request) -> str | None:
         session = getattr(request, "_session", None)
         if session is None:
-            return False
-        session_token = session.get("_csrf_token")
-        if not session_token:
-            return False
-        request_token = request.input("_token") or request.header("X-CSRF-TOKEN")
+            return None
+        return session.get("_csrf_token") or None
+
+    @staticmethod
+    def _same(session_token: object, request_token: object) -> bool:
         try:
             return bool(request_token and hmac.compare_digest(str(session_token), str(request_token)))
         except TypeError:
             return False
+
+    def _needs_form_token(self, request: Request) -> bool:
+        """True when only the form body can still make the check pass: there is
+        a session token and the ``X-CSRF-TOKEN`` header is absent or wrong."""
+        session_token = self._session_token(request)
+        if not session_token:
+            return False
+        return not self._same(session_token, request.header("X-CSRF-TOKEN"))
+
+    def _tokens_match(self, request: Request) -> bool:
+        session_token = self._session_token(request)
+        if not session_token:
+            return False
+        # Body or header only: a token in the query string would end up in
+        # logs, history and Referer headers.
+        if self._same(session_token, request.header("X-CSRF-TOKEN")):
+            return True
+        body_input = getattr(request, "_body_input", None)
+        body_token = body_input().get("_token") if callable(body_input) else request.input("_token")
+        return self._same(session_token, body_token)

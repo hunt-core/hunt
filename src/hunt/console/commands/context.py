@@ -136,11 +136,13 @@ def _parse_model_file(path: Path) -> dict | None:
 
 
 def _discover_middleware(cwd: Path) -> list[dict]:
-    mw_dir = cwd / "app" / "http" / "middleware"
-    if not mw_dir.exists():
-        return []
+    # Generated apps keep middleware in app/middleware; app/http/middleware is the legacy location.
+    files: list[Path] = []
+    for mw_dir in (cwd / "app" / "middleware", cwd / "app" / "http" / "middleware"):
+        if mw_dir.exists():
+            files.extend(sorted(mw_dir.glob("*.py")))
     results = []
-    for f in sorted(mw_dir.glob("*.py")):
+    for f in files:
         if f.name.startswith("_"):
             continue
         try:

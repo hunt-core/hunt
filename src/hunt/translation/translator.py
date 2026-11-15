@@ -2,8 +2,19 @@ from __future__ import annotations
 
 import importlib.util
 import re
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
+
+# Per-request locale override: (translator, request, locale). The translator is a
+# singleton shared by all concurrent requests, so a request must not change its locale
+# for everybody else.
+_locale_override: ContextVar[Any] = ContextVar("hunt_locale_override", default=None)
+
+# Upper bound on cached (locale, group) entries; locales can come from user input.
+_MAX_CACHE_ENTRIES = 256
+
+_PLACEHOLDER_RE = re.compile(r":(\w+)")
 
 _LOCALE_RE = re.compile(r"^[a-zA-Z]{2,8}([_-][a-zA-Z0-9]{2,8})*$")
 _GROUP_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -48,10 +59,31 @@ class Translator:
     # Locale management
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _current_request() -> Any:
+        try:
+            from hunt.auth.manager import _get_current_request
+
+            return _get_current_request()
+        except Exception:
+            return None
+
     def set_locale(self, locale: str) -> None:
+        """Set the locale: for the current request only when one is active, else the default."""
+        request = self._current_request()
+        if request is None:
+            self._locale = locale
+        else:
+            _locale_override.set((self, request, locale))
+
+    def set_default_locale(self, locale: str) -> None:
+        """Set the application-wide default locale, regardless of any active request."""
         self._locale = locale
 
     def get_locale(self) -> str:
+        override = _locale_override.get()
+        if override is not None and override[0] is self and override[1] is self._current_request():
+            return override[2]
         return self._locale
 
     def set_fallback(self, locale: str) -> None:
@@ -62,7 +94,7 @@ class Translator:
     # ------------------------------------------------------------------
 
     def has(self, key: str, locale: str | None = None) -> bool:
-        return self._resolve(key, locale or self._locale) is not None
+        return self._resolve(key, locale or self.get_locale()) is not None
 
     def get(
         self,
@@ -70,7 +102,7 @@ class Translator:
         replace: dict[str, Any] | None = None,
         locale: str | None = None,
     ) -> str:
-        loc = locale or self._locale
+        loc = locale or self.get_locale()
         value = self._resolve(key, loc)
         if value is None and loc != self._fallback:
             value = self._resolve(key, self._fallback)
@@ -85,7 +117,7 @@ class Translator:
         replace: dict[str, Any] | None = None,
         locale: str | None = None,
     ) -> str:
-        loc = locale or self._locale
+        loc = locale or self.get_locale()
         value = self._resolve(key, loc)
         if value is None and loc != self._fallback:
             value = self._resolve(key, self._fallback)
@@ -123,6 +155,11 @@ class Translator:
         cache_key = (locale, group)
         if cache_key in self._cache:
             return self._cache[cache_key]
+        while len(self._cache) >= _MAX_CACHE_ENTRIES:
+            try:
+                del self._cache[next(iter(self._cache))]
+            except (StopIteration, KeyError, RuntimeError):
+                break
 
         lang_root = self._lang_path.resolve()
         path = (self._lang_path / locale / f"{group}.py").resolve()
@@ -149,11 +186,31 @@ class Translator:
         return result
 
     def _substitute(self, text: str, replace: dict[str, Any]) -> str:
+        """Replace ``:name`` placeholders in one pass.
+
+        Whole placeholder names are matched (``:name`` does not touch ``:name_full``) and
+        substituted values are never scanned again, so a value containing ``:other``
+        cannot pull in another replacement.
+        """
+        if not replace:
+            return text
+        values: dict[str, str] = {}
         for key, value in replace.items():
-            text = text.replace(f":{key.upper()}", str(value).upper())
-            text = text.replace(f":{key.capitalize()}", str(value).capitalize())
-            text = text.replace(f":{key}", str(value))
-        return text
+            values[str(key)] = str(value)
+        for key, value in replace.items():
+            values[str(key).capitalize()] = str(value).capitalize()
+        for key, value in replace.items():
+            values[str(key).upper()] = str(value).upper()
+        # An exact key always wins for its own spelling.
+        for key, value in replace.items():
+            if str(key) not in (str(key).upper(), str(key).capitalize()):
+                values[str(key)] = str(value)
+
+        def _sub(match: re.Match) -> str:
+            name = match.group(1)
+            return values.get(name, match.group(0))
+
+        return _PLACEHOLDER_RE.sub(_sub, text)
 
     def _select_plural(self, value: str, count: int) -> str:
         """Pick the correct plural form from a pipe-delimited string.

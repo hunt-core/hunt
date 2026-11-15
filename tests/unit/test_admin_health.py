@@ -91,7 +91,9 @@ class TestCheckDatabase:
 
         assert result["ok"] is False
         assert result["label"] == "Error"
-        assert "connection refused" in result["detail"]
+        # Raw exception text is logged, not shown (it can carry DSNs and paths).
+        assert "connection refused" not in result["detail"]
+        assert "log" in result["detail"].lower()
 
     def test_detail_truncated_at_120_chars(self):
         from hunt.admin.controllers.health import _check_database
@@ -143,7 +145,8 @@ class TestCheckCache:
             result = _check_cache()
 
         assert result["ok"] is False
-        assert "redis unavailable" in result["detail"]
+        assert "redis unavailable" not in result["detail"]
+        assert "log" in result["detail"].lower()
 
     def test_driver_name_from_class(self, tmp_path):
         from hunt.admin.controllers.health import _check_cache
@@ -219,7 +222,8 @@ class TestCheckQueue:
             result = _check_queue()
 
         assert result["ok"] is False
-        assert "connection timed out" in result["detail"]
+        assert "connection timed out" not in result["detail"]
+        assert "log" in result["detail"].lower()
 
     def test_fetchone_returns_none(self):
         from hunt.admin.controllers.health import _check_queue

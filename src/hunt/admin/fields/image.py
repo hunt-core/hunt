@@ -15,8 +15,17 @@ class Image(Field):
         self._max_kb: int = 5120  # 5 MB default
         self._accepted: str = "image/*"
         # Default to safe raster types; SVG excluded (can carry inline scripts)
-        self._rules: list[str] = ["mimes:jpg,jpeg,png,gif,webp"]
+        self._base_rules: list[str] = ["mimes:jpg,jpeg,png,gif,webp"]
+        self._rules: list[str] = list(self._base_rules)
         self.hide_from_index()
+
+    def rules(self, *r: str) -> Image:
+        """Add validation rules, keeping the default ``mimes`` rule unless one is given."""
+        extra = list(r)
+        has_own_type_rule = any(str(rule).split(":", 1)[0] in ("mimes", "mimetypes") for rule in extra)
+        base = [] if has_own_type_rule else list(self._base_rules)
+        self._rules = [*extra, *[b for b in base if b not in extra]]
+        return self
 
     def disk(self, disk: str) -> Image:
         self._disk = disk

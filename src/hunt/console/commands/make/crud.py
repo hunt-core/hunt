@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import click
@@ -11,16 +10,23 @@ from hunt.support.str import Str
 @click.command("make:crud")
 @click.argument("name")
 @click.option("--fields", default="", metavar="FIELDS", help='Column definitions, e.g. "title:string body:text"')
+@click.option(
+    "--public", "public", is_flag=True, help="Do not wrap the generated routes in the Authenticate middleware"
+)
 @click.option("--dry-run", is_flag=True, help="Preview files without writing them")
 @click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
-def make_crud_command(name: str, fields: str, dry_run: bool, as_json: bool) -> None:
+def make_crud_command(name: str, fields: str, public: bool, dry_run: bool, as_json: bool) -> None:
     """Scaffold a full CRUD resource: model, migration, controller, views, and routes."""
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make._output import output
     from hunt.console.commands.make.field_types import parse_fields
 
+    # Validate everything before the first file is written.
+    validate_identifier(name, "resource name")
+    parsed = parse_fields(fields)
+
     output.configure(dry_run=dry_run, as_json=as_json)
 
-    parsed = parse_fields(fields)
     class_name = Str.pascal(name)
     snake = Str.snake(name)
     table = Str.plural(snake)
@@ -31,7 +37,9 @@ def make_crud_command(name: str, fields: str, dry_run: bool, as_json: bool) -> N
     _make_migration(class_name, table, parsed)
     _make_controller(class_name, snake, table, route_prefix, view_dir, parsed)
     _make_views(view_dir, class_name, route_prefix, parsed)
-    _append_routes(class_name, snake, route_prefix)
+    _append_routes(class_name, snake, route_prefix, public=public)
+    if public:
+        output.echo("  Warning: --public given. Anyone can create, edit and delete these records.")
     output.finish()
 
 
@@ -40,26 +48,50 @@ def make_crud_command(name: str, fields: str, dry_run: bool, as_json: bool) -> N
 
 def _make_model(class_name: str, table: str, fields: list[tuple[str, str]]) -> None:
     from hunt.console.commands.make._output import output
-    from hunt.console.commands.make.field_types import fillable_list
+    from hunt.console.commands.make.field_types import model_source
 
-    fill = fillable_list(fields) if fields else "[]"
-    content = _MODEL_STUB.replace("{{class}}", class_name).replace("{{table}}", table).replace("{{fillable}}", fill)
+    content = model_source(class_name, table, fields, _MODEL_STUB)
     out = Path.cwd() / "app" / "models" / f"{Str.snake(class_name)}.py"
-    output.write(out, content, label="Created Model     ")
+    written = output.write(out, content, label="Created Model     ")
+    if written and not fields:
+        output.echo("  Note: no --fields given, so the model's fillable list is empty and rejects mass assignment.")
 
 
 def _make_migration(class_name: str, table: str, fields: list[tuple[str, str]]) -> None:
+    from hunt.console.commands.make._naming import migration_timestamp
     from hunt.console.commands.make._output import output
     from hunt.console.commands.make.field_types import migration_columns
 
-    timestamp = time.strftime("%Y_%m_%d_%H%M%S")
+    migrations = Path.cwd() / "database" / "migrations"
+    suffix = f"_create_{table}_table.py"
+    existing = sorted(migrations.glob(f"*{suffix}")) if migrations.is_dir() else []
+    if existing and not output.dry_run:
+        # Re-running the generator must not add a second migration creating the same table.
+        output.write(existing[0], "", label="Created Migration ")
+        return
+
     mig_class = Str.pascal(f"create_{table}_table")
     col_lines = migration_columns(fields) if fields else ""
     body = f"\n{col_lines}\n" if col_lines else ""
     content = _MIGRATION_STUB.replace("{{class}}", mig_class).replace("{{table}}", table).replace("{{columns}}", body)
-    filename = f"{timestamp}_create_{table}_table"
-    out = Path.cwd() / "database" / "migrations" / f"{filename}.py"
+    out = migrations / f"{migration_timestamp()}{suffix}"
     output.write(out, content, label="Created Migration ")
+
+
+def _controller_source(stub: str, class_name: str, snake: str, fields: list[tuple[str, str]]) -> str:
+    from hunt.console.commands.make.field_types import rules_literal
+
+    booleans = ", ".join(f'"{col}"' for col, method in fields if method == "boolean")
+    if booleans:
+        booleans += ","
+    return (
+        stub.replace("{{class}}", f"{class_name}Controller")
+        .replace("{{model_class}}", class_name)
+        .replace("{{model_snake}}", snake)
+        .replace("{{model_import}}", f"app.models.{snake}")
+        .replace("{{rules}}", rules_literal(fields))
+        .replace("{{booleans}}", booleans)
+    )
 
 
 def _make_controller(
@@ -70,18 +102,10 @@ def _make_controller(
     view_dir: str,
     fields: list[tuple[str, str]],
 ) -> None:
-    col_names = [col for col, _ in fields]
-    store_lines = _store_lines(col_names, class_name)
-    update_lines = _update_lines(col_names)
     content = (
-        _CONTROLLER_STUB.replace("{{class}}", f"{class_name}Controller")
-        .replace("{{model_class}}", class_name)
-        .replace("{{model_snake}}", snake)
-        .replace("{{model_import}}", f"app.models.{snake}")
+        _controller_source(_CONTROLLER_STUB, class_name, snake, fields)
         .replace("{{view_dir}}", view_dir)
         .replace("{{route_prefix}}", route_prefix)
-        .replace("{{store_lines}}", store_lines)
-        .replace("{{update_lines}}", update_lines)
     )
     from hunt.console.commands.make._output import output
 
@@ -94,7 +118,7 @@ def _make_views(view_dir: str, class_name: str, route_prefix: str, fields: list[
 
     base = Path.cwd() / "resources" / "views" / view_dir
     col_names = [col for col, _ in fields]
-    form_fields_html = _form_fields_html(col_names)
+    form_fields_html = _form_fields_html(fields)
     table_headers = "".join(f"                <th>{col.replace('_', ' ').title()}</th>\n" for col in col_names)
     table_cells = "".join(f"                    <td>{{{{ item.{col} }}}}</td>\n" for col in col_names)
 
@@ -117,7 +141,7 @@ def _make_views(view_dir: str, class_name: str, route_prefix: str, fields: list[
         output.write(base / filename, content, label="Created View      ")
 
 
-def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
+def _append_routes(class_name: str, snake: str, route_prefix: str, public: bool = False) -> None:
     from hunt.console.commands.make._output import output
 
     routes_file = Path.cwd() / "routes" / "web.py"
@@ -125,10 +149,9 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
         output.echo("  Warning: routes/web.py not found — routes not appended.")
         return
 
-    block = (
-        _ROUTES_BLOCK.replace("{{class}}", class_name).replace("{{snake}}", snake).replace("{{prefix}}", route_prefix)
-    )
-    existing = routes_file.read_text()
+    template = _ROUTES_BLOCK_PUBLIC if public else _ROUTES_BLOCK
+    block = template.replace("{{class}}", class_name).replace("{{snake}}", snake).replace("{{prefix}}", route_prefix)
+    existing = routes_file.read_text(encoding="utf-8")
     sentinel = f'"/{route_prefix}"'
     if sentinel in existing:
         output.echo(f"  Skipped Routes:     /{route_prefix} already in routes/web.py")
@@ -140,36 +163,44 @@ def _append_routes(class_name: str, snake: str, route_prefix: str) -> None:
 
     routes_file.write_text(existing.rstrip() + "\n\n" + block + "\n", encoding="utf-8")
     output.echo(f"  Updated Routes:     routes/web.py  (/{route_prefix})")
+    if not public:
+        output.echo("  The routes require a logged-in user (Authenticate). Pass --public to opt out.")
 
 
 # ---------------------------------------------------------------------------
 # helpers
 
 
-def _store_lines(cols: list[str], class_name: str) -> str:
-    if not cols:
-        return f"        item = {class_name}.create({{}})\n"
-    assignments = ", ".join(f'"{c}": request.input("{c}")' for c in cols)
-    return f"        item = {class_name}.create({{{assignments}}})\n"
-
-
-def _update_lines(cols: list[str]) -> str:
-    if not cols:
-        return ""
-    lines = [f'        item.{c} = request.input("{c}")' for c in cols]
-    return "\n".join(lines) + "\n"
-
-
-def _form_fields_html(cols: list[str]) -> str:
+def _form_fields_html(fields: list[tuple[str, str]]) -> str:
     parts = []
-    for col in cols:
+    for col, method in fields:
         label = col.replace("_", " ").title()
+        if method == "boolean":
+            control = (
+                f'                <select name="{col}" class="w-full border border-gray-300 rounded px-3 py-2">\n'
+                f'                    <option value="1" {{% if values.get(\'{col}\') in (True, 1, "1", "true") %}}'
+                f"selected{{% endif %}}>Yes</option>\n"
+                f'                    <option value="0" {{% if values.get(\'{col}\') not in (True, 1, "1", "true") %}}'
+                f"selected{{% endif %}}>No</option>\n"
+                f"                </select>\n"
+            )
+        elif method == "text":
+            control = (
+                f'                <textarea name="{col}" rows="6" class="w-full border border-gray-300 rounded px-3 py-2">'
+                f"{{{{ values.get('{col}', '') if values.get('{col}') is not none else '' }}}}</textarea>\n"
+            )
+        else:
+            control = (
+                f'                <input type="text" name="{col}" '
+                f"value=\"{{{{ values.get('{col}', '') if values.get('{col}') is not none else '' }}}}\" "
+                f'class="w-full border border-gray-300 rounded px-3 py-2">\n'
+            )
         parts.append(
             f'            <div class="mb-4">\n'
             f'                <label class="block text-sm font-medium text-gray-700 mb-1">{label}</label>\n'
-            f'                <input type="text" name="{col}" value="{{{{ old(\'{col}\') }}}}" '
-            f'class="w-full border border-gray-300 rounded px-3 py-2">\n'
-            f"                @error('{col}')<p class=\"text-red-600 text-sm mt-1\">{{{{ message }}}}</p>@enderror\n"
+            f"{control}"
+            f"                @error('{col}')<p class=\"text-red-600 text-sm mt-1\">"
+            f"{{{{ errors['{col}'][0] }}}}</p>@enderror\n"
             f"            </div>"
         )
     return "\n".join(parts)
@@ -218,45 +249,134 @@ class {{class}}(Migration):
         Schema.drop_if_exists("{{table}}")
 """
 
-_CONTROLLER_STUB = """\
+# Shared by make:crud and make:api: validated input, 404 on bad ids, no mass assignment of unknown keys.
+_CONTROLLER_HELPERS = """\
+# Columns a request may set, with the validation rules applied to each.
+# Only these keys are ever read from the request or written to the model.
+RULES: dict[str, str] = {
+{{rules}}
+}
+
+_BOOLEANS: tuple[str, ...] = ({{booleans}})
+
+# Values for optional fields a create request may leave out.
+_DEFAULTS: dict = {key: False for key in _BOOLEANS}
+
+
+def _find(id: str) -> {{model_class}}:
+    \"\"\"Load a record or answer 404 (also for ids that are not numbers).\"\"\"
+    try:
+        key = int(id)
+    except (TypeError, ValueError):
+        raise HttpException(404, "Not found.") from None
+    item = {{model_class}}.find(key)
+    if item is None:
+        raise HttpException(404, "Not found.")
+    return item
+
+
+def _input(request: Request) -> dict:
+    \"\"\"Return the declared fields that are present in the request.\"\"\"
+    return {key: request.input(key) for key in RULES if request.has(key)}
+
+
+def _validate(data: dict, rules: dict) -> dict:
+    \"\"\"Return {field: [messages]} for *data*; empty when it is valid.\"\"\"
+    validator = Validator.make(data, rules)
+    if not validator.fails():
+        return {}
+    bag = validator.errors()
+    return {field: bag.get(field) for field in rules if bag.has(field)}
+
+
+def _clean(data: dict) -> dict:
+    \"\"\"Coerce validated form values to the types the columns expect.\"\"\"
+    cleaned = dict(data)
+    for key in _BOOLEANS:
+        if key in cleaned:
+            cleaned[key] = str(cleaned[key]).lower() in ("1", "true", "on", "yes")
+    return cleaned
+"""
+
+_CONTROLLER_STUB = (
+    """\
 from hunt.http.controller import Controller
 from hunt.http.request import Request
-from hunt.http.response import Response
+from hunt.http.response import HttpException, Response
+from hunt.validation.validator import Validator
 from {{model_import}} import {{model_class}}
+
+"""
+    + _CONTROLLER_HELPERS
+    + """\
+
+
+def _values(item: {{model_class}}) -> dict:
+    return {key: item._attributes.get(key) for key in RULES}
 
 
 class {{class}}(Controller):
     def index(self, request: Request) -> Response:
-        items = {{model_class}}.all()
+        items = {{model_class}}.all().get()
         return self.view("{{view_dir}}/index", {"items": items})
 
     def create(self, request: Request) -> Response:
-        return self.view("{{view_dir}}/create")
+        return self.view("{{view_dir}}/create", {"errors": {}, "values": {}})
 
     def store(self, request: Request) -> Response:
-{{store_lines}}        return self.redirect("/{{route_prefix}}")
+        data = _input(request)
+        errors = _validate(data, RULES)
+        if errors:
+            return self.view("{{view_dir}}/create", {"errors": errors, "values": data})
+        item = {{model_class}}()
+        item.fill({**_DEFAULTS, **_clean(data)})
+        item.save()
+        return self.redirect("/{{route_prefix}}")
 
     def show(self, request: Request, id: str) -> Response:
-        item = {{model_class}}.find_or_fail(int(id))
-        return self.view("{{view_dir}}/show", {"item": item})
+        return self.view("{{view_dir}}/show", {"item": _find(id)})
 
     def edit(self, request: Request, id: str) -> Response:
-        item = {{model_class}}.find_or_fail(int(id))
-        return self.view("{{view_dir}}/edit", {"item": item})
+        item = _find(id)
+        return self.view("{{view_dir}}/edit", {"item": item, "errors": {}, "values": _values(item)})
 
     def update(self, request: Request, id: str) -> Response:
-        item = {{model_class}}.find_or_fail(int(id))
-{{update_lines}}        item.save()
+        item = _find(id)
+        # Only submitted fields are validated and changed; everything else keeps its value.
+        data = _input(request)
+        errors = _validate(data, {key: RULES[key] for key in data})
+        if errors:
+            values = {**_values(item), **data}
+            return self.view("{{view_dir}}/edit", {"item": item, "errors": errors, "values": values})
+        item.fill(_clean(data))
+        item.save()
         return self.redirect("/{{route_prefix}}")
 
     def destroy(self, request: Request, id: str) -> Response:
-        item = {{model_class}}.find_or_fail(int(id))
-        item.delete()
+        _find(id).delete()
         return self.redirect("/{{route_prefix}}")
 """
+)
 
 _ROUTES_BLOCK = """\
-    # {{class}} CRUD
+    # {{class}} CRUD — every route requires a logged-in user. Add your own
+    # authorization (ownership, roles) in the controller before going live.
+    from hunt.http.middleware.authenticate import Authenticate
+    from app.controllers.{{snake}}_controller import {{class}}Controller
+    _c = {{class}}Controller()
+    with router.group(middleware=[Authenticate]):
+        router.get("/{{prefix}}", _c.index).named("{{prefix}}.index")
+        router.get("/{{prefix}}/create", _c.create).named("{{prefix}}.create")
+        router.post("/{{prefix}}", _c.store).named("{{prefix}}.store")
+        router.get("/{{prefix}}/{id}", _c.show).named("{{prefix}}.show")
+        router.get("/{{prefix}}/{id}/edit", _c.edit).named("{{prefix}}.edit")
+        router.post("/{{prefix}}/{id}/update", _c.update).named("{{prefix}}.update")
+        router.post("/{{prefix}}/{id}/delete", _c.destroy).named("{{prefix}}.destroy")\
+"""
+
+_ROUTES_BLOCK_PUBLIC = """\
+    # {{class}} CRUD — PUBLIC: generated with --public, so anyone can create,
+    # edit and delete records. Wrap the write routes in middleware before going live.
     from app.controllers.{{snake}}_controller import {{class}}Controller
     _c = {{class}}Controller()
     router.get("/{{prefix}}", _c.index).named("{{prefix}}.index")
@@ -264,12 +384,12 @@ _ROUTES_BLOCK = """\
     router.post("/{{prefix}}", _c.store).named("{{prefix}}.store")
     router.get("/{{prefix}}/{id}", _c.show).named("{{prefix}}.show")
     router.get("/{{prefix}}/{id}/edit", _c.edit).named("{{prefix}}.edit")
-    router.put("/{{prefix}}/{id}", _c.update).named("{{prefix}}.update")
-    router.delete("/{{prefix}}/{id}", _c.destroy).named("{{prefix}}.destroy")\
+    router.post("/{{prefix}}/{id}/update", _c.update).named("{{prefix}}.update")
+    router.post("/{{prefix}}/{id}/delete", _c.destroy).named("{{prefix}}.destroy")\
 """
 
 _VIEW_INDEX = """\
-@extends('layouts.app')
+@extends('layout')
 
 @section('content')
 <div class="max-w-4xl mx-auto py-8">
@@ -291,8 +411,8 @@ _VIEW_INDEX = """\
 {{table_cells}}                <td class="px-4 py-2 space-x-2">
                     <a href="/{{route_prefix}}/{{ item.id }}" class="text-blue-600 hover:underline">View</a>
                     <a href="/{{route_prefix}}/{{ item.id }}/edit" class="text-yellow-600 hover:underline">Edit</a>
-                    <form method="POST" action="/{{route_prefix}}/{{ item.id }}" style="display:inline">
-                        @csrf @method('DELETE')
+                    <form method="POST" action="/{{route_prefix}}/{{ item.id }}/delete" style="display:inline">
+                        @csrf
                         <button type="submit" class="text-red-600 hover:underline"
                             onclick="return confirm('Delete?')">Delete</button>
                     </form>
@@ -306,7 +426,7 @@ _VIEW_INDEX = """\
 """
 
 _VIEW_SHOW = """\
-@extends('layouts.app')
+@extends('layout')
 
 @section('content')
 <div class="max-w-2xl mx-auto py-8">
@@ -323,7 +443,7 @@ _VIEW_SHOW = """\
 """
 
 _VIEW_CREATE = """\
-@extends('layouts.app')
+@extends('layout')
 
 @section('content')
 <div class="max-w-2xl mx-auto py-8">
@@ -340,13 +460,13 @@ _VIEW_CREATE = """\
 """
 
 _VIEW_EDIT = """\
-@extends('layouts.app')
+@extends('layout')
 
 @section('content')
 <div class="max-w-2xl mx-auto py-8">
     <h1 class="text-2xl font-bold mb-6">Edit {{class}} #{{ item.id }}</h1>
-    <form method="POST" action="/{{route_prefix}}/{{ item.id }}" class="bg-white shadow rounded p-6 space-y-4">
-        @csrf @method('PUT')
+    <form method="POST" action="/{{route_prefix}}/{{ item.id }}/update" class="bg-white shadow rounded p-6 space-y-4">
+        @csrf
         @errors
 {{form_fields}}
         <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Update</button>

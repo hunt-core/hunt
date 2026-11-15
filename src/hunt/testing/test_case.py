@@ -284,43 +284,66 @@ class DatabaseTransactions:
     issued; the transaction is simply rolled back.  Works with SQLAlchemy
     synchronous engines (SQLite, MySQL, PostgreSQL).
 
+    Everything the test does through the framework (Model, QueryBuilder,
+    Schema, ``raw()``, including ``async_*`` calls that run in worker threads)
+    uses the test's connection, so nothing it writes is committed. A
+    ``transaction()`` / ``begin()`` block inside the code under test becomes a
+    savepoint of the test's transaction.
+
+    Not covered: code that takes ``connection()`` and opens its own
+    ``engine.connect()``, and MySQL DDL (which commits implicitly).
+
+    Set ``transaction_connections`` to wrap named connections instead of
+    (or as well as) the default one (``None``).
+
     Usage::
 
         class MyTest(HuntTestCase, DatabaseTransactions):
             ...
     """
 
+    transaction_connections: ClassVar[list[str | None]] = [None]
+
     _db_connection: Any = None
     _db_transaction: Any = None
+    _db_pins: list | None = None
 
     def setup_method(self) -> None:
-        from hunt.database.connection import connection as get_engine
+        from hunt.database.connection import _pin_connection
 
-        engine = get_engine()
-        self._db_connection = engine.connect()
-        self._db_transaction = self._db_connection.begin()
-
-        from unittest.mock import patch
-
-        from hunt.database import connection as conn_module
-
-        self._conn_patcher = patch.object(conn_module, "connection", return_value=self._db_connection)
-        self._conn_patcher.start()
+        self._db_pins = []
+        try:
+            for name in self.transaction_connections:
+                self._db_pins.append(_pin_connection(name))
+        except BaseException:
+            self.teardown_method()
+            raise
+        if self._db_pins:
+            _, self._db_connection, self._db_transaction = self._db_pins[0]
 
     def teardown_method(self) -> None:
-        if self._db_transaction is not None:
-            self._db_transaction.rollback()
-        if self._db_connection is not None:
-            self._db_connection.close()
-        if hasattr(self, "_conn_patcher"):
-            self._conn_patcher.stop()
+        from hunt.database.connection import _unpin_connection
+
+        pins, self._db_pins = self._db_pins or [], []
+        self._db_connection = None
+        self._db_transaction = None
+        errors: list[BaseException] = []
+        for engine, conn, tx in reversed(pins):
+            try:
+                _unpin_connection(engine, conn, tx)
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[0]
 
 
 class RefreshDatabase:
     """Mixin: delete all rows from every table after each test.
 
     Override ``refresh_tables`` to limit which tables are cleaned; otherwise
-    all tables reported by the DB inspector are purged.
+    every table is purged except the migrations tracking table. Tables are
+    emptied children-first (in foreign-key order) and a failed DELETE fails
+    the test instead of silently leaving rows behind.
 
     Usage::
 
@@ -334,19 +357,35 @@ class RefreshDatabase:
         pass
 
     def teardown_method(self) -> None:
-        from sqlalchemy import inspect, text
+        from sqlalchemy import MetaData, inspect, text
 
         from hunt.database.connection import connection
+        from hunt.database.schema.migration import MIGRATIONS_TABLE
 
         engine = connection()
-        tables = list(self.refresh_tables)
-        if not tables:
-            tables = inspect(engine).get_table_names()
+        quote = engine.dialect.identifier_preparer.quote
+        explicit = list(self.refresh_tables)
+        existing = [t for t in inspect(engine).get_table_names() if t != MIGRATIONS_TABLE]
+
+        # Children before parents, so a DELETE never trips a foreign key.
+        metadata = MetaData()
+        metadata.reflect(bind=engine, only=existing)
+        ordered = [t.name for t in reversed(metadata.sorted_tables)]
+        ordered += [t for t in existing if t not in ordered]
+
+        if explicit:
+            wanted = set(explicit)
+            tables = [t for t in ordered if t in wanted]
+            # A listed table that does not exist is reported, not skipped.
+            tables += [t for t in explicit if t not in set(tables)]
+        else:
+            tables = ordered
 
         with engine.connect() as conn:
-            for table in reversed(tables):
-                try:
-                    conn.execute(text(f"DELETE FROM {table}"))
-                except Exception:
-                    pass
+            try:
+                for table in tables:
+                    conn.execute(text(f"DELETE FROM {quote(table)}"))
+            except Exception:
+                conn.rollback()
+                raise
             conn.commit()

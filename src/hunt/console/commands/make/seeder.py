@@ -31,8 +31,10 @@ def make_seeder_command(name: str, dry_run: bool, as_json: bool) -> None:
 
 def _create_seeder(name: str) -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make._output import output
 
+    validate_identifier(name, "seeder name")
     class_name = name if name.endswith("Seeder") else f"{name}Seeder"
     out = Path.cwd() / "database" / "seeders" / f"{class_name}.py"
     content = load_stub("seeder", _STUB).format(class_name=class_name)

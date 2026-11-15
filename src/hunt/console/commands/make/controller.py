@@ -24,8 +24,10 @@ def make_controller_command(name: str, resource: bool, api: bool, dry_run: bool,
 
 def _create_controller(name: str, resource: bool = False, api: bool = False) -> None:
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
     from hunt.console.commands.make._output import output
 
+    validate_identifier(name, "controller name")
     class_name = Str.pascal(name)
     if resource and not api:
         stub = load_stub("controller.resource", _RESOURCE_STUB)

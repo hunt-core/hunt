@@ -21,6 +21,7 @@ class NotificationFake:
     def __init__(self) -> None:
         self._sent: list[tuple[Any, Notification]] = []
         self._patcher: Any = None
+        self._now_patcher: Any = None
 
     def __enter__(self) -> NotificationFake:
         from hunt.notifications.notifiable import _NotificationSender
@@ -32,11 +33,18 @@ class NotificationFake:
 
         self._patcher = patch.object(_NotificationSender, "send", _patched_send)
         self._patcher.start()
+        # notify_now() must be intercepted too, or it would deliver for real.
+        self._now_patcher = patch.object(_NotificationSender, "send_now", _patched_send)
+        self._now_patcher.start()
         return self
 
     def __exit__(self, *args: Any) -> None:
         if self._patcher:
             self._patcher.stop()
+            self._patcher = None
+        if self._now_patcher:
+            self._now_patcher.stop()
+            self._now_patcher = None
 
     # ------------------------------------------------------------------
     # Assertions

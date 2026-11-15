@@ -5,14 +5,40 @@ from typing import Any
 from hunt.support.str import Str
 
 
+class _Skip:
+    """Sentinel returned by ``Field.prepare_for_storage`` to leave a column untouched."""
+
+    _instance: _Skip | None = None
+
+    def __new__(cls) -> _Skip:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "SKIP"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+SKIP = _Skip()
+
+
 class Field:
     """Base field for AdminResource definitions."""
+
+    # True for fields whose values must never appear in audit rows or exports.
+    sensitive: bool = False
+    # True for fields where a blank value on edit means "keep the stored value":
+    # the blank is neither validated nor written (see Password).
+    keep_when_blank_on_update: bool = False
 
     field_type: str = "text"
 
     def __init__(self, name: str, attribute: str | None = None) -> None:
         self.name = name
-        self.attribute = attribute if attribute is not None else Str.snake(name)
+        self.attribute = attribute if attribute is not None else "_".join(Str.snake(word) for word in name.split())
         self.label = name
         self.field_type = self.__class__.field_type
 
@@ -121,3 +147,28 @@ class Field:
         if val is None:
             return ""
         return str(val)
+
+    # ------------------------------------------------------------------
+    # Form <-> storage conversion
+    # ------------------------------------------------------------------
+
+    def to_form_value(self, raw: Any) -> Any:
+        """Convert a stored value (or re-flashed old input) to what the form control expects."""
+        return "" if raw is None else raw
+
+    def from_form_value(self, value: Any, current: Any = None) -> Any:
+        """Convert a submitted form value to the column's representation.
+
+        ``current`` is the value presently stored on the record (``None`` on
+        create); fields may use it to keep the column's existing type.
+        """
+        if value == "" and self._nullable:
+            return None
+        return value
+
+    def prepare_for_storage(self, value: Any, *, is_update: bool) -> Any:
+        """Last hook before a validated value is written to the model.
+
+        Return ``SKIP`` to leave the column untouched.
+        """
+        return value

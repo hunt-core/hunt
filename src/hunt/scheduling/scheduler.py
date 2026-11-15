@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import os
+import re
 import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from datetime import datetime
 from datetime import time as dtime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from hunt.scheduling.cron import matches
+from hunt.queue._logging import log_error
+from hunt.scheduling.cron import matches, validate
 
 try:
     import fcntl
@@ -78,13 +83,29 @@ class ScheduledTask:
         self._on_failure: list[Callable[[], Any]] = []
         self._ping_before: list[str] = []
         self._then_ping: list[str] = []
+        self._timezone: ZoneInfo | None = None
+        # Position in the Scheduler's task list; part of the default lock key.
+        self._index = 0
+        # True for scheduler.command() tasks, which write their own output file.
+        self._is_command = False
+        # Set when a run_in_background() task raised (read by schedule:run).
+        self._background_error: BaseException | None = None
 
     # ------------------------------------------------------------------
     # Timing helpers
     # ------------------------------------------------------------------
 
     def cron(self, expression: str) -> ScheduledTask:
-        self._expression = expression
+        """Set a standard 5-field cron expression (day-of-week: 0 or 7 = Sunday).
+
+        Raises ``ValueError`` immediately if the expression is invalid.
+        """
+        self._expression = validate(expression)
+        return self
+
+    def timezone(self, tz: str | ZoneInfo) -> ScheduledTask:
+        """Evaluate the cron expression and ``between()`` window in this IANA timezone."""
+        self._timezone = tz if isinstance(tz, ZoneInfo) else ZoneInfo(str(tz))
         return self
 
     def every_minute(self) -> ScheduledTask:
@@ -116,9 +137,11 @@ class ScheduledTask:
         return self.cron(f"{minute or 0} {hour} * * *")
 
     def weekly(self) -> ScheduledTask:
+        """Run every Sunday at 00:00."""
         return self.cron("0 0 * * 0")
 
-    def weekly_on(self, day: int, time: str = "0:00") -> ScheduledTask:
+    def weekly_on(self, day: int | str, time: str = "0:00") -> ScheduledTask:
+        """Run weekly on *day* (0 or 7 = Sunday … 6 = Saturday, or a name like ``"MON"``)."""
         hour, _, minute = time.partition(":")
         return self.cron(f"{minute or 0} {hour} * * {day}")
 
@@ -180,7 +203,10 @@ class ScheduledTask:
     # ------------------------------------------------------------------
 
     def run_in_background(self) -> ScheduledTask:
-        """Execute the task in a daemon thread (non-blocking)."""
+        """Execute the task in a background thread (non-blocking).
+
+        ``schedule:run`` waits for background tasks to finish before it exits.
+        """
         self._run_in_background = True
         return self
 
@@ -224,8 +250,38 @@ class ScheduledTask:
     # Internal
     # ------------------------------------------------------------------
 
+    def _local_time(self, dt: datetime | None = None) -> datetime:
+        """*dt* (default: now) expressed in the task's timezone, if one is set."""
+        if self._timezone is None:
+            return dt or datetime.now()
+        if dt is None:
+            return datetime.now(self._timezone)
+        # A naive datetime is taken to be system local time.
+        return dt.astimezone(self._timezone)
+
     def is_due(self, dt: datetime | None = None) -> bool:
-        return matches(self._expression, dt)
+        return matches(self._expression, self._local_time(dt))
+
+    def lock_key(self) -> str:
+        """Name of the ``without_overlapping`` lock; identical in every process.
+
+        The task name if one was given, otherwise a digest of what identifies
+        the task in the schedule file (expression, description, callback and
+        position), never a per-process value such as ``id()``.
+        """
+        if self._name:
+            return re.sub(r"[^A-Za-z0-9_.-]", "_", self._name)
+        callback = self._callback
+        identity = "\0".join(
+            (
+                self._expression,
+                self._description,
+                getattr(callback, "__module__", "") or "",
+                getattr(callback, "__qualname__", "") or type(callback).__qualname__,
+                str(self._index),
+            )
+        )
+        return "task-" + hashlib.sha256(identity.encode()).hexdigest()[:32]
 
     def _constraints_pass(self, dt: datetime | None = None) -> bool:
         """Return False if any environment / conditional / time constraint fails."""
@@ -237,7 +293,7 @@ class ScheduledTask:
 
         # Time window check
         if self._between_start is not None and self._between_end is not None:
-            now = (dt or datetime.now()).time().replace(second=0, microsecond=0)
+            now = self._local_time(dt).time().replace(second=0, microsecond=0)
             if self._between_start <= self._between_end:
                 # normal window: 08:00-17:00
                 if not (self._between_start <= now <= self._between_end):
@@ -286,10 +342,8 @@ class ScheduledTask:
         self._ping(self._ping_before)
         result = None
         exc = None
-        if self._output_path is not None:
+        if self._output_path is not None and not self._is_command:
             buf = io.StringIO()
-            import sys
-
             old_stdout, old_stderr = sys.stdout, sys.stderr
             sys.stdout = sys.stderr = buf
             try:
@@ -330,7 +384,7 @@ class ScheduledTask:
             if self._without_overlapping:
                 lock_dir = Path.cwd() / "storage" / "framework" / "schedule"
                 lock_dir.mkdir(parents=True, exist_ok=True)
-                lock_file = lock_dir / f"{self._name or id(self)}.lock"
+                lock_file = lock_dir / f"{self.lock_key()}.lock"
                 fh = lock_file.open("w")
                 acquired = False
                 try:
@@ -345,7 +399,18 @@ class ScheduledTask:
             return self._execute()
 
         if self._run_in_background:
-            t = threading.Thread(target=_do_run, daemon=True)
+            self._background_error = None
+
+            def _background() -> None:
+                try:
+                    _do_run()
+                except BaseException as exc:
+                    self._background_error = exc
+                    log_error(f"Scheduled background task {self._description or self._name!r} failed: {exc!r}")
+
+            # Not a daemon thread: the interpreter (and schedule:run, which
+            # joins it) waits for the task instead of killing it at exit.
+            t = threading.Thread(target=_background, name="hunt-schedule-task")
             t.start()
             return t
 
@@ -357,6 +422,7 @@ class ScheduledTask:
             "expression": self._expression,
             "description": self._description or repr(self._callback),
             "name": self._name,
+            "timezone": str(self._timezone) if self._timezone is not None else "",
         }
 
 
@@ -364,26 +430,53 @@ class Scheduler:
     def __init__(self) -> None:
         self._tasks: list[ScheduledTask] = []
 
-    def call(self, callback: Callable[[], Any], description: str = "") -> ScheduledTask:
-        task = ScheduledTask(callback, label=description)
+    def _add(self, task: ScheduledTask) -> ScheduledTask:
+        task._index = len(self._tasks)
         self._tasks.append(task)
         return task
+
+    def call(self, callback: Callable[[], Any], description: str = "") -> ScheduledTask:
+        return self._add(ScheduledTask(callback, label=description))
 
     def command(self, *args: str, description: str = "") -> ScheduledTask:
-        # args must be plain strings (no shell metacharacters); subprocess.call
-        # passes them as a list so no shell injection is possible, but callers
-        # should never interpolate untrusted input into these arguments.
+        """Schedule a ``hunt`` console command, run as ``python -m hunt <args>``.
+
+        The command runs with the current interpreter in a subprocess. A
+        non-zero exit status counts as a failure (``on_failure`` fires and
+        ``schedule:run`` reports it). With ``send_output_to``/``append_output_to``
+        the subprocess's stdout and stderr go to that file.
+        """
+        # args must be plain strings (no shell metacharacters); they are passed
+        # as a list so no shell injection is possible, but callers should
+        # never interpolate untrusted input into these arguments.
         safe_args = [str(a) for a in args]
+        argv = [sys.executable, "-m", "hunt", *safe_args]
 
         def _run() -> int:
-            return subprocess.call(["python", "-m", "hunt", *safe_args])
+            if task._output_path:
+                Path(task._output_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(task._output_path, "a" if task._output_append else "w") as fh:
+                    completed = subprocess.run(argv, stdout=fh, stderr=subprocess.STDOUT, check=False)
+            else:
+                completed = subprocess.run(argv, check=False)
+            if completed.returncode != 0:
+                raise RuntimeError(f"Command `hunt {' '.join(safe_args)}` exited with status {completed.returncode}.")
+            return completed.returncode
 
         task = ScheduledTask(_run, label=description or " ".join(safe_args))
-        self._tasks.append(task)
-        return task
+        task._is_command = True
+        return self._add(task)
 
     def due_tasks(self, dt: datetime | None = None) -> list[ScheduledTask]:
-        return [t for t in self._tasks if t.is_due(dt)]
+        due = []
+        for task in self._tasks:
+            try:
+                if task.is_due(dt):
+                    due.append(task)
+            except Exception as exc:
+                # One unusable task must not stop the others from running.
+                log_error(f"Scheduled task {task._description or task._name!r} skipped: {exc}")
+        return due
 
     @property
     def tasks(self) -> list[ScheduledTask]:

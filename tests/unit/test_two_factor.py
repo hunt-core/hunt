@@ -147,7 +147,9 @@ class TestSessionGuardTwoFactor:
             _request_var.reset(token)
 
         assert result is False
-        session.put.assert_called_once_with("_2fa_pending", 5)
+        session.put.assert_any_call("_2fa_pending", 5)
+        # AUTH-03: the pending challenge is timestamped so that it can expire.
+        assert any(c.args[0] == "_2fa_pending_at" for c in session.put.call_args_list)
 
     def test_attempt_without_2fa_logs_in_directly(self):
         import bcrypt
@@ -181,7 +183,11 @@ class TestSessionGuardTwoFactor:
 
         guard = _SessionGuard("web")
         session = MagicMock()
-        session.get.return_value = 7
+        # AUTH-03: a pending challenge only counts while its timestamp is fresh.
+        import time as _time
+
+        state = {"_2fa_pending": 7, "_2fa_pending_at": int(_time.time())}
+        session.get.side_effect = lambda key, default=None: state.get(key, default)
         request = MagicMock()
         request._session = session
         token = _request_var.set(request)
@@ -364,9 +370,11 @@ class TestTotpReplayProtection:
         controller = TwoFactorChallengeController()
 
         session = MagicMock()
+        import time as _time
+
         session.get.side_effect = lambda key, default=None: {
             "_2fa_pending": 10,
-            "_2fa_attempts": 0,
+            "_2fa_pending_at": int(_time.time()),
         }.get(key, default)
 
         request = MagicMock()
@@ -374,7 +382,7 @@ class TestTotpReplayProtection:
         request.input.return_value = "123456"
 
         user = MagicMock()
-        user._attributes = {"two_factor_secret": "encrypted"}
+        user._attributes = {"id": 10, "two_factor_secret": "encrypted"}
 
         guard = MagicMock()
         guard._model.find.return_value = user
@@ -382,14 +390,16 @@ class TestTotpReplayProtection:
         with (
             patch("hunt.auth.controllers.two_factor.Auth") as mock_auth,
             patch("hunt.auth.controllers.two_factor.TwoFactor.decrypt_secret", return_value="SECRET"),
-            patch("hunt.auth.controllers.two_factor.TwoFactor.verify", return_value=True),
-            patch("hunt.auth.controllers.two_factor.TwoFactor.is_used", return_value=True),
-            patch("hunt.auth.controllers.two_factor.TwoFactor.mark_used") as mock_mark,
+            patch("hunt.auth.controllers.two_factor.TwoFactor.verify_step", return_value=777),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.register_attempt", return_value=True),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.consume", return_value=False) as mock_consume,
         ):
             mock_auth._default_guard = guard
             controller.store(request)
 
-        mock_mark.assert_not_called()
+        # AUTH-02: the step was already consumed, so the replayed code must not log in.
+        mock_consume.assert_called_once_with(10, 777)
+        guard.login.assert_not_called()
 
     def test_challenge_controller_marks_used_on_success(self):
         from hunt.auth.controllers.two_factor import TwoFactorChallengeController
@@ -397,9 +407,11 @@ class TestTotpReplayProtection:
         controller = TwoFactorChallengeController()
 
         session = MagicMock()
+        import time as _time
+
         session.get.side_effect = lambda key, default=None: {
             "_2fa_pending": 10,
-            "_2fa_attempts": 0,
+            "_2fa_pending_at": int(_time.time()),
         }.get(key, default)
 
         request = MagicMock()
@@ -407,7 +419,7 @@ class TestTotpReplayProtection:
         request.input.return_value = "123456"
 
         user = MagicMock()
-        user._attributes = {"two_factor_secret": "encrypted"}
+        user._attributes = {"id": 10, "two_factor_secret": "encrypted"}
 
         guard = MagicMock()
         guard._model.find.return_value = user
@@ -415,11 +427,14 @@ class TestTotpReplayProtection:
         with (
             patch("hunt.auth.controllers.two_factor.Auth") as mock_auth,
             patch("hunt.auth.controllers.two_factor.TwoFactor.decrypt_secret", return_value="SECRET"),
-            patch("hunt.auth.controllers.two_factor.TwoFactor.verify", return_value=True),
-            patch("hunt.auth.controllers.two_factor.TwoFactor.is_used", return_value=False),
-            patch("hunt.auth.controllers.two_factor.TwoFactor.mark_used") as mock_mark,
+            patch("hunt.auth.controllers.two_factor.TwoFactor.verify_step", return_value=777),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.register_attempt", return_value=True),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.clear_failures"),
+            patch("hunt.auth.controllers.two_factor.TwoFactor.consume", return_value=True) as mock_consume,
         ):
             mock_auth._default_guard = guard
             controller.store(request)
 
-        mock_mark.assert_called_once_with(10, "123456")
+        # AUTH-02: the matched time-step is consumed atomically (replaces is_used + mark_used).
+        mock_consume.assert_called_once_with(10, 777)
+        guard.login.assert_called_once_with(user)

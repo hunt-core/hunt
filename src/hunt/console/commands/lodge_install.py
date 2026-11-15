@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 import sys
 from pathlib import Path
 
@@ -12,19 +13,40 @@ import click
 
 _SERVICES = ("pgsql", "mysql", "redis", "mailpit", "minio")
 
+# Image tags are pinned to explicit releases so a rebuild never silently pulls a
+# different major/minor version. Bump them deliberately.
+_IMAGE_PGSQL = "postgres:16.16"
+_IMAGE_MYSQL = "mysql:8.0.46"
+_IMAGE_REDIS = "redis:7.4.12-alpine"
+_IMAGE_MAILPIT = "axllent/mailpit:v1.33.1"
+# MinIO no longer publishes community images under minio/minio. This is the
+# same MinIO server built by Chainguard, which is publicly pullable; its free
+# tier only offers the "latest" tag, so it is pinned by digest
+# (RELEASE.2026-11-12T01-15-23Z). Override with LODGE_MINIO_IMAGE.
+_IMAGE_MINIO = "cgr.dev/chainguard/minio@sha256:18c8fa28697b25e0f34c6faae171079e88a03efb8e76a21d3b5d07b4e3cbef3e"
+
+# Published ports bind to loopback only. Containers reach each other over the
+# private "lodge" network, so nothing needs to listen on other interfaces.
+# FORWARD_*_PORT is the host side of a mapping; DB_PORT, REDIS_PORT, MAIL_PORT
+# and friends stay the in-container ports the application connects to.
+_BIND = "127.0.0.1"
+
+_APP_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+_PYTHON_VERSION_RE = re.compile(r"^\d+\.\d+$")
+
 # ---------------------------------------------------------------------------
 # Compose YAML builders
 # ---------------------------------------------------------------------------
 
 _SERVICE_PGSQL = """\
   pgsql:
-    image: "postgres:16"
+    image: "__IMAGE_PGSQL__"
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "__BIND__:${FORWARD_DB_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: "${DB_DATABASE:-hunt}"
       POSTGRES_USER: "${DB_USERNAME:-hunt}"
-      POSTGRES_PASSWORD: "${DB_PASSWORD:-secret}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
     volumes:
       - "lodge-pgsql:/var/lib/postgresql/data"
     networks:
@@ -37,30 +59,34 @@ _SERVICE_PGSQL = """\
 
 _SERVICE_MYSQL = """\
   mysql:
-    image: "mysql:8.0"
+    image: "__IMAGE_MYSQL__"
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "__BIND__:${FORWARD_DB_PORT:-3306}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:-secret}"
-      MYSQL_ROOT_HOST: "%"
+      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
+      MYSQL_ROOT_HOST: "localhost"
       MYSQL_DATABASE: "${DB_DATABASE:-hunt}"
       MYSQL_USER: "${DB_USERNAME:-hunt}"
-      MYSQL_PASSWORD: "${DB_PASSWORD:-secret}"
+      MYSQL_PASSWORD: "${DB_PASSWORD:?Set DB_PASSWORD in .env}"
     volumes:
       - "lodge-mysql:/var/lib/mysql"
     networks:
       - lodge
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-p${DB_PASSWORD:-secret}"]
+      test: ["CMD", "mysqladmin", "ping", "-p${DB_PASSWORD:?Set DB_PASSWORD in .env}"]
       retries: 3
       timeout: 5s
 """
 
 _SERVICE_REDIS = """\
   redis:
-    image: "redis:alpine"
+    image: "__IMAGE_REDIS__"
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "__BIND__:${FORWARD_REDIS_PORT:-6379}:6379"
+    environment:
+      # Lets `redis-cli` (health check, `./lodge redis`) authenticate.
+      REDISCLI_AUTH: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
     volumes:
       - "lodge-redis:/data"
     networks:
@@ -73,40 +99,56 @@ _SERVICE_REDIS = """\
 
 _SERVICE_MAILPIT = """\
   mailpit:
-    image: "axllent/mailpit:latest"
+    image: "__IMAGE_MAILPIT__"
     ports:
-      - "${MAIL_PORT:-1025}:1025"
-      - "${MAILPIT_DASHBOARD_PORT:-8025}:8025"
+      - "__BIND__:${FORWARD_MAILPIT_PORT:-1025}:1025"
+      - "__BIND__:${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025"
     networks:
       - lodge
 """
 
 _SERVICE_MINIO = """\
   minio:
-    image: "minio/minio:latest"
+    image: "${LODGE_MINIO_IMAGE:-__IMAGE_MINIO__}"
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "__BIND__:${FORWARD_MINIO_PORT:-9000}:9000"
+      - "__BIND__:${FORWARD_MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: "${AWS_ACCESS_KEY_ID:-lodge}"
-      MINIO_ROOT_PASSWORD: "${AWS_SECRET_ACCESS_KEY:-password}"
+      MINIO_ROOT_USER: "${AWS_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID in .env}"
+      MINIO_ROOT_PASSWORD: "${AWS_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY in .env}"
     volumes:
       - "lodge-minio:/data"
     networks:
       - lodge
-    command: minio server /data --console-address ":9001"
+    # Explicit entrypoint + command: works whether or not the image already
+    # sets `minio` as its entrypoint.
+    entrypoint: ["minio"]
+    command: ["server", "/data", "--console-address", ":9001"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # `mc` ships in the image; curl does not.
+      test: ["CMD", "mc", "ready", "local"]
       retries: 3
       timeout: 5s
 """
 
+
+def _render_service(template: str) -> str:
+    return (
+        template.replace("__BIND__", _BIND)
+        .replace("__IMAGE_PGSQL__", _IMAGE_PGSQL)
+        .replace("__IMAGE_MYSQL__", _IMAGE_MYSQL)
+        .replace("__IMAGE_REDIS__", _IMAGE_REDIS)
+        .replace("__IMAGE_MAILPIT__", _IMAGE_MAILPIT)
+        .replace("__IMAGE_MINIO__", _IMAGE_MINIO)
+    )
+
+
 _SERVICE_BLOCKS = {
-    "pgsql": _SERVICE_PGSQL,
-    "mysql": _SERVICE_MYSQL,
-    "redis": _SERVICE_REDIS,
-    "mailpit": _SERVICE_MAILPIT,
-    "minio": _SERVICE_MINIO,
+    "pgsql": _render_service(_SERVICE_PGSQL),
+    "mysql": _render_service(_SERVICE_MYSQL),
+    "redis": _render_service(_SERVICE_REDIS),
+    "mailpit": _render_service(_SERVICE_MAILPIT),
+    "minio": _render_service(_SERVICE_MINIO),
 }
 
 # Services that expose a healthcheck (others use service_started)
@@ -143,7 +185,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${{APP_PORT:-8000}}:8000"
+      - "{_BIND}:${{APP_PORT:-8000}}:8000"
     env_file:
       - .env
     volumes:
@@ -343,22 +385,56 @@ _ENV_UPDATES: dict[str, dict[str, str]] = {
     },
     "redis": {
         "REDIS_HOST": "redis",
+        "REDIS_PORT": "6379",
+        "REDIS_PASSWORD": "secret",
         "CACHE_DRIVER": "redis",
     },
     "mailpit": {
         "MAIL_MAILER": "smtp",
         "MAIL_HOST": "mailpit",
         "MAIL_PORT": "1025",
-        "MAILPIT_DASHBOARD_PORT": "8025",
+        # Mailpit speaks plain SMTP; "tls" would fail the STARTTLS handshake.
+        "MAIL_ENCRYPTION": "none",
     },
     "minio": {
         "FILESYSTEM_DISK": "s3",
-        "AWS_ENDPOINT": "http://minio:9000",
+        "AWS_ENDPOINT_URL": "http://minio:9000",
         "AWS_ACCESS_KEY_ID": "lodge",
         "AWS_SECRET_ACCESS_KEY": "password",
         "AWS_BUCKET": "local",
     },
 }
+
+# Values a developer may already have set to something real. They are only
+# written when the key is missing or empty, never replaced.
+_PRESERVED_KEYS = frozenset(
+    {
+        "DB_USERNAME",
+        "DB_PASSWORD",
+        "REDIS_PASSWORD",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_BUCKET",
+    }
+)
+
+# Keys that get a random value in .env instead of the well-known default.
+_GENERATED_SECRETS = frozenset({"DB_PASSWORD", "REDIS_PASSWORD", "AWS_SECRET_ACCESS_KEY"})
+
+# Python packages a service needs that hunt does not install by default.
+_DRIVER_EXTRAS: dict[str, tuple[str, str]] = {
+    "pgsql": ("postgres", "psycopg2-binary"),
+    "redis": ("redis", "redis"),
+    "minio": ("s3", "boto3"),
+}
+
+
+def _get_env(content: str, key: str) -> str | None:
+    """Return the value of *key* in .env content, or None when it is not defined."""
+    m = re.search(rf"^{re.escape(key)}=(.*)$", content, re.MULTILINE)
+    if m is None:
+        return None
+    return m.group(1).strip().strip("\"'")
 
 
 def _set_env(content: str, key: str, value: str) -> str:
@@ -366,8 +442,88 @@ def _set_env(content: str, key: str, value: str) -> str:
     pattern = rf"^{re.escape(key)}=.*"
     line = f"{key}={value}"
     if re.search(pattern, content, re.MULTILINE):
-        return re.sub(pattern, line, content, flags=re.MULTILINE)
+        return re.sub(pattern, lambda _m: line, content, flags=re.MULTILINE)
     return content.rstrip("\n") + f"\n{line}\n"
+
+
+def _looks_like_sqlite_path(value: str) -> bool:
+    return "/" in value or "\\" in value or value.endswith((".sqlite", ".sqlite3", ".db")) or value == ":memory:"
+
+
+def _apply_service_env(content: str, service: str, *, generate_secrets: bool) -> tuple[str, list[str]]:
+    """Apply a service's env defaults to .env content.
+
+    Wiring keys (hosts, ports, driver names) are set to the values the compose
+    services use. Credentials that already hold a non-empty value are left
+    untouched. Returns the new content and the list of keys that were kept.
+    """
+    kept: list[str] = []
+    for key, value in _ENV_UPDATES.get(service, {}).items():
+        current = _get_env(content, key)
+        if current:
+            if key in _PRESERVED_KEYS:
+                kept.append(key)
+                continue
+            if key == "DB_DATABASE" and not _looks_like_sqlite_path(current):
+                kept.append(key)
+                continue
+        if generate_secrets and key in _GENERATED_SECRETS:
+            value = secrets.token_urlsafe(18)
+        content = _set_env(content, key, value)
+    return content, kept
+
+
+def _driver_hint(service: str) -> str | None:
+    """Return install instructions for the driver package *service* needs, if any."""
+    extra = _DRIVER_EXTRAS.get(service)
+    if extra is None:
+        return None
+    extra_name, package = extra
+    hint = (
+        f"  {service} needs the '{package}' package, which hunt does not install by default.\n"
+        f'    Install it:  pip install "hunt-framework[{extra_name}]"   (or: pip install {package})\n'
+        f"    and add it to the dependencies in pyproject.toml so the Lodge image includes it."
+    )
+    if service == "minio":
+        hint += (
+            "\n  The MinIO service uses the Chainguard build of MinIO, pinned by digest.\n"
+            "    Set LODGE_MINIO_IMAGE in .env to use a different MinIO image."
+        )
+    return hint
+
+
+def _confirm(message: str) -> bool:
+    """Ask a yes/no question; a closed or non-interactive stdin counts as "no"."""
+    try:
+        return click.confirm(message, default=False)
+    except click.Abort:
+        click.echo("")
+        return False
+
+
+def _write_guarded(path: Path, content: str, label: str, *, force: bool, mode: int | None = None) -> bool:
+    """Write a generated file without silently replacing an existing one.
+
+    Returns True when the file now holds *content*.
+    """
+    if path.exists():
+        try:
+            current: str | None = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            current = None
+        if current == content:
+            if mode is not None:
+                path.chmod(mode)
+            click.echo(f"  =  {label} (unchanged)")
+            return True
+        if not force and not _confirm(f"  {label} already exists. Overwrite?"):
+            click.echo(f"  -  {label} kept (use --force to overwrite)")
+            return False
+    path.write_text(content, encoding="utf-8")
+    if mode is not None:
+        path.chmod(mode)
+    click.echo(f"  ✓  {label}")
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +544,8 @@ def _set_env(content: str, key: str, value: str) -> str:
     default=None,
     help="Python version for the Docker image (default: current runtime version)",
 )
-def lodge_install_command(with_services: str, python_version: str | None) -> None:
+@click.option("--force", is_flag=True, help="Overwrite existing Lodge files without asking.")
+def lodge_install_command(with_services: str, python_version: str | None, force: bool) -> None:
     """Scaffold a Lodge (Docker Compose) development environment."""
     cwd = Path.cwd()
 
@@ -400,12 +557,26 @@ def lodge_install_command(with_services: str, python_version: str | None) -> Non
             if line.strip().startswith("name"):
                 m = re.search(r'name\s*=\s*["\']([^"\']+)["\']', line)
                 if m:
-                    app_name = m.group(1).replace("-", "_")
+                    app_name = m.group(1)
                     break
+    # The name becomes a Docker image repository inside compose.yaml, so it
+    # must be a plain lowercase token: nothing that could break out of the
+    # quoted YAML scalar or be rejected by Docker.
+    app_name = app_name.replace("-", "_").lower()
+    if not _APP_NAME_RE.match(app_name):
+        click.echo(
+            f"  Invalid application name {app_name!r}: use letters, digits, '.', '_' or '-' "
+            "(set [project].name in pyproject.toml).",
+            err=True,
+        )
+        raise SystemExit(1)
 
     # ── Python version ────────────────────────────────────────────────────────
     if python_version is None:
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    elif not _PYTHON_VERSION_RE.match(python_version):
+        click.echo(f"  Invalid --python value {python_version!r}. Expected MAJOR.MINOR, e.g. 3.12.", err=True)
+        raise SystemExit(1)
 
     # ── Parse requested services ──────────────────────────────────────────────
     services: list[str] = []
@@ -428,58 +599,62 @@ def lodge_install_command(with_services: str, python_version: str | None) -> Non
         click.echo("  No hunt project detected. Run `hunt new <name>` first.", err=True)
         raise SystemExit(1)
 
-    # ── Check for existing compose.yaml ──────────────────────────────────────
-    compose_file = cwd / "compose.yaml"
-    if compose_file.exists():
-        if not click.confirm("  compose.yaml already exists. Overwrite?", default=False):
-            click.echo("  Aborted.")
-            return
-
     click.echo(f"\n  Setting up Lodge for {app_name} (Python {python_version})")
     if services:
         click.echo(f"  Services: {', '.join(services)}")
 
+    # Every generated file is confirmed separately: an existing file is only
+    # replaced with --force or an explicit "y".
     # ── Write compose.yaml ────────────────────────────────────────────────────
+    compose_file = cwd / "compose.yaml"
     compose_content = _build_compose(app_name, python_version, services)
-    compose_file.write_text(compose_content, encoding="utf-8")
-    click.echo("  ✓  compose.yaml")
+    compose_written = _write_guarded(compose_file, compose_content, "compose.yaml", force=force)
 
     # ── Write docker/Dockerfile ───────────────────────────────────────────────
     docker_dir = cwd / "docker"
     docker_dir.mkdir(exist_ok=True)
-    dockerfile = docker_dir / "Dockerfile"
-    dockerfile.write_text(_DOCKERFILE_DEV, encoding="utf-8")
-    click.echo("  ✓  docker/Dockerfile")
-
-    entrypoint = docker_dir / "docker-entrypoint.sh"
-    entrypoint.write_text(_ENTRYPOINT, encoding="utf-8")
-    entrypoint.chmod(0o755)
-    click.echo("  ✓  docker/docker-entrypoint.sh")
+    _write_guarded(docker_dir / "Dockerfile", _DOCKERFILE_DEV, "docker/Dockerfile", force=force)
+    _write_guarded(
+        docker_dir / "docker-entrypoint.sh", _ENTRYPOINT, "docker/docker-entrypoint.sh", force=force, mode=0o755
+    )
 
     # ── Write lodge script ────────────────────────────────────────────────────
-    lodge_script = cwd / "lodge"
-    lodge_script.write_text(_LODGE_SCRIPT, encoding="utf-8")
-    lodge_script.chmod(0o755)
-    click.echo("  ✓  lodge")
+    _write_guarded(cwd / "lodge", _LODGE_SCRIPT, "lodge", force=force, mode=0o755)
 
-    # ── Update .env ───────────────────────────────────────────────────────────
-    env_file = cwd / ".env"
-    if env_file.exists():
-        content = env_file.read_text()
-        for svc in services:
-            for key, value in _ENV_UPDATES[svc].items():
-                content = _set_env(content, key, value)
-        env_file.write_text(content, encoding="utf-8")
-        click.echo("  ✓  .env updated")
+    # ── Update .env / .env.example ────────────────────────────────────────────
+    # Only when compose.yaml matches what was requested: pointing .env at
+    # services a kept compose.yaml does not define would break the app.
+    if not compose_written:
+        if services:
+            click.echo("  -  .env not modified because compose.yaml was kept")
+    else:
+        env_file = cwd / ".env"
+        if env_file.exists() and services:
+            content = env_file.read_text()
+            kept: list[str] = []
+            for svc in services:
+                content, svc_kept = _apply_service_env(content, svc, generate_secrets=True)
+                kept.extend(svc_kept)
+            env_file.write_text(content, encoding="utf-8")
+            click.echo("  ✓  .env updated")
+            if kept:
+                click.echo(f"     kept existing values for: {', '.join(kept)}")
 
-    # ── Update .env.example ───────────────────────────────────────────────────
-    env_example = cwd / ".env.example"
-    if env_example.exists():
-        content = env_example.read_text()
-        for svc in services:
-            for key, value in _ENV_UPDATES[svc].items():
-                content = _set_env(content, key, value)
-        env_example.write_text(content, encoding="utf-8")
+        env_example = cwd / ".env.example"
+        if env_example.exists() and services:
+            content = env_example.read_text()
+            for svc in services:
+                content, _ = _apply_service_env(content, svc, generate_secrets=False)
+            env_example.write_text(content, encoding="utf-8")
+
+    # ── Driver packages the selected services need ───────────────────────────
+    hints = [hint for hint in (_driver_hint(svc) for svc in services) if hint]
+    if hints:
+        click.echo("")
+        for hint in hints:
+            click.echo(hint)
+    if "minio" in services:
+        click.echo(f"\n  MinIO image: {_IMAGE_MINIO} (set LODGE_MINIO_IMAGE in .env to use a mirror).")
 
     # ── Suggest adding lodge to .gitignore ────────────────────────────────────
     gitignore = cwd / ".gitignore"
@@ -498,6 +673,9 @@ def lodge_install_command(with_services: str, python_version: str | None) -> Non
     ./lodge shell             Open a shell inside the app container
     ./lodge logs              Tail app logs
     ./lodge down              Stop and remove containers
+
+  Service ports are published on 127.0.0.1 only. Change the host side with
+  FORWARD_DB_PORT, FORWARD_REDIS_PORT, FORWARD_MAILPIT_PORT, ... in .env.
 
   Add services later with:  hunt lodge:add <service>
   Available services: {", ".join(_SERVICES)}

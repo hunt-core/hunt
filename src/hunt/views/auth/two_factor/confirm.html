@@ -2,15 +2,22 @@
 
 @section('content')
 <h1>Scan QR Code</h1>
-<p style="font-size:.875rem;color:#aaa;margin-bottom:1.25rem;">Scan this QR code with your authenticator app, then enter the six-digit code below.</p>
+<p style="font-size:.875rem;color:#aaa;margin-bottom:1.25rem;">Scan this QR code with your authenticator app, or enter the setup key by hand, then enter the six-digit code below.</p>
 
-{% if flash.get("error") %}
+{% if error %}
+<div class="alert-error">{{ error }}</div>
+{% elif flash.get("error") %}
 <div class="alert-error">{{ flash.get("error") }}</div>
 {% endif %}
 
 <div style="text-align:center;margin-bottom:1.25rem;">
-    <div id="qrcode" style="display:inline-block;background:#fff;padding:1rem;border-radius:8px;"></div>
-    <p style="font-size:.75rem;color:#aaa;margin-top:.75rem;word-break:break-all;">Manual key: <code>{{ secret }}</code></p>
+    {# Rendered on the server: no script runs on the page that shows the secret. #}
+    {% if qr_svg %}
+    <div id="qrcode" role="img" aria-label="Two-factor authentication QR code"
+        style="display:inline-block;background:#fff;padding:1rem;border-radius:8px;line-height:0;">{{ qr_svg }}</div>
+    {% endif %}
+    <p style="font-size:.75rem;color:#aaa;margin-top:.75rem;word-break:break-all;">Setup key (manual entry): <code>{{ secret }}</code></p>
+    <p style="font-size:.75rem;color:#aaa;margin-top:.5rem;word-break:break-all;">Setup link: <code>{{ qr_url }}</code></p>
 </div>
 
 <form method="POST" action="/two-factor/confirm">
@@ -24,12 +31,4 @@
     <button type="submit" class="btn-submit">Enable Two-Factor Authentication</button>
 </form>
 
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-<script>
-  new QRCode(document.getElementById("qrcode"), {
-    text: {{ qr_url | tojson }},
-    width: 180,
-    height: 180,
-  });
-</script>
 @endsection

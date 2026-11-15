@@ -30,7 +30,9 @@ class {class_name}(Job):
 def make_job_command(name: str) -> None:
     """Create a new Job class."""
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
 
+    validate_identifier(name, "job name")
     out = Path.cwd() / "app" / "jobs" / f"{name}.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():

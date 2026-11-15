@@ -40,9 +40,10 @@ class PaginationResult:
 
     def _page_url(self, base_url: str, page: int) -> str:
         parsed = urlparse(base_url)
-        params = {k: v[0] for k, v in parse_qs(parsed.query, keep_blank_values=True).items()}
-        params["page"] = str(page)
-        return urlunparse(parsed._replace(query=urlencode(params)))
+        # Keep repeated parameters (``?tag=a&tag=b``, ``?ids[]=1&ids[]=2``) intact.
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        params["page"] = [str(page)]
+        return urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
 
     def prev_page_url(self, base_url: str) -> str | None:
         if self.current_page <= 1:

@@ -12,14 +12,17 @@ from hunt.support.str import Str
 def make_middleware_command(name: str) -> None:
     """Create a new middleware class."""
     from hunt.console.commands.make import load_stub
+    from hunt.console.commands.make._naming import validate_identifier
+    from hunt.console.commands.make._output import output
 
+    validate_identifier(name, "middleware name")
+    output.configure()
     class_name = Str.pascal(name)
     content = load_stub("middleware", _STUB).replace("{{class}}", class_name)
 
     out = Path.cwd() / "app" / "middleware" / f"{Str.snake(name)}.py"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(content, encoding="utf-8")
-    click.echo(f"  Created Middleware: {out.relative_to(Path.cwd())}")
+    # Never overwrite: `make:middleware guest` must not replace the scaffolded guest middleware.
+    output.write(out, content, label="Created Middleware")
 
 
 _STUB = """\
